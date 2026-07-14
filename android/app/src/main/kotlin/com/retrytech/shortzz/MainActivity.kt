@@ -1,4 +1,4 @@
-package com.retrytech.shortzz
+package com.silitibum.app
 
 import com.baseflow.permissionhandler.PermissionHandlerPlugin
 import com.retrytech.retrytech_plugin.RetrytechPlugin
