@@ -29,7 +29,16 @@ class SplashScreenController extends BaseController {
   void onReady() {
     super.onReady();
 
-    Future.wait([fetchSettings()]);
+    // FIX: fetchSettings() is no longer fire-and-forget. Any exception
+    // (network error, backend 500, timeout, JSON parse failure, etc.)
+    // is now caught here so the splash can never hang silently — it
+    // always falls back to the login screen instead.
+    fetchSettings().catchError((e, st) {
+      Loggers.error('fetchSettings failed, falling back to LoginScreen: $e');
+      if (Get.context != null) {
+        Get.off(() => const LoginScreen());
+      }
+    });
 
     _subscription = NetworkHelper().onConnectionChange.listen((status) {
       isOnline = status;
@@ -49,46 +58,61 @@ class SplashScreenController extends BaseController {
 
   Future<void> fetchSettings() async {
     await Future.delayed(const Duration(milliseconds: 1000));
+
     bool showNavigate = await CommonService.instance.fetchGlobalSettings();
-    if (showNavigate) {
-      final translations = Get.find<DynamicTranslations>();
-      var setting = SessionManager.instance.getSettings();
-      var languages = setting?.languages ?? [];
-      List<Language> downloadLanguages = languages.where((element) => element.status == 1).toList();
-      if (downloadLanguages.isEmpty) {
-        showSnackBar(AppRes.languageAdd, second: 5);
-        return;
-      }
 
+    // FIX: previously, if showNavigate was false, nothing happened and the
+    // app was stuck on the splash screen forever. Now it falls back to login.
+    if (!showNavigate) {
+      Loggers.error('fetchGlobalSettings() returned false — navigating to LoginScreen as fallback');
+      Get.off(() => const LoginScreen());
+      return;
+    }
+
+    final translations = Get.find<DynamicTranslations>();
+    var setting = SessionManager.instance.getSettings();
+    var languages = setting?.languages ?? [];
+    List<Language> downloadLanguages = languages.where((element) => element.status == 1).toList();
+
+    if (downloadLanguages.isEmpty) {
+      // FIX: previously returned here with only a snackbar shown, leaving
+      // the user stuck on the splash screen. Now it still warns, but also
+      // continues on to navigation instead of dead-ending.
+      showSnackBar(AppRes.languageAdd, second: 5);
+    } else {
       var downloadedFiles = await downloadAndParseLanguages(downloadLanguages);
-
       translations.addTranslations(downloadedFiles);
 
       var defaultLang = languages.firstWhereOrNull((element) => element.isDefault == 1);
-
       if (defaultLang != null) {
         SessionManager.instance.setFallbackLang(defaultLang.code ?? 'en');
       }
+    }
 
-      RestartWidget.restartApp(Get.context!);
-      if (SessionManager.instance.isLogin()) {
-        UserService.instance.fetchUserDetails(userId: SessionManager.instance.getUserID()).then((value) {
-          if (value != null) {
-            Get.off(() => DashboardScreen(myUser: value));
-          } else {
-            Get.off(() => const LoginScreen());
-          }
-        });
-      } else {
-        bool isLanguageSelect = SessionManager.instance.getBool(SessionKeys.isLanguageScreenSelect);
-        bool onBoardingShow = SessionManager.instance.getBool(SessionKeys.isOnBoardingScreenSelect);
-        if (isLanguageSelect == false) {
-          Get.off(() => const SelectLanguageScreen(languageNavigationType: LanguageNavigationType.fromStart));
-        } else if (onBoardingShow == false && (setting?.onBoarding ?? []).isNotEmpty) {
-          Get.off(() => const OnBoardingScreen());
+    RestartWidget.restartApp(Get.context!);
+
+    if (SessionManager.instance.isLogin()) {
+      UserService.instance.fetchUserDetails(userId: SessionManager.instance.getUserID()).then((value) {
+        if (value != null) {
+          Get.off(() => DashboardScreen(myUser: value));
         } else {
           Get.off(() => const LoginScreen());
         }
+      }).catchError((e, st) {
+        // FIX: fetchUserDetails() had no error handling — a failed/timed
+        // out call here would leave the app stuck after the restart.
+        Loggers.error('fetchUserDetails failed, falling back to LoginScreen: $e');
+        Get.off(() => const LoginScreen());
+      });
+    } else {
+      bool isLanguageSelect = SessionManager.instance.getBool(SessionKeys.isLanguageScreenSelect);
+      bool onBoardingShow = SessionManager.instance.getBool(SessionKeys.isOnBoardingScreenSelect);
+      if (isLanguageSelect == false) {
+        Get.off(() => const SelectLanguageScreen(languageNavigationType: LanguageNavigationType.fromStart));
+      } else if (onBoardingShow == false && (setting?.onBoarding ?? []).isNotEmpty) {
+        Get.off(() => const OnBoardingScreen());
+      } else {
+        Get.off(() => const LoginScreen());
       }
     }
   }
@@ -101,16 +125,21 @@ class SplashScreenController extends BaseController {
     for (var language in languages) {
       if (language.code != null && language.csvFile != null) {
         // Start the download and add it to the active set
-        final downloadTask = downloadAndProcessLanguage(language, languageData);
+        late final Future<void> downloadTask;
+        downloadTask = downloadAndProcessLanguage(language, languageData).whenComplete(() {
+          // FIX: previously `activeDownloads.removeWhere((task) => task ==
+          // Future.any(activeDownloads))` compared each task against a brand
+          // new Future instance returned by Future.any(), which could never
+          // equal anything already in the set — completed downloads were
+          // never actually removed, defeating the concurrency cap. Removing
+          // the task from its own whenComplete callback fixes this.
+          activeDownloads.remove(downloadTask);
+        });
         activeDownloads.add(downloadTask);
 
         // Limit concurrency
         if (activeDownloads.length >= maxConcurrentDownloads) {
-          // Wait for any download to complete
           await Future.any(activeDownloads);
-
-          // Remove completed tasks from the set
-          activeDownloads.removeWhere((task) => task == Future.any(activeDownloads));
         }
       }
     }
@@ -123,7 +152,13 @@ class SplashScreenController extends BaseController {
 
   Future<void> downloadAndProcessLanguage(Language language, Map<String, Map<String, String>> languageData) async {
     try {
-      final response = await http.get(Uri.parse(language.csvFile?.addBaseURL() ?? ''));
+      // FIX: no timeout previously — a hung backend/CDN response would
+      // block this download forever, which in turn blocked the whole
+      // splash flow from ever navigating away.
+      final response = await http
+          .get(Uri.parse(language.csvFile?.addBaseURL() ?? ''))
+          .timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
         final csvContent = utf8.decode(response.bodyBytes);
         // Parse the CSV into a map
@@ -135,6 +170,7 @@ class SplashScreenController extends BaseController {
         Loggers.error('Failed to download ${language.code}: ${response.statusCode}');
       }
     } catch (e) {
+      // Includes TimeoutException now, in addition to network/parse errors.
       Loggers.error('Error downloading ${language.code}: $e');
     }
   }
