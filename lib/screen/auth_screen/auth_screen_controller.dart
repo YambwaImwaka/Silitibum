@@ -105,7 +105,7 @@ class AuthScreenController extends BaseController {
           fullname: fullNameController.text.trim(),
           loginVia: LoginVia.loginInUser);
       credential.user?.updateDisplayName(fullNameController.text.trim());
-      credential.user?.sendEmailVerification();
+     await credential.user?.sendEmailVerification();
       Get.back();
       Get.back();
       showSnackBar(LKey.verificationLinkSent.tr);
