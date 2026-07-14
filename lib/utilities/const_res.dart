@@ -1,4 +1,4 @@
-const String baseURL = 'https://silitibum.com';
+const String baseURL = 'https://silitibum.com/';
 const String apiURL = '${baseURL}api/';
 const String apiKey = 'silitibum';
 
