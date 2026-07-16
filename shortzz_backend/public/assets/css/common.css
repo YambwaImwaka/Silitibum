@@ -1,0 +1,30 @@
+
+.username {
+    font-weight: bold;
+    color: #3E8BFF;
+}
+.hashtag {
+    font-weight: bold;
+    color: #B754F9 !important;
+}
+.hashtag:hover{
+    text-decoration: underline;
+}
+.username:hover{
+    text-decoration: underline;
+}
+
+.custom-width-18px {
+    width: 18px !important; /* Set the width of the image to 18px */
+}
+.custom-height-18px {
+    height: 18px !important; /* Set the width of the image to 18px */
+}
+.w-h-30 {
+    width: 35px;
+    height: 35px;
+}
+.country-code-field {
+    width: 120px !important;
+    text-align: center;
+  }

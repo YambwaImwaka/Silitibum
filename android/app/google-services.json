@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "361802923374",
+    "project_id": "silitibum",
+    "storage_bucket": "silitibum.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:361802923374:android:aef105dadaa816cfa1557f",
+        "android_client_info": {
+          "package_name": "com.silitibum.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "361802923374-63oqouspofk7ielsd795fp03ptqss66n.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMF29UBhdHtlkTb0JYgfj2U5-gFRXkZQk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "361802923374-63oqouspofk7ielsd795fp03ptqss66n.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
