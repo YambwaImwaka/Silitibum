@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
 import 'package:shortzz/common/controller/follow_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/controller/profile_controller.dart';
 import 'package:shortzz/common/enum/chat_enum.dart';
 import 'package:shortzz/common/extensions/list_extension.dart';
@@ -309,6 +310,7 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
   }
 
   Future<void> followUnFollowUser() async {
+    if (!AuthGate.check()) return;
     int userId = userData.value?.id ?? -1;
     if (isFollowUnFollowInProcess.value) return;
     isFollowUnFollowInProcess.value = true;
@@ -332,6 +334,9 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
   }
 
   void handlePublishOrMessageBtn(bool isMe) {
+    // Publishing and chatting both need a session (chat is also reachable
+    // from other users' profiles, outside the gated Messages tab).
+    if (!AuthGate.check()) return;
     if (isMe) {
       Get.bottomSheet(PostOptionsSheet(controller: this), isScrollControlled: true);
     } else {

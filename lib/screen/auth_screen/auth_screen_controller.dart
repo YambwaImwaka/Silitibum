@@ -15,15 +15,39 @@ import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart' as user;
+import 'package:shortzz/screen/auth_screen/otp_verification_screen.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
+import 'package:shortzz/screen/edit_profile_screen/widget/phone_codes_screen_controller.dart';
+import 'package:shortzz/utilities/const_res.dart';
+import 'package:shortzz/utilities/text_style_custom.dart';
+import 'package:shortzz/utilities/theme_res.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
+/// Auth flows (all credentials live in Firebase, the backend only maps a
+/// verified identity to an app user):
+///
+/// - PHONE sign-up : name + phone + password → SMS OTP proves possession →
+///   the phone Firebase user gets an internal alias-email credential
+///   (<digits>@phone.silitibum.com + password) linked to it.
+/// - PHONE login   : phone + password → plain Firebase password sign-in
+///   against the alias credential. No SMS cost per login.
+/// - PHONE reset   : OTP re-proves possession → updatePassword.
+/// - EMAIL sign-up : name + email + password → createUser + verification
+///   email (soft: the app is usable immediately, reminder until verified).
+/// - EMAIL login   : email + password; reminder shown while unverified.
+/// - GOOGLE/APPLE  : unchanged provider flows.
 class AuthScreenController extends BaseController {
   TextEditingController fullNameController = TextEditingController();
   TextEditingController emailController = TextEditingController();
   TextEditingController forgetEmailController = TextEditingController();
   TextEditingController passwordController = TextEditingController();
   TextEditingController confirmPassController = TextEditingController();
+  TextEditingController phoneController = TextEditingController();
+
+  /// Phone | Email mode on LoginScreen / RegistrationScreen (0 = phone, 1 = email).
+  RxInt authMethodIndex = 0.obs;
+
+  bool get isPhoneMode => authMethodIndex.value == 0;
 
   @override
   void onInit() {
@@ -32,85 +56,313 @@ class AuthScreenController extends BaseController {
     super.onInit();
   }
 
-  Future<void> onLogin() async {
-    final email = emailController.text.trim();
-    final password = passwordController.text.trim();
+  // ---------------------------------------------------------------------
+  // PHONE
+  // ---------------------------------------------------------------------
 
+  Future<void> onPhoneSignUp() async {
+    if (fullNameController.text.trim().isEmpty) {
+      return showSnackBar(LKey.fullNameEmpty.tr);
+    }
+    final String? fullPhone = _normalizedPhone();
+    if (fullPhone == null) return;
+    final String? password = _validatedNewPassword();
+    if (password == null) return;
+
+    final String fullname = fullNameController.text.trim();
+    Get.to(() => OtpVerificationScreen(
+          phoneNumber: fullPhone,
+          onVerified: (userCred) =>
+              _completePhoneSignUp(userCred, fullPhone, password, fullname),
+        ));
+  }
+
+  Future<void> onPhoneLogin() async {
+    final String? fullPhone = _normalizedPhone();
+    if (fullPhone == null) return;
+    final String password = passwordController.text.trim();
+    if (password.isEmpty) {
+      return showSnackBar(LKey.enterAPassword.tr);
+    }
+
+    showLoader();
+    UserCredential? credential;
+    try {
+      credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: _aliasEmailFor(fullPhone), password: password);
+    } on FirebaseAuthException catch (e) {
+      stopLoader();
+      if (e.code == 'user-not-found') {
+        return showSnackBar(LKey.noAccountFoundCreateOne.tr);
+      }
+      // 'invalid-credential' covers wrong password AND unknown accounts when
+      // Firebase email-enumeration protection is on.
+      return showSnackBar(LKey.incorrectPassword.tr);
+    }
+
+    if (credential.user == null) {
+      stopLoader();
+      return showSnackBar(LKey.noAccountFoundCreateOne.tr);
+    }
+    SessionManager.instance.setPassword(password);
+    final user.User? data = await _registration(
+        identity: fullPhone, loginMethod: LoginMethod.phone);
+    stopLoader();
+    if (data != null) _navigateScreen(data);
+  }
+
+  Future<void> onPhoneForgotPassword() async {
+    final String? fullPhone = _normalizedPhone();
+    if (fullPhone == null) return;
+    final String? newPassword = _validatedNewPassword();
+    if (newPassword == null) return;
+
+    Get.to(() => OtpVerificationScreen(
+          phoneNumber: fullPhone,
+          onVerified: (userCred) => _completePhoneReset(userCred, fullPhone, newPassword),
+        ));
+  }
+
+  Future<void> _completePhoneSignUp(UserCredential userCred, String fullPhone,
+      String password, String fullname) async {
+    final firebaseUser = userCred.user;
+    if (firebaseUser == null) return;
+
+    showLoader();
+    try {
+      await firebaseUser.linkWithCredential(EmailAuthProvider.credential(
+          email: _aliasEmailFor(fullPhone), password: password));
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'provider-already-linked') {
+        // This phone already signed up before. OTP just re-proved possession,
+        // so treating the new password as a reset is safe.
+        try {
+          await firebaseUser.updatePassword(password);
+        } catch (err) {
+          Loggers.error('updatePassword on re-signup failed: $err');
+        }
+      } else if (e.code == 'email-already-in-use' ||
+          e.code == 'credential-already-in-use') {
+        stopLoader();
+        return showSnackBar(LKey.accountExistsLogin.tr);
+      } else {
+        stopLoader();
+        Loggers.error('linkWithCredential failed: ${e.code} ${e.message}');
+        return showSnackBar(e.message);
+      }
+    }
+
+    SessionManager.instance.setPassword(password);
+    final user.User? data = await _registration(
+        identity: fullPhone, loginMethod: LoginMethod.phone, fullname: fullname);
+    stopLoader();
+    if (data != null) _navigateScreen(data);
+  }
+
+  Future<void> _completePhoneReset(
+      UserCredential userCred, String fullPhone, String newPassword) async {
+    final firebaseUser = userCred.user;
+    if (firebaseUser == null) return;
+
+    showLoader();
+    try {
+      // If the phone user never had the alias credential (edge case), link it
+      // instead of updating.
+      final hasAlias = firebaseUser.providerData
+          .any((p) => p.providerId == EmailAuthProvider.PROVIDER_ID);
+      if (hasAlias) {
+        await firebaseUser.updatePassword(newPassword);
+      } else {
+        await firebaseUser.linkWithCredential(EmailAuthProvider.credential(
+            email: _aliasEmailFor(fullPhone), password: newPassword));
+      }
+    } on FirebaseAuthException catch (e) {
+      stopLoader();
+      Loggers.error('phone password reset failed: ${e.code} ${e.message}');
+      return showSnackBar(e.message);
+    }
+
+    SessionManager.instance.setPassword(newPassword);
+    final user.User? data = await _registration(
+        identity: fullPhone, loginMethod: LoginMethod.phone);
+    stopLoader();
+    if (data != null) {
+      showSnackBar(LKey.passwordUpdated.tr);
+      _navigateScreen(data);
+    }
+  }
+
+  /// Canonical identity: '+<countryCode><national digits, no leading zeros>'.
+  /// The phone string IS the account key — signup and login must produce the
+  /// exact same value or the backend would see two different users.
+  String? _normalizedPhone() {
+    String phone =
+        phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (phone.isEmpty) {
+      showSnackBar(LKey.phoneEmpty.tr);
+      return null;
+    }
+    String phoneCode = '';
+    if (Get.isRegistered<PhoneCodesScreenController>()) {
+      phoneCode = Get.find<PhoneCodesScreenController>()
+              .selectedCode
+              .value
+              ?.phoneCode
+              .replaceAll('+', '')
+              .trim() ??
+          '';
+    }
+    if (phoneCode.isEmpty) {
+      showSnackBar(LKey.selectCountryCode.tr);
+      return null;
+    }
+    phone = phone.replaceFirst(RegExp(r'^0+'), '');
+    if (phone.isEmpty) {
+      showSnackBar(LKey.phoneEmpty.tr);
+      return null;
+    }
+    return '+$phoneCode$phone';
+  }
+
+  String _aliasEmailFor(String fullPhone) =>
+      '${fullPhone.replaceAll(RegExp(r'[^0-9]'), '')}@$phoneAliasEmailDomain';
+
+  String? _validatedNewPassword() {
+    final String password = passwordController.text.trim();
+    if (password.isEmpty) {
+      showSnackBar(LKey.enterAPassword.tr);
+      return null;
+    }
+    if (password.length < 6) {
+      showSnackBar(LKey.weakPassword.tr);
+      return null;
+    }
+    if (confirmPassController.text.trim().isEmpty) {
+      showSnackBar(LKey.confirmPasswordEmpty.tr);
+      return null;
+    }
+    if (confirmPassController.text.trim() != password) {
+      showSnackBar(LKey.passwordMismatch.tr);
+      return null;
+    }
+    return password;
+  }
+
+  // ---------------------------------------------------------------------
+  // EMAIL
+  // ---------------------------------------------------------------------
+
+  Future<void> onEmailSignUp() async {
+    if (fullNameController.text.trim().isEmpty) {
+      return showSnackBar(LKey.fullNameEmpty.tr);
+    }
+    final String email = emailController.text.trim();
     if (email.isEmpty) {
       return showSnackBar(LKey.enterEmail.tr);
+    }
+    if (!GetUtils.isEmail(email)) {
+      return showSnackBar(LKey.invalidEmail.tr);
+    }
+    final String? password = _validatedNewPassword();
+    if (password == null) return;
+
+    showLoader();
+    final UserCredential? credential = await createUserWithEmailAndPassword();
+    if (credential?.user == null) return; // it showed the error already
+
+    // THE fix for "verification emails were not coming": the template never
+    // called sendEmailVerification, yet login demanded emailVerified == true.
+    try {
+      await credential!.user!.sendEmailVerification();
+    } catch (e) {
+      Loggers.error('sendEmailVerification failed: $e');
+    }
+
+    final user.User? data = await _registration(
+        identity: email,
+        loginMethod: LoginMethod.email,
+        fullname: fullNameController.text.trim());
+    stopLoader();
+    if (data != null) {
+      _navigateScreen(data);
+      _showSnackBarAfterNavigate(LKey.verificationEmailSentTo.tr);
+    }
+  }
+
+  Future<void> onEmailLogin() async {
+    final String email = emailController.text.trim();
+    final String password = passwordController.text.trim();
+    if (email.isEmpty) {
+      return showSnackBar(LKey.enterEmail.tr);
+    }
+    if (!GetUtils.isEmail(email)) {
+      return showSnackBar(LKey.invalidEmail.tr);
     }
     if (password.isEmpty) {
       return showSnackBar(LKey.enterAPassword.tr);
     }
 
     showLoader();
-
-    if (GetUtils.isEmail(email)) {
-      final UserCredential? credential = await signInWithEmailAndPassword();
-
-      if (credential == null) {
-        stopLoader();
-        return showSnackBar(LKey.userNotFound.tr);
-      }
-
-      if (credential.user?.emailVerified == false) {
-        stopLoader();
-        return showSnackBar(LKey.verifyEmailFirst.tr);
-      }
-
-      String fullname = credential.user?.displayName ?? email.split('@')[0];
-      final user.User? data = await _registration(
-          identity: email, loginMethod: LoginMethod.email, fullname: fullname, loginVia: LoginVia.loginInUser);
+    final UserCredential? credential = await signInWithEmailAndPassword();
+    if (credential?.user == null) {
       stopLoader();
+      return;
+    }
 
-      if (data != null) {
-        _navigateScreen(data);
-      }
-    } else {
-      final user.User? data = await _registration(
-          identity: email, loginMethod: LoginMethod.email, loginVia: LoginVia.logInFakeUser, password: password);
-      stopLoader();
-
-      if (data != null) {
-        _navigateScreen(data);
+    SessionManager.instance.setPassword(password);
+    String fullname = credential!.user!.displayName ?? email.split('@')[0];
+    final user.User? data = await _registration(
+        identity: email, loginMethod: LoginMethod.email, fullname: fullname);
+    stopLoader();
+    if (data != null) {
+      _navigateScreen(data);
+      // Soft verification: usable while unverified, reminded until confirmed.
+      if (credential.user!.emailVerified == false) {
+        _showVerifyEmailReminder();
       }
     }
   }
 
-  Future<void> onCreateAccount() async {
-    if (fullNameController.text.trim().isEmpty) {
-      return showSnackBar(LKey.fullNameEmpty.tr);
-    }
-    if (emailController.text.trim().isEmpty) {
-      return showSnackBar(LKey.enterEmail.tr);
-    }
-    if (passwordController.text.trim().isEmpty) {
-      return showSnackBar(LKey.enterAPassword.tr);
-    }
-    if (confirmPassController.text.trim().isEmpty) {
-      return showSnackBar(LKey.confirmPasswordEmpty.tr);
-    }
-    if (!GetUtils.isEmail(emailController.text.trim())) {
-      return showSnackBar(LKey.invalidEmail.tr);
-    }
-    if (passwordController.text.trim() != confirmPassController.text.trim()) {
-      return showSnackBar(LKey.passwordMismatch.tr);
-    }
-    showLoader();
-    UserCredential? credential = await createUserWithEmailAndPassword();
-    if (credential != null) {
-      await _registration(
-          identity: emailController.text.trim(),
-          loginMethod: LoginMethod.email,
-          fullname: fullNameController.text.trim(),
-          loginVia: LoginVia.loginInUser);
-      credential.user?.updateDisplayName(fullNameController.text.trim());
-     await credential.user?.sendEmailVerification();
-      Get.back();
-      Get.back();
-      showSnackBar(LKey.verificationLinkSent.tr);
-    }
+  void _showSnackBarAfterNavigate(String message) {
+    Future.delayed(const Duration(milliseconds: 900), () {
+      showSnackBar(message, second: 4);
+    });
   }
+
+  void _showVerifyEmailReminder() {
+    Future.delayed(const Duration(milliseconds: 900), () {
+      if (Get.isSnackbarOpen) return;
+      Get.rawSnackbar(
+        backgroundColor: blackPure(Get.context!),
+        margin: const EdgeInsets.symmetric(horizontal: 10),
+        padding: const EdgeInsets.all(15),
+        borderRadius: 10,
+        duration: const Duration(seconds: 5),
+        snackPosition: SnackPosition.TOP,
+        messageText: Text(LKey.verifyEmailReminder.tr,
+            style: TextStyleCustom.outFitRegular400(
+                color: whitePure(Get.context!), fontSize: 16)),
+        mainButton: TextButton(
+          onPressed: () async {
+            try {
+              await FirebaseAuth.instance.currentUser?.sendEmailVerification();
+              stopSnackBar();
+              showSnackBar(LKey.verificationEmailSentTo.tr);
+            } catch (e) {
+              Loggers.error('resend verification failed: $e');
+            }
+          },
+          child: Text(LKey.resend.tr,
+              style: TextStyleCustom.outFitMedium500(
+                  color: whitePure(Get.context!), fontSize: 16)),
+        ),
+      );
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // GOOGLE / APPLE
+  // ---------------------------------------------------------------------
 
   void onGoogleTap() async {
     showLoader();
@@ -126,8 +378,8 @@ class AuthScreenController extends BaseController {
     user.User? data = await _registration(
         identity: credential?.user?.email ?? '',
         loginMethod: LoginMethod.google,
-        fullname: credential?.user?.displayName ?? credential?.user?.email?.split('@')[0],
-        loginVia: LoginVia.loginInUser);
+        fullname: credential?.user?.displayName ??
+            credential?.user?.email?.split('@')[0]);
     Get.back();
     if (data != null) {
       _navigateScreen(data);
@@ -149,58 +401,80 @@ class AuthScreenController extends BaseController {
     user.User? data = await _registration(
         identity: credential?.user?.email ?? '',
         loginMethod: LoginMethod.apple,
-        fullname: credential?.user?.displayName ?? credential?.user?.email?.split('@')[0],
-        loginVia: LoginVia.loginInUser);
+        fullname: credential?.user?.displayName ??
+            credential?.user?.email?.split('@')[0]);
     Get.back();
     if (data != null) {
       _navigateScreen(data);
     }
   }
 
+  // ---------------------------------------------------------------------
+  // BACKEND REGISTRATION (register-or-login by verified identity)
+  // ---------------------------------------------------------------------
+
   Future<user.User?> _registration(
       {required String identity,
       required LoginMethod loginMethod,
-      String? fullname,
-      required LoginVia loginVia,
-      String? password}) async {
-    String? deviceToken = await FirebaseNotificationManager.instance.getNotificationToken();
-    if (deviceToken == null) return null;
-
-    user.User? userData;
-    switch (loginVia) {
-      case LoginVia.loginInUser:
-        userData = await UserService.instance
-            .logInUser(identity: identity, loginMethod: loginMethod, deviceToken: deviceToken, fullName: fullname);
-      case LoginVia.logInFakeUser:
-        userData = await UserService.instance
-            .logInFakeUser(identity: identity, loginMethod: loginMethod, deviceToken: deviceToken, password: password);
+      String? fullname}) async {
+    // FCM token is optional: devices without Play Services (or with
+    // notifications denied) must still be able to register — push just
+    // won't target them.
+    String? deviceToken;
+    try {
+      deviceToken =
+          await FirebaseNotificationManager.instance.getNotificationToken();
+    } catch (e) {
+      Loggers.error('FCM token unavailable, continuing without it: $e');
     }
 
+    // Identity proof for the backend (verified server-side against the
+    // claimed identity). All flows sign into Firebase before reaching here.
+    String? firebaseIdToken;
+    try {
+      firebaseIdToken = await FirebaseAuth.instance.currentUser?.getIdToken();
+    } catch (e) {
+      Loggers.error('getIdToken failed: $e');
+    }
+
+    user.User? userData = await UserService.instance.logInUser(
+        identity: identity,
+        loginMethod: loginMethod,
+        deviceToken: deviceToken,
+        fullName: fullname,
+        firebaseToken: firebaseIdToken);
+
     Setting? setting = SessionManager.instance.getSettings();
-    if (userData?.isDummy == 0 && userData?.newRegister == true && setting?.registrationBonusStatus == 1) {
+    if (userData?.isDummy == 0 &&
+        userData?.newRegister == true &&
+        setting?.registrationBonusStatus == 1) {
       final translations = Get.find<DynamicTranslations>();
       final languageData = translations.keys[userData?.appLanguage] ?? {};
 
       NotificationService.instance.pushNotification(
-          title: languageData[LKey.registrationBonusTitle] ?? LKey.registrationBonusTitle.tr,
-          body: languageData[LKey.registrationBonusDescription] ?? LKey.registrationBonusDescription.tr,
+          title: languageData[LKey.registrationBonusTitle] ??
+              LKey.registrationBonusTitle.tr,
+          body: languageData[LKey.registrationBonusDescription] ??
+              LKey.registrationBonusDescription.tr,
           type: NotificationType.other,
           deviceType: userData?.device,
           token: userData?.deviceToken,
           authorizationToken: userData?.token?.authToken);
     }
     SubscriptionManager.shared.login('${userData?.id}');
-    if (userData != null) {
-      // Subscribe My Following Ids For Live streaming notification
-      return userData;
-    }
-    return null;
+    return userData;
   }
+
+  // ---------------------------------------------------------------------
+  // FIREBASE HELPERS
+  // ---------------------------------------------------------------------
 
   Future<UserCredential?> createUserWithEmailAndPassword() async {
     try {
       final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(email: emailController.text.trim(), password: passwordController.text.trim());
+          .createUserWithEmailAndPassword(
+              email: emailController.text.trim(),
+              password: passwordController.text.trim());
       SessionManager.instance.setPassword(passwordController.text.trim());
       return credential;
     } on FirebaseAuthException catch (e) {
@@ -219,20 +493,24 @@ class AuthScreenController extends BaseController {
 
   Future<UserCredential?> signInWithEmailAndPassword() async {
     try {
-      final credential = await FirebaseAuth.instance
-          .signInWithEmailAndPassword(email: emailController.text.trim(), password: passwordController.text.trim());
+      final credential = await FirebaseAuth.instance.signInWithEmailAndPassword(
+          email: emailController.text.trim(),
+          password: passwordController.text.trim());
       return credential;
     } on FirebaseAuthException catch (e) {
       stopLoader();
       if (e.code == 'user-not-found') {
         showSnackBar(LKey.noUserFound.tr);
-        Loggers.info(LKey.noUserFound.tr);
-      } else if (e.code == 'wrong-password') {
+      } else if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        // 'invalid-credential' = wrong password or unknown account (Firebase
+        // email-enumeration protection merges the two).
         showSnackBar(LKey.incorrectPassword.tr);
-        Loggers.info(LKey.incorrectPassword.tr);
+      } else {
+        showSnackBar(e.message);
       }
       return null;
     } catch (e) {
+      Loggers.error(e);
       return null;
     }
   }
@@ -243,7 +521,8 @@ class AuthScreenController extends BaseController {
     GoogleSignInAccount account = await googleSignIn.authenticate();
 
     // Create a new credential
-    final credential = GoogleAuthProvider.credential(idToken: account.authentication.idToken);
+    final credential =
+        GoogleAuthProvider.credential(idToken: account.authentication.idToken);
 
     // Once signed in, return the UserCredential
     return await FirebaseAuth.instance.signInWithCredential(credential);
@@ -252,16 +531,21 @@ class AuthScreenController extends BaseController {
   Future<UserCredential> signInWithApple() async {
     // Request credential for the currently signed in Apple account.
     final appleCredential = await SignInWithApple.getAppleIDCredential(
-      scopes: [AppleIDAuthorizationScopes.email, AppleIDAuthorizationScopes.fullName],
+      scopes: [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName
+      ],
     );
 
     // Create an `OAuthCredential` from the credential returned by Apple.
-    final oauthCredential = OAuthProvider("apple.com")
-        .credential(idToken: appleCredential.identityToken, accessToken: appleCredential.authorizationCode);
+    final oauthCredential = OAuthProvider("apple.com").credential(
+        idToken: appleCredential.identityToken,
+        accessToken: appleCredential.authorizationCode);
 
     return await FirebaseAuth.instance.signInWithCredential(oauthCredential);
   }
 
+  /// Email accounts only — phone accounts reset via [onPhoneForgotPassword].
   void forgetPassword() async {
     final email = forgetEmailController.text.trim();
     if (email.isEmpty) {
@@ -288,5 +572,3 @@ class AuthScreenController extends BaseController {
     }, milliseconds: 250);
   }
 }
-
-enum LoginVia { loginInUser, logInFakeUser }

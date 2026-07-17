@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
@@ -69,6 +70,7 @@ class ReelController extends BaseController {
   }
 
   void onLikeTap() {
+    if (!AuthGate.check()) return;
     if (reelData.value.isLiked == false) {
       HapticManager.shared.light();
     }
@@ -127,6 +129,7 @@ class ReelController extends BaseController {
   }
 
   void onSaved() {
+    if (!AuthGate.check()) return;
     FocusManager.instance.primaryFocus?.unfocus();
     int reelId = reelData.value.id?.toInt() ?? -1;
     if (reelId == -1) {
@@ -183,6 +186,7 @@ class ReelController extends BaseController {
   }
 
   void onGiftTap() {
+    if (!AuthGate.check()) return;
     FocusManager.instance.primaryFocus?.unfocus();
     GiftManager.openGiftSheet(
       userId: reelData.value.userId ?? -1,

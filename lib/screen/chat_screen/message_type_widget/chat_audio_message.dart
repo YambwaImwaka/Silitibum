@@ -24,10 +24,9 @@ class ChatAudioMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     Loggers.error(message.waveData);
     List<double> waves = (message.waveData ?? "")
-            .split(',')
-            .map((e) => e.isEmpty ? 0.0 : double.parse(e))
-            .toList() ??
-        [];
+        .split(',')
+        .map((e) => e.isEmpty ? 0.0 : double.parse(e))
+        .toList();
     if (waves.isEmpty) {
       return const SizedBox();
     }

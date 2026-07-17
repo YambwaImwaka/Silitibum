@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/custom_popup_menu_button.dart';
 import 'package:shortzz/languages/languages_keys.dart';
@@ -51,6 +52,7 @@ class FeedTopView extends StatelessWidget {
                 )),
             InkWell(
               onTap: () {
+                if (!AuthGate.check()) return;
                 Get.to(() => const NotificationScreen());
                 int count = SessionManager.instance.notifyCount.value;
                 SessionManager.instance.setNotifyCount(-count);

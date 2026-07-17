@@ -15,7 +15,6 @@ import 'package:shortzz/common/widget/no_internet_sheet.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/model/general/settings_model.dart';
-import 'package:shortzz/screen/auth_screen/login_screen.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
 import 'package:shortzz/screen/on_boarding_screen/on_boarding_screen.dart';
 import 'package:shortzz/screen/select_language_screen/select_language_screen.dart';
@@ -24,6 +23,7 @@ import 'package:shortzz/utilities/app_res.dart';
 class SplashScreenController extends BaseController {
   late StreamSubscription _subscription;
   bool isOnline = true;
+  bool _isNoInternetSheetOpen = false;
 
   @override
   void onReady() {
@@ -34,18 +34,25 @@ class SplashScreenController extends BaseController {
     // is now caught here so the splash can never hang silently — it
     // always falls back to the login screen instead.
     fetchSettings().catchError((e, st) {
-      Loggers.error('fetchSettings failed, falling back to LoginScreen: $e');
+    Loggers.error('fetchSettings failed, falling back to DashboardScreen: $e');
       if (Get.context != null) {
-        Get.off(() => const LoginScreen());
+      Get.off(() => const DashboardScreen());
       }
     });
 
     _subscription = NetworkHelper().onConnectionChange.listen((status) {
       isOnline = status;
       if (isOnline) {
-        Get.back();
-      } else {
-        Get.to(() => const NoInternetSheet(), transition: Transition.downToUp);
+        // Only pop if WE pushed the sheet — a blind Get.back() here could
+        // dismiss an unrelated screen on a spurious reconnect event.
+        if (_isNoInternetSheetOpen) {
+          _isNoInternetSheetOpen = false;
+          Get.back();
+        }
+      } else if (!_isNoInternetSheetOpen) {
+        _isNoInternetSheetOpen = true;
+        Get.to(() => const NoInternetSheet(), transition: Transition.downToUp)
+            ?.then((_) => _isNoInternetSheetOpen = false);
       }
     });
   }
@@ -64,8 +71,8 @@ class SplashScreenController extends BaseController {
     // FIX: previously, if showNavigate was false, nothing happened and the
     // app was stuck on the splash screen forever. Now it falls back to login.
     if (!showNavigate) {
-      Loggers.error('fetchGlobalSettings() returned false — navigating to LoginScreen as fallback');
-      Get.off(() => const LoginScreen());
+      Loggers.error('fetchGlobalSettings() returned false — navigating to DashboardScreen as fallback');
+      Get.off(() => const DashboardScreen());
       return;
     }
 
@@ -96,13 +103,14 @@ class SplashScreenController extends BaseController {
         if (value != null) {
           Get.off(() => DashboardScreen(myUser: value));
         } else {
-          Get.off(() => const LoginScreen());
+        // If fetching user details failed, continue as guest to Dashboard
+        Get.off(() => const DashboardScreen());
         }
       }).catchError((e, st) {
         // FIX: fetchUserDetails() had no error handling — a failed/timed
         // out call here would leave the app stuck after the restart.
-        Loggers.error('fetchUserDetails failed, falling back to LoginScreen: $e');
-        Get.off(() => const LoginScreen());
+        Loggers.error('fetchUserDetails failed, falling back to DashboardScreen: $e');
+        Get.off(() => const DashboardScreen());
       });
     } else {
       bool isLanguageSelect = SessionManager.instance.getBool(SessionKeys.isLanguageScreenSelect);
@@ -112,7 +120,8 @@ class SplashScreenController extends BaseController {
       } else if (onBoardingShow == false && (setting?.onBoarding ?? []).isNotEmpty) {
         Get.off(() => const OnBoardingScreen());
       } else {
-        Get.off(() => const LoginScreen());
+        // Not logged in: proceed as guest to Dashboard
+        Get.off(() => const DashboardScreen());
       }
     }
   }

@@ -3,7 +3,7 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/model/general/settings_model.dart';
-import 'package:shortzz/screen/auth_screen/login_screen.dart';
+import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
 
 class OnBoardingScreenController extends BaseController {
   PageController pageController = PageController();
@@ -37,7 +37,8 @@ class OnBoardingScreenController extends BaseController {
       );
     } else if (selectedPage.value == onBoardingData.length - 1) {
       SessionManager.instance.setBool(SessionKeys.isOnBoardingScreenSelect, true);
-      Get.off(() => const LoginScreen());
+      // After onboarding complete, proceed to Dashboard (guest or logged-in handled there)
+      Get.off(() => const DashboardScreen());
     }
   }
 

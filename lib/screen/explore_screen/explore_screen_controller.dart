@@ -21,8 +21,14 @@ class ExploreScreenController extends BaseController {
 
   Future<void> fetchExplorePageData() async {
     isLoading.value = true;
-    explorePageData.value = await PostService.instance.fetchExplorePageData();
-    isLoading.value = false;
+    try {
+      explorePageData.value = await PostService.instance.fetchExplorePageData();
+    } catch (e) {
+      // A failed fetch must never leave the loader stuck.
+      Loggers.error('fetchExplorePageData failed: $e');
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   void onExploreTap(String? hashtag) {

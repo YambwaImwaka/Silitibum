@@ -7,7 +7,7 @@ import 'package:shortzz/common/widget/text_button_custom.dart';
 import 'package:shortzz/common/widget/theme_blur_bg.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
-import 'package:shortzz/screen/auth_screen/login_screen.dart';
+import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
 import 'package:shortzz/screen/on_boarding_screen/on_boarding_screen.dart';
 import 'package:shortzz/screen/select_language_screen/select_language_screen_controller.dart';
 import 'package:shortzz/utilities/asset_res.dart';
@@ -147,7 +147,8 @@ class SelectLanguageScreen extends StatelessWidget {
                     onTap: () {
                       SessionManager.instance.setBool(SessionKeys.isLanguageScreenSelect, true);
                       if ((controller.setting?.onBoarding ?? []).isEmpty) {
-                        Get.off(() => const LoginScreen());
+                        // No onboarding — show dashboard as guest
+                        Get.off(() => const DashboardScreen());
                       } else {
                         Get.off(() => const OnBoardingScreen());
                       }

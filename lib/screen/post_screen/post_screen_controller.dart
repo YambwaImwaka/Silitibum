@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
@@ -44,6 +45,7 @@ class PostScreenController extends BaseController {
   }
 
   void onLike(Post? post) async {
+    if (!AuthGate.check()) return;
     Loggers.success(post?.user?.appLanguage);
     if (_isLikeLoading || post == null) return;
     _isLikeLoading = true;
@@ -97,6 +99,7 @@ class PostScreenController extends BaseController {
   }
 
   void onSaved(Post? post) async {
+    if (!AuthGate.check()) return;
     if (_isSavedLoading || post == null) return;
     _isSavedLoading = true;
     HapticManager.shared.light();
@@ -188,6 +191,7 @@ class PostScreenController extends BaseController {
   }
 
   void onGiftTap(Post? post) {
+    if (!AuthGate.check()) return;
     GiftManager.openGiftSheet(
       userId: post?.userId ?? -1,
       onCompletion: (giftManager) {

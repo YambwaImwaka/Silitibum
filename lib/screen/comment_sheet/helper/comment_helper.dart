@@ -1,6 +1,7 @@
 import 'package:detectable_text_field/detectable_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -167,6 +168,7 @@ class CommentHelper {
     required CommentType commentType,
     required Function(Comment comment, bool isReplyComment) onUpdateComment,
   }) async {
+    if (!AuthGate.check()) return;
     String description = detectableTextController.text.trim();
 
     if (description.isEmpty) {

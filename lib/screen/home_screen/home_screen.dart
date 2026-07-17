@@ -1,7 +1,10 @@
 import 'package:figma_squircle_updated/figma_squircle.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/widget/custom_divider.dart';
+import 'package:shortzz/common/widget/text_button_custom.dart';
+import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/screen/home_screen/home_screen_controller.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
@@ -29,6 +32,46 @@ class HomeScreen extends StatelessWidget {
             widget: HomeTopCenterWidget(controller: controller),
             onRefresh: controller.onRefreshPage,
           ),
+          // Guest on the Following tab: no session, nothing to fetch — show a
+          // sign-in CTA instead of the generic empty state. Starts below the
+          // top bar so the tab switcher stays reachable.
+          Obx(() {
+            final bool guestFollowing = controller.isGuest &&
+                controller.selectedReelCategory.value == TabType.following;
+            if (!guestFollowing ||
+                controller.isLoading.value ||
+                controller.reels.isNotEmpty) {
+              return const SizedBox.shrink();
+            }
+            return Positioned.fill(
+              top: AppBar().preferredSize.height * 2,
+              child: Container(
+                color: blackPure(context),
+                alignment: Alignment.center,
+                padding: const EdgeInsets.symmetric(horizontal: 40),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      LKey.logInToSeeFollowing.tr,
+                      textAlign: TextAlign.center,
+                      style: TextStyleCustom.outFitMedium500(
+                          fontSize: 17, color: whitePure(context)),
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: 200,
+                      child: TextButtonCustom(
+                          onTap: () => AuthGate.check(),
+                          title: LKey.signIn.tr,
+                          btnHeight: 46,
+                          horizontalMargin: 0),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
           Obx(
             () => GestureDetector(
               onTap: !controller.isAnimateTab.value ? null : controller.onAnimationBack,

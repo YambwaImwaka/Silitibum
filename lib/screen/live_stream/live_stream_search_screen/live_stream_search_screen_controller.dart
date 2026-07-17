@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/extensions/list_extension.dart';
 import 'package:shortzz/common/extensions/user_extension.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -113,6 +114,9 @@ class LiveStreamSearchScreenController extends BaseController {
   }
 
   void onLiveUserTap(Livestream stream) async {
+    // Joining as audience writes viewer state and opens in-stream
+    // comment/gift paths that all assume a user — one gate at the door.
+    if (!AuthGate.check()) return;
     User? myUser = SessionManager.instance.getUser();
     if (stream.hostId == myUser?.id) {
       Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
@@ -24,6 +26,8 @@ class FeedScreenController extends BaseController {
 
   FeedScreenController(this.myUser);
 
+  bool get isGuest => !SessionManager.instance.isLogin();
+
   final GlobalKey<RefreshIndicatorState> refreshKey =
       GlobalKey<RefreshIndicatorState>();
 
@@ -39,47 +43,81 @@ class FeedScreenController extends BaseController {
   }
 
   Future<void> _fetchMyUser() async {
+    if (isGuest) return;
     myUser.value = await UserService.instance.fetchUserDetails();
   }
 
   Future<void> _fetchStory({bool isEmpty = false}) async {
-    isStoriesLoading.value = true;
-    List<User> items = await PostService.instance.fetchStory();
-    if (isEmpty) {
-      stories.clear();
+    // Stories come from followings — auth-only endpoint, nothing for guests.
+    if (isGuest) {
+      if (isEmpty) stories.clear();
+      isStoriesLoading.value = false;
+      return;
     }
-    stories.addAll(items);
-    isStoriesLoading.value = false;
+    isStoriesLoading.value = true;
+    try {
+      List<User> items = await PostService.instance.fetchStory();
+      if (isEmpty) {
+        stories.clear();
+      }
+      stories.addAll(items);
+    } catch (e) {
+      Loggers.error('fetchStory failed: $e');
+    } finally {
+      isStoriesLoading.value = false;
+    }
   }
 
   Future<void> fetchDiscoverPost({bool isEmpty = false}) async {
     if (isLoading.value) return;
     isLoading.value = true;
-    List<Post> _post =
-        await PostService.instance.fetchPostsDiscover(type: PostType.posts);
-    _addDataInPostList(_post, isEmpty);
+    try {
+      List<Post> _post =
+          await PostService.instance.fetchPostsDiscover(type: PostType.posts);
+      _addDataInPostList(_post, isEmpty);
+    } catch (e) {
+      // A failed fetch must never leave the loader stuck.
+      Loggers.error('feed fetchDiscoverPost failed: $e');
+      _addDataInPostList([], isEmpty);
+    }
   }
 
   Future<void> _fetchPostsFollowing({bool isEmpty = false}) async {
+    if (isGuest) {
+      // Auth-only endpoint; the feed UI shows its empty state.
+      _addDataInPostList([], isEmpty);
+      return;
+    }
     if (isLoading.value) return;
     isLoading.value = true;
-    List<Post> _post =
-        await PostService.instance.fetchPostsFollowing(type: PostType.posts);
-    _addDataInPostList(_post, isEmpty);
+    try {
+      List<Post> _post =
+          await PostService.instance.fetchPostsFollowing(type: PostType.posts);
+      _addDataInPostList(_post, isEmpty);
+    } catch (e) {
+      Loggers.error('feed fetchPostsFollowing failed: $e');
+      _addDataInPostList([], isEmpty);
+    }
   }
 
   Future<void> _fetchPostsNearBy({bool isEmpty = false}) async {
     if (isLoading.value) return;
     isLoading.value = true;
-    Position position = await LocationService.instance
-        .getCurrentLocation(isPermissionDialogShow: true);
+    try {
+      Position position = await LocationService.instance
+          .getCurrentLocation(isPermissionDialogShow: true);
 
-    List<Post> _post = await PostService.instance.fetchPostsNearBy(
-        type: PostType.posts,
-        placeLat: position.latitude,
-        placeLon: position.longitude);
+      List<Post> _post = await PostService.instance.fetchPostsNearBy(
+          type: PostType.posts,
+          placeLat: position.latitude,
+          placeLon: position.longitude);
 
-    _addDataInPostList(_post, isEmpty);
+      _addDataInPostList(_post, isEmpty);
+    } catch (e) {
+      Loggers.error('feed fetchPostsNearBy failed: $e');
+      _addDataInPostList([], isEmpty);
+      rethrow; // onChangeCategory falls back to discover on location errors
+    }
   }
 
   _addDataInPostList(List<Post> newList, bool isEmpty) async {
@@ -122,6 +160,7 @@ class FeedScreenController extends BaseController {
   }
 
   void onCreateStory() {
+    if (!AuthGate.check()) return;
     Get.to(() => const CameraScreen(cameraType: CameraScreenType.story));
   }
 

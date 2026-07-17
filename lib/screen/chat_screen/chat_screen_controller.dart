@@ -9,6 +9,7 @@ import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/enum/chat_enum.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/extensions/user_extension.dart';
 import 'package:shortzz/common/functions/media_picker_helper.dart';
@@ -206,6 +207,7 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   }
 
   void onSendTextMessage() async {
+    if (!AuthGate.check()) return;
     String text = textController.text.trim();
     textController.clear();
     isTextEmpty.value = true;

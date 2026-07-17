@@ -1,0 +1,15 @@
+[
+    {
+        "relation": [
+            "delegate_permission/common.handle_all_urls"
+        ],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.retrytech.app.shortzz",
+            "sha256_cert_fingerprints": [
+                "E9:A7:8A:CF:77:E2:E8:45:0E:1E:62:95:66:63:D0:46:22:35:74:92:16:16:81:1D:B0:2F:BF:75:02:9A:8B:4A",
+                "84:85:E0:8B:54:B0:F7:DA:96:CF:20:DB:CE:02:44:68:C4:E3:1A:C3:D4:E2:D3:51:A3:DF:18:9E:14:41:9C:10"
+            ]
+        }
+    }
+]
