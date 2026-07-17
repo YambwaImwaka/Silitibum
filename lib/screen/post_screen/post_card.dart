@@ -14,7 +14,7 @@ import 'package:shortzz/screen/post_screen/widget/post_view_center.dart';
 import 'package:shortzz/screen/post_screen/widget/post_view_info_header.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
-class PostCard extends StatelessWidget {
+class PostCard extends StatefulWidget {
   final Post post;
   final bool shouldShowPinOption;
   final GlobalKey likeKey;
@@ -30,24 +30,57 @@ class PostCard extends StatelessWidget {
       this.isFromSinglePost = false});
 
   @override
-  Widget build(BuildContext context) {
-    PostScreenController controller;
+  State<PostCard> createState() => _PostCardState();
+}
 
+class _PostCardState extends State<PostCard> {
+  late PostScreenController controller;
+
+  Post get post => widget.post;
+  bool get shouldShowPinOption => widget.shouldShowPinOption;
+  GlobalKey get likeKey => widget.likeKey;
+  PostByIdData? get postByIdData => widget.postByIdData;
+  bool get isFromSinglePost => widget.isFromSinglePost;
+
+  @override
+  void initState() {
+    super.initState();
     if (Get.isRegistered<PostScreenController>(tag: '${post.id}')) {
       controller = Get.find<PostScreenController>(tag: '${post.id}');
       controller.isFromSinglePostScreen =
           isFromSinglePost; // Delay update until after current frame to ensure proper UI update without conflicts
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.updatePost(post);
-      });
     } else {
       controller = Get.put(PostScreenController(post.obs, isFromSinglePost),
           tag: '${post.id}');
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        controller.updatePost(post);
-      });
     }
+    controller.activeCards++;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) controller.updatePost(post);
+    });
+  }
 
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) controller.updatePost(post);
+    });
+  }
+
+  @override
+  void dispose() {
+    // Last mounted card for this post deletes the tagged controller —
+    // otherwise one controller per post ever scrolled lives for the session.
+    controller.activeCards--;
+    if (controller.activeCards <= 0 &&
+        Get.isRegistered<PostScreenController>(tag: '${widget.post.id}')) {
+      Get.delete<PostScreenController>(tag: '${widget.post.id}');
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Obx(
       () {
         Post post = controller.postData.value;

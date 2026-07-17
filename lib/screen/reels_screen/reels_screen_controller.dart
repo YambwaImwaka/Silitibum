@@ -44,19 +44,6 @@ class ReelsScreenController extends BaseController {
     this.onFetchMoreData,
     required this.reelPageType});
 
-  void controllerAlreadyInitialize({required RxList<Post> reels,
-    required RxInt position,
-    Future<void> Function()? onFetchMoreData,
-    required ReelPageType reelPageType}) {
-    print("POSITION : $position");
-    this.reels = reels;
-    this.position = position;
-    this.onFetchMoreData = onFetchMoreData;
-    this.reelPageType = reelPageType;
-    pageController = PageController(initialPage: position.value);
-    players.clear();
-  }
-
   @override
   void onInit() {
     super.onInit();
@@ -173,7 +160,8 @@ class ReelsScreenController extends BaseController {
     }
 
     /// 🔒 Mark initializing IMMEDIATELY
-    players[index] = ReelPlayerEntry(status: PlayerStatus.initializing);
+    final entry = ReelPlayerEntry(status: PlayerStatus.initializing);
+    players[index] = entry;
     try {
       late VideoPlayerController controller;
 
@@ -189,6 +177,16 @@ class ReelsScreenController extends BaseController {
       }
 
       await controller.initialize();
+
+      // While we awaited, this slot may have been disposed/removed (fast
+      // swipes, pull-to-refresh, screen close). Storing the controller now
+      // would orphan a live ExoPlayer instance — dispose it instead.
+      if (players[index] != entry || entry.status != PlayerStatus.initializing) {
+        controller.dispose();
+        Loggers.info("🗑 DISPOSED stale init $index");
+        return;
+      }
+
       controller.setLooping(true);
 
       players[index] = ReelPlayerEntry(

@@ -65,7 +65,18 @@ class _ReelPageState extends State<ReelPage> {
         reelController.notifyCommentSheet(widget.postByIdData);
       });
     }
+    reelController.activePages++;
     isPlaying.value = true;
+  }
+
+  @override
+  void dispose() {
+    reelController.activePages--;
+    if (reelController.activePages <= 0 &&
+        Get.isRegistered<ReelController>(tag: '${widget.reelData.id}')) {
+      Get.delete<ReelController>(tag: '${widget.reelData.id}');
+    }
+    super.dispose();
   }
 
   void _handleVisibilityChanged(VisibilityInfo info) {

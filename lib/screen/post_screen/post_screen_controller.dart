@@ -30,6 +30,10 @@ class PostScreenController extends BaseController {
   bool _isLikeLoading = false;
   bool _isSavedLoading = false;
 
+  /// Number of mounted PostCard widgets using this controller; the last card
+  /// to unmount deletes it (see _PostCardState.dispose).
+  int activeCards = 0;
+
   User? get myUser => SessionManager.instance.getUser();
   Function triggerLikeAnim = () {}; // 🎯 Persisted here
 
@@ -39,9 +43,9 @@ class PostScreenController extends BaseController {
   PostScreenController(this.postData, this.isFromSinglePostScreen);
 
   void updatePost(Post post) {
-    postData.update((val) {
-      val = post;
-    });
+    // NOTE: `postData.update((val) => val = post)` only reassigned the local
+    // callback variable — the Rx value never changed. Assign directly.
+    postData.value = post;
   }
 
   void onLike(Post? post) async {

@@ -1104,44 +1104,6 @@ class UserController extends Controller
             return GlobalFunction::sendDataResponse(true, 'Data Fetch Successful!', $user);
         }
     }
-    function logInFakeUser(Request $request){
-        $validator = Validator::make($request->all(), [
-            'identity' => 'required',
-            'password' => 'required',
-            'device_token' => 'required',
-            'device' => 'required',
-            'login_method' => 'required',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
-        }
-
-        $user = Users::where('identity', $request->identity)
-        ->where('password', $request->password)
-        ->where('is_dummy', 1)
-        ->first();
-
-        if ($user != null) {
-            $user->device_token = $request->device_token;
-            $user->device = $request->device;
-            $user->login_method = $request->login_method;
-            $user->save();
-
-            $token = GlobalFunction::generateUserAuthToken($user);
-
-            $user =  GlobalFunction::prepareUserFullData($user->id);
-            $user->new_register = false;
-            $user->token = $token;
-
-            $user->following_ids = GlobalFunction::fetchUserFollowingIds($user->id);
-
-            return GlobalFunction::sendDataResponse(true,'Data Fetch Successful!', $user);
-
-        } else {
-            return GlobalFunction::sendSimpleResponse(false, 'Invalid Credentials');
-        }
-    }
     function logOutUser(Request $request){
         // Validate user token and fetch user
         $token = $request->header('authtoken');
