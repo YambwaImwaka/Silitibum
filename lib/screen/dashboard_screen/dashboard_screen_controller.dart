@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -45,9 +46,12 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   RxInt unReadCount = 0.obs;
   RxInt requestUnReadCount = 0.obs;
 
-  late StreamSubscription _unReadCountSubscription;
+  StreamSubscription? _unReadCountSubscription;
+  Timer? _lastUsedAtTimer;
   late Animation<double> scaleAnimation;
   User? user = SessionManager.instance.getUser();
+
+  bool get isGuest => !SessionManager.instance.isLogin();
 
   @override
   void onInit() {
@@ -72,20 +76,24 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   @override
   void onReady() async {
     super.onReady();
-    SubscriptionManager.shared.subscriptionListener();
-
-    // Run below in parallel
+    // Session-independent setup (Live tab content works for guests too)
     _createZegoEngine();
+    updateDummyUsers();
+
+    // Everything below needs a logged-in user: Firestore listeners keyed on
+    // the user id, auth-only APIs, FCM topic subscriptions.
+    if (isGuest) return;
+
+    SubscriptionManager.shared.subscriptionListener();
     _fetchLanguageFromUser();
     _fetchUnReadCount();
     startCacheCleanupScheduler();
     _subscribeFollowUserIds();
-    updateDummyUsers();
   }
 
   void startCacheCleanupScheduler() {
     UserService.instance.updateLastUsedAt();
-    Timer.periodic(const Duration(minutes: 15), (_) {
+    _lastUsedAtTimer = Timer.periodic(const Duration(minutes: 15), (_) {
       UserService.instance.updateLastUsedAt();
     });
   }
@@ -93,11 +101,14 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   @override
   void onClose() {
     animationController.dispose();
-    _unReadCountSubscription.cancel();
+    _unReadCountSubscription?.cancel();
+    _lastUsedAtTimer?.cancel();
     super.onClose();
   }
 
   onChanged(int index) {
+    // Messages (4) and Profile (5) need a session — prompt guests to sign in.
+    if ((index == 4 || index == 5) && !AuthGate.check()) return;
     SystemChrome.setSystemUIOverlayStyle(
         SystemUiOverlayStyle(statusBarBrightness: index == 0 || index == 2 ? Brightness.dark : Brightness.light));
     if (index == 1) {

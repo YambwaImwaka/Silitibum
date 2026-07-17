@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
-import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/api_service.dart';
@@ -47,6 +46,7 @@ class UserService {
     required String identity,
     String? deviceToken,
     required LoginMethod loginMethod,
+    String? firebaseToken,
   }) async {
     UserModel model = await ApiService.instance.call(
         url: WebService.user.loginInUser,
@@ -55,7 +55,9 @@ class UserService {
           Params.identity: identity,
           Params.deviceToken: deviceToken,
           Params.device: Platform.isAndroid ? 0 : 1,
-          Params.loginMethod: loginMethod.title()
+          Params.loginMethod: loginMethod.title(),
+          // Proof of identity — verified server-side (Firebase ID token)
+          Params.firebaseToken: firebaseToken,
         },
         fromJson: UserModel.fromJson);
 
@@ -64,35 +66,6 @@ class UserService {
         SessionManager.instance.setUser(model.data);
         SessionManager.instance.setAuthToken(model.data?.token);
       });
-    }
-    return model.data;
-  }
-
-  Future<User?> logInFakeUser({
-    required String identity,
-    required String? password,
-    String? deviceToken,
-    required LoginMethod loginMethod,
-  }) async {
-    UserModel model = await ApiService.instance.call(
-        url: WebService.user.logInFakeUser,
-        param: {
-          Params.identity: identity,
-          Params.password: password,
-          Params.deviceToken: deviceToken,
-          Params.device: Platform.isAndroid ? 0 : 1,
-          Params.loginMethod: loginMethod.title()
-        },
-        fromJson: UserModel.fromJson);
-
-    if (model.status == true) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        SessionManager.instance.setUser(model.data);
-        SessionManager.instance.setAuthToken(model.data?.token);
-      });
-    } else {
-      BaseController.share.stopLoader();
-      BaseController.share.showSnackBar(model.message);
     }
     return model.data;
   }

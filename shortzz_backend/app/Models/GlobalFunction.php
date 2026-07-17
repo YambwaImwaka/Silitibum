@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
 use Google\Client;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -967,6 +970,62 @@ class GlobalFunction extends Model
         }
         $user = Users::find($userToken->user_id);
         return $user;
+    }
+
+    // For endpoints that are open to guests (no/invalid auth token): returns the
+    // real user when the token resolves, otherwise an UNSAVED sentinel with id 0.
+    // id 0 matches no rows, so is_liked / is_saved / is_following / block checks
+    // all evaluate to false without special-casing the query helpers.
+    public static function getUserOrGuest($token)
+    {
+        $user = $token ? self::getUserFromAuthToken($token) : null;
+        if ($user != null) {
+            return $user;
+        }
+        $guest = new Users;
+        $guest->id = 0;
+        $guest->is_freez = 0;
+        return $guest;
+    }
+
+    // Verifies a Firebase Auth ID token (JWT signed by Google's securetoken
+    // service) and returns its claims, or null when invalid/expired.
+    // Project: 'silitibum' — must match android/app/google-services.json.
+    public static function verifyFirebaseIdToken($idToken)
+    {
+        try {
+            $projectId = 'silitibum';
+
+            // Google rotates these signing certs; cache them for an hour.
+            $certs = Cache::remember('firebase_securetoken_certs', 3600, function () {
+                $response = Http::timeout(10)->get(
+                    'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
+                );
+                return $response->successful() ? $response->json() : null;
+            });
+            if (!is_array($certs)) {
+                Log::error('verifyFirebaseIdToken: could not fetch signing certs');
+                return null;
+            }
+
+            $keys = [];
+            foreach ($certs as $kid => $pem) {
+                $keys[$kid] = new Key($pem, 'RS256');
+            }
+
+            $claims = JWT::decode($idToken, $keys); // throws on bad signature/expiry
+
+            if (($claims->aud ?? null) !== $projectId
+                || ($claims->iss ?? null) !== 'https://securetoken.google.com/' . $projectId
+                || empty($claims->sub)) {
+                return null;
+            }
+
+            return $claims;
+        } catch (\Throwable $e) {
+            Log::error('verifyFirebaseIdToken: ' . $e->getMessage());
+            return null;
+        }
     }
 
     public static function generateRandomString($length)

@@ -26,6 +26,9 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(DashboardScreenController());
+    // Messages & Profile assume a session: preloading them as a guest starts
+    // Firestore listeners on null ids and fires auth-only API calls.
+    final bool preloadUserTabs = !controller.isGuest;
     return Scaffold(
       backgroundColor: scaffoldBackgroundColor(context),
       resizeToAvoidBottomInset: true,
@@ -40,10 +43,10 @@ class DashboardScreen extends StatelessWidget {
                   IndexedStackChild(child: FeedScreen(myUser: myUser), preload: true),
                   IndexedStackChild(child: const LiveStreamSearchScreen(), preload: true),
                   IndexedStackChild(child: const ExploreScreen(), preload: true),
-                  IndexedStackChild(child: const MessageScreen(), preload: true),
+                  IndexedStackChild(child: const MessageScreen(), preload: preloadUserTabs),
                   IndexedStackChild(
                       child: ProfileScreen(isDashBoard: true, user: myUser, isTopBarVisible: false),
-                      preload: true)
+                      preload: preloadUserTabs)
                 ],
               ),
             ),

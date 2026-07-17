@@ -14,7 +14,8 @@ class CheckHeader
 
             $apikey = $_SERVER['HTTP_APIKEY'];
 
-            if ($apikey == 'retry123') {
+            // Must match `apiKey` in the Flutter app (lib/utilities/const_res.dart)
+            if ($apikey == 'silitibum') {
                 return $next($request);
             } else {
 

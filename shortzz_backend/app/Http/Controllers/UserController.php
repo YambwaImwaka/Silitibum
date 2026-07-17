@@ -153,7 +153,7 @@ class UserController extends Controller
     }
     public function fetchUserFollowings(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -209,7 +209,7 @@ class UserController extends Controller
     }
     public function fetchUserFollowers(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -372,7 +372,7 @@ class UserController extends Controller
 
     public function fetchUserDetails(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -444,7 +444,7 @@ class UserController extends Controller
     function searchUsers(Request $request)
     {
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -1017,9 +1017,11 @@ class UserController extends Controller
 
     function logInUser(Request $request){
         $validator = Validator::make($request->all(), [
-            'fullname' => 'required',
+            // fullname: only used when creating a new account (never overwrites).
+            // device_token: nullable — devices without Play Services have no FCM token.
+            'fullname' => 'nullable',
             'identity' => 'required',
-            'device_token' => 'required',
+            'device_token' => 'nullable',
             'device' => 'required',
             'login_method' => 'required',
         ]);
@@ -1028,11 +1030,37 @@ class UserController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
+        // Identity proof: the updated app sends the signed-in user's Firebase ID
+        // token; verify it and require it to match the claimed identity. Calls
+        // without a token are only allowed while ALLOW_LEGACY_LOGIN stays true
+        // in .env — flip to false once the new app build is fully rolled out.
+        if ($request->filled('firebase_token')) {
+            $claims = GlobalFunction::verifyFirebaseIdToken($request->firebase_token);
+            if ($claims == null) {
+                return GlobalFunction::sendSimpleResponse(false, 'Identity verification failed!');
+            }
+            $identity = $request->identity;
+            $digits = preg_replace('/\D/', '', $identity);
+            $claimEmail = $claims->email ?? null;
+            $claimPhone = $claims->phone_number ?? null;
+            $matches = ($claimEmail != null && strcasecmp($claimEmail, $identity) == 0)
+                || ($claimPhone != null && preg_replace('/\D/', '', $claimPhone) == $digits)
+                // Phone accounts also carry an internal alias-email credential
+                || ($claimEmail != null && strcasecmp($claimEmail, $digits . '@phone.silitibum.com') == 0);
+            if (!$matches) {
+                return GlobalFunction::sendSimpleResponse(false, 'Identity mismatch!');
+            }
+        } else if (env('ALLOW_LEGACY_LOGIN', true) != true) {
+            return GlobalFunction::sendSimpleResponse(false, 'Identity verification required!');
+        }
+
         $user = Users::where('identity', $request->identity)->first();
 
         if ($user == null) {
             $user = new Users;
-            $user->fullname = GlobalFunction::cleanString($request->fullname);
+            $user->fullname = $request->filled('fullname')
+                ? GlobalFunction::cleanString($request->fullname)
+                : 'User';
             $user->identity = $request->identity;
             $user->device_token = $request->device_token;
             $user->device = $request->device;

@@ -46,18 +46,21 @@ Route::middleware('checkHeader')->group(function () {
 
         // Fetch
         Route::post('fetchMyBlockedUsers', [UserController::class, 'fetchMyBlockedUsers'])->middleware('authorizeUser');
-        Route::post('fetchUserDetails', [UserController::class, 'fetchUserDetails'])->middleware('authorizeUser');
+        // Guest-open: viewing a profile needs no session (controller uses getUserOrGuest)
+        Route::post('fetchUserDetails', [UserController::class, 'fetchUserDetails']);
 
         // Followers
         Route::post('followUser', [UserController::class, 'followUser'])->middleware('authorizeUser');
         Route::post('unFollowUser', [UserController::class, 'unFollowUser'])->middleware('authorizeUser');
-        Route::post('fetchUserFollowers', [UserController::class, 'fetchUserFollowers'])->middleware('authorizeUser');
-        Route::post('fetchUserFollowings', [UserController::class, 'fetchUserFollowings'])->middleware('authorizeUser');
+        // Guest-open: public follower/following lists (controller uses getUserOrGuest)
+        Route::post('fetchUserFollowers', [UserController::class, 'fetchUserFollowers']);
+        Route::post('fetchUserFollowings', [UserController::class, 'fetchUserFollowings']);
 
         Route::post('fetchMyFollowers', [UserController::class, 'fetchMyFollowers'])->middleware('authorizeUser');
         Route::post('fetchMyFollowings', [UserController::class, 'fetchMyFollowings'])->middleware('authorizeUser');
 
-        Route::post('searchUsers', [UserController::class, 'searchUsers'])->middleware('authorizeUser');
+        // Guest-open: user search (controller uses getUserOrGuest)
+        Route::post('searchUsers', [UserController::class, 'searchUsers']);
 
         // Delete My Account
         Route::post('deleteMyAccount', [UserController::class, 'deleteMyAccount'])->middleware('authorizeUser');
@@ -75,17 +78,18 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('addPost_Feed_Image', [PostsController::class, 'addPost_Feed_Image'])->middleware('authorizeUser');
         Route::post('addPost_Feed_Text', [PostsController::class, 'addPost_Feed_Text'])->middleware('authorizeUser');
 
-        // Musics
-        Route::post('serchMusic', [MusicController::class, 'serchMusic'])->middleware('authorizeUser');
-        Route::post('fetchMusicExplore', [MusicController::class, 'fetchMusicExplore'])->middleware('authorizeUser');
-        Route::post('fetchMusicByCategories', [MusicController::class, 'fetchMusicByCategories'])->middleware('authorizeUser');
+        // Musics — browse/search open to guests (controllers use getUserOrGuest)
+        Route::post('serchMusic', [MusicController::class, 'serchMusic']);
+        Route::post('fetchMusicExplore', [MusicController::class, 'fetchMusicExplore']);
+        Route::post('fetchMusicByCategories', [MusicController::class, 'fetchMusicByCategories']);
         Route::post('fetchSavedMusics', [MusicController::class, 'fetchSavedMusics'])->middleware('authorizeUser');
 
         // Like, Share, Save
         Route::post('likePost', [PostsController::class, 'likePost'])->middleware('authorizeUser');
         Route::post('disLikePost', [PostsController::class, 'disLikePost'])->middleware('authorizeUser');
-        Route::post('increaseViewsCount', [PostsController::class, 'increaseViewsCount'])->middleware('authorizeUser');
-        Route::post('increaseShareCount', [PostsController::class, 'increaseShareCount'])->middleware('authorizeUser');
+        // Guest-open: view/share counters (no user context used; guests count too)
+        Route::post('increaseViewsCount', [PostsController::class, 'increaseViewsCount']);
+        Route::post('increaseShareCount', [PostsController::class, 'increaseShareCount']);
         Route::post('savePost', [PostsController::class, 'savePost'])->middleware('authorizeUser');
         Route::post('unSavePost', [PostsController::class, 'unSavePost'])->middleware('authorizeUser');
 
@@ -107,23 +111,25 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('replyToComment', [CommentController::class, 'replyToComment'])->middleware('authorizeUser');
         Route::post('deleteCommentReply', [CommentController::class, 'deleteCommentReply'])->middleware('authorizeUser');
 
-        Route::post('fetchPostComments', [CommentController::class, 'fetchPostComments'])->middleware('authorizeUser');
-        Route::post('fetchPostCommentReplies', [CommentController::class, 'fetchPostCommentReplies'])->middleware('authorizeUser');
+        // Guest-open: reading comments (controllers use getUserOrGuest)
+        Route::post('fetchPostComments', [CommentController::class, 'fetchPostComments']);
+        Route::post('fetchPostCommentReplies', [CommentController::class, 'fetchPostCommentReplies']);
 
-        // Fetch
-        Route::post('fetchPostById', [PostsController::class, 'fetchPostById'])->middleware('authorizeUser');
-        Route::post('fetchPostsDiscover', [PostsController::class, 'fetchPostsDiscover'])->middleware('authorizeUser');
+        // Fetch — feeds/content browsing open to guests (controllers use getUserOrGuest).
+        // fetchPostsFollowing and fetchSavedPosts stay auth-only (meaningless without a session).
+        Route::post('fetchPostById', [PostsController::class, 'fetchPostById']);
+        Route::post('fetchPostsDiscover', [PostsController::class, 'fetchPostsDiscover']);
         Route::post('fetchPostsFollowing', [PostsController::class, 'fetchPostsFollowing'])->middleware('authorizeUser');
-        Route::post('fetchReelPostsByMusic', [PostsController::class, 'fetchReelPostsByMusic'])->middleware('authorizeUser');
-        Route::post('fetchPostsByHashtag', [PostsController::class, 'fetchPostsByHashtag'])->middleware('authorizeUser');
-        Route::post('fetchUserPosts', [PostsController::class, 'fetchUserPosts'])->middleware('authorizeUser');
+        Route::post('fetchReelPostsByMusic', [PostsController::class, 'fetchReelPostsByMusic']);
+        Route::post('fetchPostsByHashtag', [PostsController::class, 'fetchPostsByHashtag']);
+        Route::post('fetchUserPosts', [PostsController::class, 'fetchUserPosts']);
         Route::post('fetchSavedPosts', [PostsController::class, 'fetchSavedPosts'])->middleware('authorizeUser');
-        Route::post('fetchExplorePageData', [PostsController::class, 'fetchExplorePageData'])->middleware('authorizeUser');
-        Route::post('fetchPostsByLocation', [PostsController::class, 'fetchPostsByLocation'])->middleware('authorizeUser');
-        Route::post('fetchPostsNearBy', [PostsController::class, 'fetchPostsNearBy'])->middleware('authorizeUser');
+        Route::post('fetchExplorePageData', [PostsController::class, 'fetchExplorePageData']);
+        Route::post('fetchPostsByLocation', [PostsController::class, 'fetchPostsByLocation']);
+        Route::post('fetchPostsNearBy', [PostsController::class, 'fetchPostsNearBy']);
 
-        // Search
-        Route::post('searchPosts', [PostsController::class, 'searchPosts'])->middleware('authorizeUser');
+        // Search — open to guests
+        Route::post('searchPosts', [PostsController::class, 'searchPosts']);
         Route::post('searchHashtags', [HashtagController::class, 'searchHashtags'])->middleware('authorizeUser');
 
         // Delete Post
@@ -134,7 +140,8 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('viewStory', [StoryController::class, 'viewStory'])->middleware('authorizeUser');
         Route::post('fetchStory', [StoryController::class, 'fetchStory'])->middleware('authorizeUser');
         Route::post('deleteStory', [StoryController::class, 'deleteStory'])->middleware('authorizeUser');
-        Route::post('fetchStoryByID', [StoryController::class, 'fetchStoryByID'])->middleware('authorizeUser');
+        // Guest-open: story deep links (controller uses getUserOrGuest)
+        Route::post('fetchStoryByID', [StoryController::class, 'fetchStoryByID']);
 
 
     });

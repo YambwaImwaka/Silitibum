@@ -234,7 +234,7 @@ class CommentController extends Controller
     }
     public function fetchPostCommentReplies(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -278,7 +278,7 @@ class CommentController extends Controller
 
     public function fetchPostComments(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }

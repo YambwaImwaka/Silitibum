@@ -10,8 +10,8 @@ import 'package:shortzz/common/widget/confirmation_dialog.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/general/status_model.dart';
+import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
-import 'package:shortzz/screen/auth_screen/login_screen.dart';
 
 class SettingsScreenController extends BaseController {
   Rx<User?> myUser = Rx<User?>(null);
@@ -79,7 +79,8 @@ class SettingsScreenController extends BaseController {
             FirebaseFirestoreController.instance.deleteUser(myUser.value?.id);
             SessionManager.instance.clear();
             deleteCurrentUser();
-            Get.offAll(() => const LoginScreen());
+            // Back to splash → guest Dashboard (TikTok-style: no forced login)
+            RestartWidget.restartApp(Get.context!);
           } else {
             showSnackBar(model.message);
           }
@@ -139,8 +140,14 @@ class SettingsScreenController extends BaseController {
           StatusModel result = await UserService.instance.logoutUser();
           if (result.status == true) {
             GoogleSignIn.instance.signOut();
+            try {
+              await auth.FirebaseAuth.instance.signOut();
+            } catch (e) {
+              Loggers.error('Firebase signOut failed: $e');
+            }
             SessionManager.instance.clearSomeKey();
-            Get.offAll(() => const LoginScreen());
+            // Back to splash → guest Dashboard (TikTok-style: no forced login)
+            RestartWidget.restartApp(Get.context!);
           } else {
             showSnackBar(result.message);
           }

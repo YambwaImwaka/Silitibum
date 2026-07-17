@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -18,6 +19,7 @@ class FollowController extends BaseController {
   }
 
   Future<User?> followUnFollowUser() async {
+    if (!AuthGate.check()) return null;
     int userId = user.value?.id ?? -1;
     bool isFollowing = user.value?.isFollowing ?? false;
     if (userId == -1) {

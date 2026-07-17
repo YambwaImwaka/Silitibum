@@ -589,4 +589,33 @@ class LKey {
       "Your Profile is already in use for Dummy Live from admin panel. So you can't start livestreaming now.";
   static const String shareProfile = "Share Profile";
   static const String noPost = "No Post";
+
+  // --- Guest mode & secure auth (values are the English fallback text) ---
+  static const String signInToInteract =
+      "Sign in to like, comment, follow and more.";
+  static const String usePhoneOrEmail = "Use phone or email";
+  static const String logInToSeeFollowing =
+      "Log in to see posts from people you follow.";
+  static const String phoneEmpty = "Please enter your phone number.";
+  static const String selectCountryCode = "Please select your country code.";
+  static const String noAccountFoundCreateOne =
+      "No account found. Create one first!";
+  static const String accountExistsLogin =
+      "This account already exists. Please log in instead.";
+  static const String verificationEmailSentTo =
+      "A verification email has been sent. Please check your inbox.";
+  static const String verifyEmailReminder =
+      "Your email isn't verified yet. Check your inbox for the link.";
+  static const String resend = "Resend";
+  static const String enterOtpCode = "Enter the verification code";
+  static const String otpSentTo = "We sent a code to";
+  static const String resendCode = "Resend code";
+  static const String invalidOtp = "Invalid code. Please try again.";
+  static const String verify = "Verify";
+  static const String newPassword = "New Password";
+  static const String retry = "Retry";
+  static const String resetPasswordViaOtp =
+      "We'll send a code to your number to reset your password.";
+  static const String passwordUpdated =
+      "Your password has been updated. You are signed in.";
 }

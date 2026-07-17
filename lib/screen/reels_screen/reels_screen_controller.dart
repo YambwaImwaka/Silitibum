@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -290,6 +291,7 @@ class ReelsScreenController extends BaseController {
   }
 
   void onReportTap() {
+    if (!AuthGate.check()) return;
     Get.bottomSheet(ReportSheet(reportType: ReportType.post, id: reels[position.value].id?.toInt()),
         isScrollControlled: true);
   }
@@ -308,6 +310,7 @@ class ReelsScreenController extends BaseController {
   }
 
   void openPostOptionsSheet() {
+    if (!AuthGate.check()) return;
     const tag = ProfileScreenController.tag;
 
     final controller = Get.isRegistered<ProfileScreenController>(tag: tag)

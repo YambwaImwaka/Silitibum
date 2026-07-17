@@ -34,7 +34,16 @@ class ApiService {
 
   final Map<CancelToken, http.Client> _activeClients = {};
 
-  var header = {Params.apikey: apiKey};
+  // Headers are built per call: a shared mutable map leaks the AUTHTOKEN of a
+  // previous call into `cancelAuthToken` requests and races across concurrent
+  // calls. Guests (no session) send the apikey only.
+  Map<String, String> _buildHeaders({bool includeAuth = true}) {
+    final headers = {Params.apikey: apiKey};
+    if (includeAuth && SessionManager.instance.isLogin()) {
+      headers[Params.authToken] = SessionManager.instance.getAuthToken();
+    }
+    return headers;
+  }
 
   Future<T> call<T>({
     required String url,
@@ -45,7 +54,7 @@ class ApiService {
     Function()? onError,
   }) async {
     final client = http.Client();
-    if (cancelToken != null && cancelToken.isCancelled) {
+    if (cancelToken != null) {
       _activeClients[cancelToken] = client;
     }
 
@@ -56,15 +65,13 @@ class ApiService {
       params[key] = "$value";
     });
 
-    if (!cancelAuthToken) {
-      header[Params.authToken] = SessionManager.instance.getAuthToken();
-    }
+    final headers = _buildHeaders(includeAuth: !cancelAuthToken);
     Loggers.info("URL: $url");
-    Loggers.info("header: $header");
+    Loggers.info("header: $headers");
     Loggers.info("Parameters: ${params.isEmpty ? "Empty" : params}");
     try {
       final response =
-          await client.post(Uri.parse(url), headers: header, body: params);
+          await client.post(Uri.parse(url), headers: headers, body: params);
       Loggers.success(response.statusCode);
       if (cancelToken?.isCancelled ?? false) {
         if (kDebugMode) {
@@ -102,10 +109,14 @@ class ApiService {
         return decodedResponse as T;
       } else if (response.statusCode == 401) {
         Loggers.error('Unauthorized Error 401: ${response.statusCode}');
-        DebounceAction.shared.call(() {
-          Get.offAll(
-            () => const SessionExpiredScreen(type: SessionType.unauthorized));
-        });
+        // Only a logged-in user has a session that can expire. A guest hitting
+        // an auth-only endpoint just gets the error; callers show empty states.
+        if (SessionManager.instance.isLogin()) {
+          DebounceAction.shared.call(() {
+            Get.offAll(() =>
+                const SessionExpiredScreen(type: SessionType.unauthorized));
+          });
+        }
         throw Exception("Unauthorized Error: ${response.statusCode}");
       } else if (response.statusCode == 404) {
         Loggers.error('Please check baseURL in const.dart file');
@@ -185,7 +196,9 @@ class ApiService {
     });
 
     request.fields.addAll(params);
-    request.headers.addAll(header);
+    // Uploads are authenticated actions; without this the multipart path only
+    // worked because call() used to leak the token into a shared header map.
+    request.headers.addAll(_buildHeaders());
 
     filesMap.forEach((keyName, files) {
       for (var xFile in files) {

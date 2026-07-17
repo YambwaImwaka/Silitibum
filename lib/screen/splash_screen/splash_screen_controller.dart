@@ -15,7 +15,6 @@ import 'package:shortzz/common/widget/no_internet_sheet.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/model/general/settings_model.dart';
-import 'package:shortzz/screen/auth_screen/login_screen.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
 import 'package:shortzz/screen/on_boarding_screen/on_boarding_screen.dart';
 import 'package:shortzz/screen/select_language_screen/select_language_screen.dart';
@@ -24,6 +23,7 @@ import 'package:shortzz/utilities/app_res.dart';
 class SplashScreenController extends BaseController {
   late StreamSubscription _subscription;
   bool isOnline = true;
+  bool _isNoInternetSheetOpen = false;
 
   @override
   void onReady() {
@@ -43,9 +43,16 @@ class SplashScreenController extends BaseController {
     _subscription = NetworkHelper().onConnectionChange.listen((status) {
       isOnline = status;
       if (isOnline) {
-        Get.back();
-      } else {
-        Get.to(() => const NoInternetSheet(), transition: Transition.downToUp);
+        // Only pop if WE pushed the sheet — a blind Get.back() here could
+        // dismiss an unrelated screen on a spurious reconnect event.
+        if (_isNoInternetSheetOpen) {
+          _isNoInternetSheetOpen = false;
+          Get.back();
+        }
+      } else if (!_isNoInternetSheetOpen) {
+        _isNoInternetSheetOpen = true;
+        Get.to(() => const NoInternetSheet(), transition: Transition.downToUp)
+            ?.then((_) => _isNoInternetSheetOpen = false);
       }
     });
   }

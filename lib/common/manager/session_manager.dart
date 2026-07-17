@@ -15,7 +15,6 @@ class SessionManager {
   SessionManager() {
     listenNotifyCount();
     listenModerator();
-    listenSubscription();
   }
 
   void setAuthToken(Token? token) {
@@ -62,14 +61,6 @@ class SessionManager {
 
   void listenModerator() {
     isModerator.value = getUser()?.isModerator ?? 0;
-    storage.listenKey(SessionKeys.user, (value) {
-      User? user = value as User?;
-      isModerator.value = user?.isModerator ?? 0;
-    });
-  }
-
-  void listenSubscription() {
-    isModerator.value = getUser()?.isVerify ?? 0;
     storage.listenKey(SessionKeys.user, (value) {
       User? user = value as User?;
       isModerator.value = user?.isModerator ?? 0;
@@ -127,7 +118,10 @@ class SessionManager {
 
   void setLang(String langCode) {
     storage.write(SessionKeys.lang, langCode);
-    UserService.instance.updateUserDetails(appLanguage: langCode);
+    // Guests have no session — syncing the language to the backend would 401.
+    if (isLogin()) {
+      UserService.instance.updateUserDetails(appLanguage: langCode);
+    }
   }
 
   String getLang() {
@@ -160,7 +154,7 @@ class SessionManager {
   }
 
   void setLogin(bool isLog) {
-    storage.write(SessionKeys.isLogin, true);
+    storage.write(SessionKeys.isLogin, isLog);
   }
 
   bool get shouldOpenEULASheet {

@@ -38,6 +38,8 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
 
   Rx<User?> get myUser => Rx(SessionManager.instance.getUser());
 
+  bool get isGuest => !SessionManager.instance.isLogin();
+
   @override
   void onInit() {
     controller = AnimationController(duration: const Duration(milliseconds: 250), vsync: this);
@@ -136,7 +138,10 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
         try {
           await _fetchPostsNearBy(reset);
         } catch (e) {
+          // No location permission / lookup failed: fall back to discover
+          // and actually load it instead of showing an empty nearby feed.
           selectedReelCategory.value = TabType.discover;
+          await fetchDiscoverPost(reset);
         }
         break;
     }
@@ -167,23 +172,44 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
 
   Future<void> fetchDiscoverPost(bool resetData) async {
     isLoading.value = true;
-    List<Post> newPosts = await PostService.instance.fetchPostsDiscover(type: PostType.reels, cancelToken: token);
-    addResponseData(newPosts, resetData);
+    try {
+      List<Post> newPosts = await PostService.instance.fetchPostsDiscover(type: PostType.reels, cancelToken: token);
+      addResponseData(newPosts, resetData);
+    } catch (e) {
+      // A failed fetch must never leave the shimmer running forever.
+      Loggers.error('fetchDiscoverPost failed: $e');
+      addResponseData([], resetData);
+    }
   }
 
   Future<void> _fetchFollowingPost(bool resetData) async {
+    // Guests follow nobody — the endpoint is auth-only; show the sign-in state.
+    if (isGuest) {
+      addResponseData([], resetData);
+      return;
+    }
     isLoading.value = true;
-    List<Post> newPosts = await PostService.instance.fetchPostsFollowing(type: PostType.reels, cancelToken: token);
-
-    addResponseData(newPosts, resetData);
+    try {
+      List<Post> newPosts = await PostService.instance.fetchPostsFollowing(type: PostType.reels, cancelToken: token);
+      addResponseData(newPosts, resetData);
+    } catch (e) {
+      Loggers.error('fetchFollowingPost failed: $e');
+      addResponseData([], resetData);
+    }
   }
 
   Future<void> _fetchPostsNearBy(bool resetData) async {
     isLoading.value = true;
-    Position position = await LocationService.instance.getCurrentLocation(isPermissionDialogShow: true);
-    List<Post> newPosts = await PostService.instance.fetchPostsNearBy(
-        type: PostType.reels, placeLat: position.latitude, placeLon: position.longitude, cancelToken: token);
-    addResponseData(newPosts, resetData);
+    try {
+      Position position = await LocationService.instance.getCurrentLocation(isPermissionDialogShow: true);
+      List<Post> newPosts = await PostService.instance.fetchPostsNearBy(
+          type: PostType.reels, placeLat: position.latitude, placeLon: position.longitude, cancelToken: token);
+      addResponseData(newPosts, resetData);
+    } catch (e) {
+      Loggers.error('fetchPostsNearBy failed: $e');
+      addResponseData([], resetData);
+      rethrow; // onRefreshPage falls back to the discover tab on location errors
+    }
   }
 
   void addResponseData(List<Post> newPosts, bool resetData) {
@@ -202,6 +228,9 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
   }
 
   Future<void> _fetchLocation() async {
+    // Only syncs the region to the user's profile — meaningless (and 401) for guests.
+    if (isGuest) return;
+
     PlaceDetail? detail;
     try {
       detail = await CommonService.instance.getIPPlaceDetail();

@@ -516,7 +516,7 @@ class PostsController extends Controller
 
     public function searchPosts(Request $request){
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -605,7 +605,7 @@ class PostsController extends Controller
     public function fetchUserPosts(Request $request){
 
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -653,7 +653,7 @@ class PostsController extends Controller
     public function fetchPostsByHashtag(Request $request){
 
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -703,7 +703,7 @@ class PostsController extends Controller
     public function fetchReelPostsByMusic(Request $request){
 
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -744,7 +744,7 @@ class PostsController extends Controller
     public function fetchExplorePageData(Request $request){
 
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -782,7 +782,7 @@ class PostsController extends Controller
     public function fetchPostsDiscover(Request $request){
 
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
@@ -816,7 +816,7 @@ class PostsController extends Controller
     public function fetchPostsNearBy(Request $request)
         {
             $token = $request->header('authtoken');
-            $user = GlobalFunction::getUserFromAuthToken($token);
+            $user = GlobalFunction::getUserOrGuest($token);
 
             if ($user->is_freez == 1) {
                 return ['status' => false, 'message' => "this user is freezed!"];
@@ -864,7 +864,7 @@ class PostsController extends Controller
     public function fetchPostsByLocation(Request $request)
         {
             $token = $request->header('authtoken');
-            $user = GlobalFunction::getUserFromAuthToken($token);
+            $user = GlobalFunction::getUserOrGuest($token);
 
             if ($user->is_freez == 1) {
                 return ['status' => false, 'message' => "this user is freezed!"];
@@ -1252,7 +1252,7 @@ class PostsController extends Controller
 
         // Validate user token and fetch user
         $token = $request->header('authtoken');
-        $user = GlobalFunction::getUserFromAuthToken($token);
+        $user = GlobalFunction::getUserOrGuest($token);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
