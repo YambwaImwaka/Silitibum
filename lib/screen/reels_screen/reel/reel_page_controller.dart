@@ -31,6 +31,11 @@ class ReelController extends BaseController {
   bool isLikeLoading = false;
   bool isSavedLoading = false;
 
+  /// Number of mounted ReelPage widgets using this controller. The last page
+  /// to unmount deletes the controller — without this, one tagged controller
+  /// per reel ever scrolled accumulates for the whole session.
+  int activePages = 0;
+
   User? get myUser => SessionManager.instance.getUser();
   Timer? _debounce;
   final Function(Post reelData) onUpdateReelData;

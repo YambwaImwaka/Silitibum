@@ -181,15 +181,21 @@ class OtpVerificationController extends BaseController {
       // navigates (Get.offAll disposes this screen).
       await onVerified(userCred);
     } on FirebaseAuthException catch (e) {
+      // Leave the screen usable: allow another Verify attempt and an
+      // immediate resend instead of silently ignoring further taps.
+      _completed = false;
+      secondsLeft.value = 0;
       stopLoader();
       Loggers.error('OTP sign-in failed: ${e.code} ${e.message}');
       showSnackBar(e.code == 'invalid-verification-code'
           ? LKey.invalidOtp.tr
           : e.message);
     } catch (e) {
+      _completed = false;
+      secondsLeft.value = 0;
       stopLoader();
       Loggers.error('OTP sign-in failed: $e');
-      showSnackBar(LKey.invalidOtp.tr);
+      showSnackBar(LKey.somethingWentWrong.tr);
     }
   }
 

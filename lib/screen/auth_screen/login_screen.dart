@@ -328,7 +328,9 @@ class PhoneForgotPasswordSheet extends StatelessWidget {
                     const SizedBox(height: 10),
                     TextButtonCustom(
                         onTap: () {
-                          Get.back();
+                          // Keep the sheet open: validation errors surface as
+                          // snackbars above it; on success the OTP screen is
+                          // pushed on top and Get.offAll cleans up after.
                           controller.onPhoneForgotPassword();
                         },
                         title: LKey.forgetPassword.tr,

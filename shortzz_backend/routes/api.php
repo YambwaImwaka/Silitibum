@@ -31,7 +31,6 @@ Route::middleware('checkHeader')->group(function () {
     // Users
     Route::prefix('user')->group(function () {
         Route::post('logInUser', [UserController::class, 'logInUser']);
-        Route::post('logInFakeUser', [UserController::class, 'logInFakeUser']);
         Route::post('logOutUser', [UserController::class, 'logOutUser']);
         Route::post('updateUserDetails', [UserController::class, 'updateUserDetails'])->middleware('authorizeUser');
         Route::post('addUserLink', [UserController::class, 'addUserLink'])->middleware('authorizeUser');
@@ -195,4 +194,7 @@ Route::prefix('cron')->group(function () {
     // Don't use below function on your live environment, This will delete data from the platform. For Author only
     Route::get('cleanDemoAppData', [CronsController::class, 'cleanDemoAppData']);
 });
+
+// Comment below route once the reset process is finished
+// Route::get('resetAdminPanelPassword', [SettingsController::class, 'resetAdminPanelPassword']);
 

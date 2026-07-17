@@ -437,12 +437,22 @@ class AuthScreenController extends BaseController {
       Loggers.error('getIdToken failed: $e');
     }
 
-    user.User? userData = await UserService.instance.logInUser(
-        identity: identity,
-        loginMethod: loginMethod,
-        deviceToken: deviceToken,
-        fullName: fullname,
-        firebaseToken: firebaseIdToken);
+    // A thrown network/server error here used to escape every auth flow and
+    // leave the loader dialog up forever — the app looked frozen.
+    user.User? userData;
+    try {
+      userData = await UserService.instance.logInUser(
+          identity: identity,
+          loginMethod: loginMethod,
+          deviceToken: deviceToken,
+          fullName: fullname,
+          firebaseToken: firebaseIdToken);
+    } catch (e) {
+      Loggers.error('logInUser failed: $e');
+      stopLoader();
+      showSnackBar(LKey.somethingWentWrong.tr);
+      return null;
+    }
 
     Setting? setting = SessionManager.instance.getSettings();
     if (userData?.isDummy == 0 &&
