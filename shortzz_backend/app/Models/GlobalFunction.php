@@ -674,22 +674,72 @@ class GlobalFunction extends Model
         GlobalFunction::settleUserTotalPostLikesCount($user->id);
     }
 
+    // Batched: the old version ran ~6 queries PER POST (likes/saves/follow
+    // exists() checks, mentioned users, author re-fetch) — a 20-post page cost
+    // 100+ queries. This version answers the whole page in at most 5 queries
+    // while returning byte-identical data to the app.
     public static function processPostsListData($posts, $user)
     {
-        $new_post_list = [];
+        if (count($posts) == 0) {
+            return [];
+        }
 
+        $postIds = collect($posts)->pluck('id')->all();
+        $authorIds = collect($posts)->pluck('user_id')->unique()->all();
+
+        // Viewer context in 3 queries (guest sentinel id=0 skips them: every
+        // flag is false for guests, same as the old per-post lookups).
+        $likedPostIds = [];
+        $savedPostIds = [];
+        $followingAuthorIds = [];
+        if ($user->id) {
+            $likedPostIds = array_flip(PostLikes::where('user_id', $user->id)->whereIn('post_id', $postIds)->pluck('post_id')->all());
+            $savedPostIds = array_flip(PostSaves::where('user_id', $user->id)->whereIn('post_id', $postIds)->pluck('post_id')->all());
+            $followingAuthorIds = array_flip(Followers::where('from_user_id', $user->id)->whereIn('to_user_id', $authorIds)->pluck('to_user_id')->all());
+        }
+
+        // All mentioned users across the page in one query.
+        $mentionedIdsByPost = [];
+        $allMentionedIds = [];
         foreach ($posts as $post) {
-            $post->is_liked = PostLikes::where('post_id', $post->id)->where('user_id', $user->id)->exists();
-            $post->is_saved = PostSaves::where('post_id', $post->id)->where('user_id', $user->id)->exists();
-            $post->user->is_following = Followers::where('from_user_id', $user->id)->where('to_user_id', $post->user_id)->exists();
-            $post->mentioned_users = Users::whereIn('id', explode(',', $post->mentioned_user_ids))
+            $ids = $post->mentioned_user_ids ? array_filter(explode(',', $post->mentioned_user_ids)) : [];
+            $mentionedIdsByPost[$post->id] = $ids;
+            foreach ($ids as $id) {
+                $allMentionedIds[] = $id;
+            }
+        }
+        $mentionedUsersById = collect();
+        if (count($allMentionedIds) > 0) {
+            $mentionedUsersById = Users::whereIn('id', array_unique($allMentionedIds))
                 ->select(explode(',', Constants::userPublicFields))
-                ->get();
+                ->get()
+                ->keyBy('id');
+        }
+
+        // The eager-loaded post->user only carries public fields, so fetch
+        // who_can_view_post for all authors in one query.
+        $whoCanViewByAuthor = Users::whereIn('id', $authorIds)->pluck('who_can_view_post', 'id');
+
+        $new_post_list = [];
+        foreach ($posts as $post) {
+            $post->is_liked = isset($likedPostIds[$post->id]);
+            $post->is_saved = isset($savedPostIds[$post->id]);
+            if ($post->user != null) {
+                $post->user->is_following = isset($followingAuthorIds[$post->user_id]);
+            }
+
+            $mentionedUsers = [];
+            foreach ($mentionedIdsByPost[$post->id] as $id) {
+                $mUser = $mentionedUsersById->get((int) $id);
+                if ($mUser != null) {
+                    $mentionedUsers[] = $mUser;
+                }
+            }
+            $post->mentioned_users = collect($mentionedUsers);
+
             // Filter of who can view post
-            $postUser = Users::find($post->user_id);
-            if ($postUser->who_can_view_post == 1) {
-                $follow = Followers::where('from_user_id', $user->id)->where('to_user_id', $postUser->id)->first();
-                if ($follow != null || $post->user_id == $user->id) {
+            if (($whoCanViewByAuthor[$post->user_id] ?? 0) == 1) {
+                if (isset($followingAuthorIds[$post->user_id]) || $post->user_id == $user->id) {
                     array_push($new_post_list, $post);
                 }
             } else {
@@ -723,7 +773,8 @@ class GlobalFunction extends Model
     {
         $hashtag = Hashtags::find($hashtagId);
         $hashtagText = $hashtag->hashtag;
-        $hashtag->post_count = Posts::whereRaw("FIND_IN_SET('$hashtagText',hashtags)")->count();
+        // Bound parameter — interpolating the tag allowed SQL injection.
+        $hashtag->post_count = Posts::whereRaw("FIND_IN_SET(?,hashtags)", [$hashtagText])->count();
         $hashtag->save();
     }
     public static function settleSoundPostCounts($soundId)

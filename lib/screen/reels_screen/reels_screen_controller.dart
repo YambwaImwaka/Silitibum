@@ -86,11 +86,11 @@ class ReelsScreenController extends BaseController {
   }
 
   Future<void> _fetchMoreData() async {
+    // Kick off the next page immediately — the old 1s artificial delay meant
+    // fast swipers hit the end of the list and stared at a spinner.
     if (position >= reels.length - 3) {
-      Future.delayed(const Duration(seconds: 1), () async {
-        await onFetchMoreData?.call().then((value) {
-          _initializeControllerAtIndex(position.value + 1);
-        });
+      await onFetchMoreData?.call().then((value) {
+        _initializeControllerAtIndex(position.value + 1);
       });
     }
   }

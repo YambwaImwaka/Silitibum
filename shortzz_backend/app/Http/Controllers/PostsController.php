@@ -56,7 +56,8 @@ class PostsController extends Controller
     {
         $hashtag = $request->hashtag;
         $query = Posts::query();
-        $query->whereRaw("FIND_IN_SET('$hashtag',hashtags)");
+        // Bound parameter — interpolating the tag allowed SQL injection.
+        $query->whereRaw("FIND_IN_SET(?,hashtags)", [$hashtag]);
         $totalData = $query->count();
 
         $columns = ['id'];
@@ -677,7 +678,8 @@ class PostsController extends Controller
             ->whereNotIn('user_id', $blockedUserIds)
              ->with(Constants::postsWithArray)
             ->whereIn('post_type', explode(',',$request->types))
-            ->whereRaw("FIND_IN_SET('$hashtag',hashtags)")
+            // Bound parameter — interpolating the tag allowed SQL injection.
+            ->whereRaw("FIND_IN_SET(?,hashtags)", [$hashtag])
             ->orderBy('id', 'DESC')
             ->limit($request->limit);
 
@@ -689,10 +691,16 @@ class PostsController extends Controller
 
         $postList = GlobalFunction::processPostsListData($posts, $user);
 
+        // Read path only: the old code recomputed and SAVED post_count on every
+        // fetch (an unindexable full-table COUNT plus a write, per request).
+        // post_count is already maintained on post create/delete.
         $hashtag = Hashtags::where('hashtag', $request->hashtag)->first();
-        $hashtagText = $hashtag->hashtag;
-        $hashtag->post_count = Posts::whereRaw("FIND_IN_SET('$hashtagText',hashtags)")->count();
-        $hashtag->save();
+        if ($hashtag == null) {
+            // Unknown tag: return an empty, unsaved row instead of a 500.
+            $hashtag = new Hashtags();
+            $hashtag->hashtag = $request->hashtag;
+            $hashtag->post_count = 0;
+        }
 
         $data['hashtag'] = $hashtag;
         $data['posts'] = $postList;
@@ -751,9 +759,13 @@ class PostsController extends Controller
 
        $blockedUserIds = GlobalFunction::getUsersBlockedUsersIdsArray($user->id);
 
-       $hashtags = Hashtags::where('post_count','>=',1)->orderBy('post_count','DESC')->get();
+       // Caps: this endpoint used to load EVERY hashtag row and then run a
+       // separate 6-post query for EVERY hashtag with >=4 posts — response
+       // time and payload grew without bound as content grows. The app's
+       // explore page only ever shows the top of these lists.
+       $hashtags = Hashtags::where('post_count','>=',1)->orderBy('post_count','DESC')->limit(50)->get();
 
-       $highPostHashtags = Hashtags::where('post_count','>=',4)->inRandomOrder()->get();
+       $highPostHashtags = Hashtags::where('post_count','>=',4)->inRandomOrder()->limit(15)->get();
 
        foreach($highPostHashtags as $singleHashtag){
 
@@ -764,7 +776,8 @@ class PostsController extends Controller
             ->whereNotIn('user_id', $blockedUserIds)
              ->with(Constants::postsWithArray)
             ->whereIn('post_type', [Constants::postTypeImage,Constants::postTypeReel,Constants::postTypeVideo])
-            ->whereRaw("FIND_IN_SET('$hashtag',hashtags)")
+            // Bound parameter — interpolating the tag allowed SQL injection.
+            ->whereRaw("FIND_IN_SET(?,hashtags)", [$hashtag])
             ->inRandomOrder()
             ->limit(6)
             ->get();
@@ -798,14 +811,22 @@ class PostsController extends Controller
 
        $blockedUserIds = GlobalFunction::getUsersBlockedUsersIdsArray($user->id);
 
-        $posts = Posts::inRandomOrder()
-            ->whereHas('user', function ($query) {
+        // Two-phase random pick: ORDER BY RAND() over full rows + eager loads
+        // shuffled every column of every matching post per request. Shuffling
+        // just the ids first is far cheaper; the second query loads only the
+        // selected page with its relations.
+        $randomIds = Posts::whereHas('user', function ($query) {
                 $query->Where('is_freez', 0);
             })
-            ->with(Constants::postsWithArray)
             ->whereNotIn('user_id', $blockedUserIds)
             ->whereIn('post_type', explode(',',$request->types))
+            ->inRandomOrder()
             ->limit($request->limit)
+            ->pluck('id');
+
+        $posts = Posts::with(Constants::postsWithArray)
+            ->whereIn('id', $randomIds)
+            ->inRandomOrder()
             ->get();
 
             $postList = GlobalFunction::processPostsListData($posts, $user);

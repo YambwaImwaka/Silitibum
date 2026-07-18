@@ -32,7 +32,16 @@ class ApiService {
 
   static final ApiService instance = ApiService._();
 
-  final Map<CancelToken, http.Client> _activeClients = {};
+  // One persistent client for all requests: reuses TCP+TLS connections
+  // (keep-alive) instead of paying a fresh handshake per API call. Note that
+  // CancelToken.cancel() only marks the result as ignorable — it never closed
+  // the socket mid-flight even before this change — so sharing the client
+  // does not alter cancellation behavior.
+  static final http.Client _sharedClient = http.Client();
+
+  // Fail fast instead of letting a request hang forever on a dead connection;
+  // callers already treat exceptions as network failures.
+  static const Duration _requestTimeout = Duration(seconds: 30);
 
   // Headers are built per call: a shared mutable map leaks the AUTHTOKEN of a
   // previous call into `cancelAuthToken` requests and races across concurrent
@@ -53,11 +62,6 @@ class ApiService {
     T Function(Map<String, dynamic> json)? fromJson,
     Function()? onError,
   }) async {
-    final client = http.Client();
-    if (cancelToken != null) {
-      _activeClients[cancelToken] = client;
-    }
-
     Map<String, String> params = {};
     param?.removeWhere(
         (key, value) => value == null || value == 'null' || value == '');
@@ -70,8 +74,9 @@ class ApiService {
     Loggers.info("header: $headers");
     Loggers.info("Parameters: ${params.isEmpty ? "Empty" : params}");
     try {
-      final response =
-          await client.post(Uri.parse(url), headers: headers, body: params);
+      final response = await _sharedClient
+          .post(Uri.parse(url), headers: headers, body: params)
+          .timeout(_requestTimeout);
       Loggers.success(response.statusCode);
       if (cancelToken?.isCancelled ?? false) {
         if (kDebugMode) {
@@ -97,8 +102,12 @@ class ApiService {
           onError?.call();
         }
 
-        var prettyString = const JsonEncoder.withIndent('  ').convert(decodedResponse);
-        Loggers.info(prettyString);
+        if (kDebugMode) {
+          // Re-encoding the whole response is expensive; debug builds only.
+          var prettyString =
+              const JsonEncoder.withIndent('  ').convert(decodedResponse);
+          Loggers.info(prettyString);
+        }
 
         // Use the provided `fromJson` function to parse the response
         if (fromJson != null) {
@@ -129,6 +138,9 @@ class ApiService {
         throw Exception(
             "HTTP Error: ${response.statusCode} - ${response.reasonPhrase}");
       }
+    } on TimeoutException {
+      Loggers.error("Request timed out: $url");
+      throw Exception('Request timed out');
     } on HttpException {
       throw Exception('Could not connect to the server');
     } on FormatException catch (e) {
@@ -138,8 +150,6 @@ class ApiService {
     } on Exception catch (e) {
       Loggers.error("Unexpected error : $e");
       rethrow;
-    } finally {
-      _cleanupClient(cancelToken);
     }
   }
 
@@ -162,7 +172,8 @@ class ApiService {
   }
 
   Future<T> callGet<T>({required String url}) async {
-    http.Response response = await http.get(Uri.parse(url));
+    http.Response response =
+        await _sharedClient.get(Uri.parse(url)).timeout(_requestTimeout);
     return jsonDecode(response.body);
   }
 
@@ -174,11 +185,6 @@ class ApiService {
     CancelToken? cancelToken,
     T Function(Map<String, dynamic> json)? fromJson,
   }) async {
-    final client = http.Client();
-    if (cancelToken != null) {
-      _activeClients[cancelToken] = client;
-    }
-
     final request = MultipartRequest(
       'POST',
       Uri.parse(url),
@@ -216,42 +222,30 @@ class ApiService {
     Loggers.info("FIELDS : ${request.fields}");
     Loggers.info("FILES : ${request.files.map((e) => e)}");
 
-    try {
-      final responseStream = await client.send(request);
+    // No timeout here: large uploads legitimately take longer than any fixed
+    // request timeout; progress callbacks give the UI liveness instead.
+    final responseStream = await _sharedClient.send(request);
 
-      if (cancelToken?.isCancelled ?? false) {
-        if (kDebugMode) {
-          Loggers.error("Request cancelled: $url");
-        }
-        throw Exception('Request was cancelled');
-      }
-
-      final responseStr = await responseStream.stream.bytesToString();
-      final decodedResponse = jsonDecode(responseStr) as Map<String, dynamic>;
-
+    if (cancelToken?.isCancelled ?? false) {
       if (kDebugMode) {
-        // Loggers.info(responseStr);
+        Loggers.error("Request cancelled: $url");
       }
-      if (decodedResponse['status'] == false) {
-        Loggers.error(decodedResponse['message']);
-      }
-      // Use the provided `fromJson` function to parse the response
-      if (fromJson != null) {
-        return fromJson(decodedResponse);
-      }
-
-      // If no `fromJson` is provided, return the raw response
-      return decodedResponse as T;
-    } finally {
-      _cleanupClient(cancelToken);
+      throw Exception('Request was cancelled');
     }
-  }
 
-  void _cleanupClient(CancelToken? cancelToken) {
-    if (cancelToken != null) {
-      _activeClients[cancelToken]?.close();
-      _activeClients.remove(cancelToken);
+    final responseStr = await responseStream.stream.bytesToString();
+    final decodedResponse = jsonDecode(responseStr) as Map<String, dynamic>;
+
+    if (decodedResponse['status'] == false) {
+      Loggers.error(decodedResponse['message']);
     }
+    // Use the provided `fromJson` function to parse the response
+    if (fromJson != null) {
+      return fromJson(decodedResponse);
+    }
+
+    // If no `fromJson` is provided, return the raw response
+    return decodedResponse as T;
   }
 
   Future<void> useAndDeleteFile(File file) async {
