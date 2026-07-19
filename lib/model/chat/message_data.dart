@@ -1,10 +1,14 @@
 import 'package:get/get.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 
+/// A chat message (MySQL-backed). [id] is the server auto-increment id;
+/// optimistic local messages use a negative temp id until the server row
+/// replaces them. [createdAt] is epoch milliseconds.
 class MessageData {
   int? id;
-  int? userId;
+  int? threadId;
+  int? userId; // sender id
   MessageType? messageType;
   String? textMessage;
   String? imageMessage;
@@ -13,13 +17,14 @@ class MessageData {
   String? postMessage;
   String? storyReplyMessage;
   String? conversationId;
-  bool? iBlocked;
-  bool? iAmBlocked;
-  List<int>? noDeleteIds;
+  bool? isUnsent;
+  int? createdAt;
   String? waveData;
 
-  MessageData({this.userId,
+  MessageData(
+      {this.userId,
       this.id,
+      this.threadId,
       this.messageType,
       this.textMessage,
       this.imageMessage,
@@ -28,37 +33,31 @@ class MessageData {
       this.postMessage,
       this.storyReplyMessage,
       this.conversationId,
-      this.iBlocked,
-      this.iAmBlocked,
-      this.noDeleteIds,
+      this.isUnsent,
+      this.createdAt,
       this.waveData});
 
-  MessageData.fromJson(Map<String, dynamic> json) {
+  MessageData.fromServerJson(Map<String, dynamic> json) {
     id = json['id'];
-    userId = json['user_id'];
-    messageType = MessageType.fromString(json['message_type']);
+    threadId = json['thread_id'];
+    userId = json['sender_id'];
+    messageType = MessageType.fromString(json['message_type'] ?? 'text');
     textMessage = json['text_message'];
     imageMessage = json['image_message'];
     videoMessage = json['video_message'];
     audioMessage = json['audio_message'];
     postMessage = json['post_message'];
     storyReplyMessage = json['story_reply_message'];
-    conversationId = json['conversation_id'];
-    iBlocked = json['i_blocked'];
-    iAmBlocked = json['i_am_blocked'];
     waveData = json['wave_data'];
-    if (json['no_delete_ids'] != null) {
-      noDeleteIds = [];
-      json['no_delete_ids'].forEach((v) {
-        noDeleteIds?.add(v);
-      });
-    }
+    isUnsent = json['is_unsent'] == 1 || json['is_unsent'] == true;
+    createdAt = json['created_at'];
   }
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> data = <String, dynamic>{};
     data['id'] = id;
-    data['user_id'] = userId;
+    data['thread_id'] = threadId;
+    data['sender_id'] = userId;
     data['message_type'] = messageType?.value;
     data['text_message'] = textMessage;
     data['image_message'] = imageMessage;
@@ -66,17 +65,15 @@ class MessageData {
     data['audio_message'] = audioMessage;
     data['post_message'] = postMessage;
     data['story_reply_message'] = storyReplyMessage;
-    data['conversation_id'] = conversationId;
-    data['i_blocked'] = iBlocked;
-    data['i_am_blocked'] = iAmBlocked;
     data['wave_data'] = waveData;
-    data['no_delete_ids'] =
-        noDeleteIds?.map((e) => e).toList(); // Include 'no_delete_ids'
+    data['is_unsent'] = isUnsent;
+    data['created_at'] = createdAt;
     return data;
   }
 
   AppUser? get chatUser {
-    final controller = Get.find<FirebaseFirestoreController>();
+    if (!Get.isRegistered<AppUserCacheController>()) return null;
+    final controller = Get.find<AppUserCacheController>();
     return controller.users
         .firstWhereOrNull((element) => element.userId == userId);
   }

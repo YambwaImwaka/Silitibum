@@ -11,6 +11,36 @@ class WebService {
   static var search = _Search();
   static var moderation = _Moderation();
   static var common = _Common();
+  static var chat = _Chat();
+  static var livestream = _Livestream();
+}
+
+class _Livestream {
+  String fetchLivestreams = "${apiURL}livestream/fetchLivestreams";
+  String createLivestream = "${apiURL}livestream/createLivestream";
+  String joinLivestream = "${apiURL}livestream/joinLivestream";
+  String leaveLivestream = "${apiURL}livestream/leaveLivestream";
+  String fetchStreamState = "${apiURL}livestream/fetchStreamState";
+  String sendComment = "${apiURL}livestream/sendComment";
+  String addLikes = "${apiURL}livestream/addLikes";
+  String sendStreamGift = "${apiURL}livestream/sendStreamGift";
+  String updateUserState = "${apiURL}livestream/updateUserState";
+  String updateBattleState = "${apiURL}livestream/updateBattleState";
+  String registerFollowGained = "${apiURL}livestream/registerFollowGained";
+  String endLivestream = "${apiURL}livestream/endLivestream";
+}
+
+class _Chat {
+  String fetchThreads = "${apiURL}chat/fetchThreads";
+  String fetchUnreadCounts = "${apiURL}chat/fetchUnreadCounts";
+  String fetchMessages = "${apiURL}chat/fetchMessages";
+  String sendMessage = "${apiURL}chat/sendMessage";
+  String markThreadRead = "${apiURL}chat/markThreadRead";
+  String acceptChatRequest = "${apiURL}chat/acceptChatRequest";
+  String rejectChatRequest = "${apiURL}chat/rejectChatRequest";
+  String unsendMessage = "${apiURL}chat/unsendMessage";
+  String deleteMessageForMe = "${apiURL}chat/deleteMessageForMe";
+  String deleteThread = "${apiURL}chat/deleteThread";
 }
 
 class _Common {
@@ -39,6 +69,12 @@ class _GiftWallet {
 
 class _User {
   String loginInUser = "${apiURL}user/logInUser";
+  String registerUser = "${apiURL}user/registerUser";
+  String forgotPassword = "${apiURL}user/forgotPassword";
+  String resetPasswordWithCode = "${apiURL}user/resetPasswordWithCode";
+  String sendEmailVerificationCode = "${apiURL}user/sendEmailVerificationCode";
+  String verifyEmailCode = "${apiURL}user/verifyEmailCode";
+  String changePassword = "${apiURL}user/changePassword";
   String deleteMyAccount = "${apiURL}user/deleteMyAccount";
   String logOutUser = "${apiURL}user/logOutUser";
   String fetchUserDetails = "${apiURL}user/fetchUserDetails";

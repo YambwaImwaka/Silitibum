@@ -1,28 +1,27 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/chat_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
+import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/languages_keys.dart';
-import 'package:shortzz/model/chat/chat_thread.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/camera_screen/camera_screen.dart';
 import 'package:shortzz/screen/feed_screen/feed_screen_controller.dart';
 import 'package:shortzz/screen/gif_sheet/gif_sheet_controller.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 import 'package:zego_express_engine/zego_express_engine.dart';
 
 class DashboardScreenController extends BaseController with GetSingleTickerProviderStateMixin {
@@ -42,12 +41,12 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
 
   late AnimationController animationController;
 
-  FirebaseFirestore db = FirebaseFirestore.instance;
   RxInt unReadCount = 0.obs;
   RxInt requestUnReadCount = 0.obs;
 
   StreamSubscription? _unReadCountSubscription;
   Timer? _lastUsedAtTimer;
+  Timer? _unreadPollTimer;
   late Animation<double> scaleAnimation;
   User? user = SessionManager.instance.getUser();
 
@@ -60,7 +59,7 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
       SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(statusBarBrightness: Brightness.dark));
     }
     Get.put(GifSheetController());
-    Get.put(FirebaseFirestoreController());
+    Get.put(AppUserCacheController());
     Get.put(AdsController());
     animationController = AnimationController(duration: const Duration(milliseconds: 200), vsync: this);
     scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
@@ -80,10 +79,11 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     _createZegoEngine();
     updateDummyUsers();
 
-    // Everything below needs a logged-in user: Firestore listeners keyed on
+    // Everything below needs a logged-in user: realtime channels keyed on
     // the user id, auth-only APIs, FCM topic subscriptions.
     if (isGuest) return;
 
+    RealtimeService.instance.connect();
     SubscriptionManager.shared.subscriptionListener();
     _fetchLanguageFromUser();
     _fetchUnReadCount();
@@ -103,6 +103,7 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     animationController.dispose();
     _unReadCountSubscription?.cancel();
     _lastUsedAtTimer?.cancel();
+    _unreadPollTimer?.cancel();
     super.onClose();
   }
 
@@ -136,27 +137,29 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   }
 
   void _fetchUnReadCount() {
-    _unReadCountSubscription = db
-        .collection(FirebaseConst.users)
-        .doc(user?.id.toString())
-        .collection(FirebaseConst.usersList)
-        .where(FirebaseConst.isDeleted, isEqualTo: false)
-        .withConverter(
-          fromFirestore: (snapshot, _) => ChatThread.fromJson(snapshot.data()!),
-          toFirestore: (value, _) => value.toJson(),
-        )
-        .snapshots()
-        .listen((event) {
-      // Calculate unread counts once per snapshot (not per docChange)
-      final docs = event.docs.map((e) => e.data()).toList();
-
-      final totalUnread = docs.where((e) => (e.msgCount ?? 0) > 0).length;
-
-      final requestUnread = docs.where((e) => (e.msgCount ?? 0) > 0 && e.chatType == ChatType.request).length;
-
-      unReadCount.value = totalUnread;
-      requestUnReadCount.value = requestUnread;
+    refreshUnreadCounts();
+    // Realtime user-channel events bump the badge instantly; a slow poll
+    // covers WebSocket-down (or realtime-disabled) periods.
+    _unReadCountSubscription =
+        RealtimeService.instance.events.listen((event) {
+      if (event.channel.startsWith('private-user.')) {
+        refreshUnreadCounts();
+      }
     });
+    _unreadPollTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (!RealtimeService.instance.isConnected) refreshUnreadCounts();
+    });
+  }
+
+  Future<void> refreshUnreadCounts() async {
+    if (isGuest) return;
+    try {
+      final counts = await ChatService.instance.fetchUnreadCounts();
+      unReadCount.value = counts.unreadThreadCount;
+      requestUnReadCount.value = counts.requestUnreadThreadCount;
+    } catch (e) {
+      Loggers.error('fetchUnreadCounts failed: $e');
+    }
   }
 
   Future<void> _createZegoEngine() async {
@@ -194,17 +197,17 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   }
 
   Future addUserInFirebase() async {
-    if (Get.isRegistered<FirebaseFirestoreController>()) {
-      Get.find<FirebaseFirestoreController>().addUser(user);
+    if (Get.isRegistered<AppUserCacheController>()) {
+      Get.find<AppUserCacheController>().addUser(user);
     } else {
-      Get.put(FirebaseFirestoreController()).addUser(user);
+      Get.put(AppUserCacheController()).addUser(user);
     }
   }
 
   void updateDummyUsers() {
     List<DummyLive> dummyLives = SessionManager.instance.getSettings()?.dummyLives ?? [];
     if (dummyLives.isNotEmpty) {
-      final controller = Get.find<FirebaseFirestoreController>();
+      final controller = Get.find<AppUserCacheController>();
       for (var element in dummyLives) {
         controller.updateUser(element.user);
       }

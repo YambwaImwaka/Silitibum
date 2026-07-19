@@ -1,8 +1,6 @@
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +15,7 @@ import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/screenshot_manager.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/chat_service.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/chat/chat_thread.dart';
@@ -25,21 +24,17 @@ import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/general/status_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
-import 'package:shortzz/screen/chat_screen/chat_screen_controller.dart';
 import 'package:shortzz/screen/share_sheet_widget/share_sheet_widget.dart';
 import 'package:shortzz/screen/share_sheet_widget/widget/more_user_sheet.dart';
 import 'package:shortzz/utilities/app_res.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 
 class ShareSheetWidgetController extends BaseController {
-  FirebaseFirestore db = FirebaseFirestore.instance;
   User? myUser = SessionManager.instance.getUser();
   RxList<ChatThread> chatsUsers = <ChatThread>[].obs;
   RxList<ChatThread> filterChatsUsers = <ChatThread>[].obs;
   RxList<ChatThread> selectedConversation = <ChatThread>[].obs;
   Post? post;
 
-  StreamSubscription<QuerySnapshot<ChatThread>>? usersListen;
   Function()? onCallBack;
   final RetrytechPlugin _retrytechPlugin = RetrytechPlugin();
 
@@ -71,40 +66,18 @@ class ShareSheetWidgetController extends BaseController {
     super.onReady();
   }
 
-  @override
-  void onClose() {
-    usersListen?.cancel();
-    super.onClose();
-  }
-
-  void _fetchUsers() {
-    usersListen = db
-        .collection(FirebaseConst.users)
-        .doc(myUser?.id.toString())
-        .collection(FirebaseConst.usersList)
-        .withConverter(
-            fromFirestore: (snapshot, options) =>
-                ChatThread.fromJson(snapshot.data()!),
-            toFirestore: (ChatThread value, options) => value.toJson())
-        .where(FirebaseConst.isDeleted, isEqualTo: false)
-        .orderBy(FirebaseConst.id, descending: true)
-        .snapshots()
-        .listen((event) {
-      for (var change in event.docChanges) {
-        final ChatThread? user = change.doc.data();
-        if (user == null) continue;
-        switch (change.type) {
-          case DocumentChangeType.added:
-            if (user.chatType == ChatType.approved) {
-              chatsUsers.add(user);
-              filterChatsUsers.add(user);
-            }
-            break;
-          case DocumentChangeType.modified:
-          case DocumentChangeType.removed:
-        }
-      }
-    });
+  void _fetchUsers() async {
+    if (!SessionManager.instance.isLogin()) return;
+    try {
+      final page = await ChatService.instance.fetchThreads(limit: 50);
+      final approved = page.threads
+          .where((thread) => thread.chatType == ChatType.approved)
+          .toList();
+      chatsUsers.assignAll(approved);
+      filterChatsUsers.assignAll(approved);
+    } catch (e) {
+      Loggers.error('share sheet fetchThreads failed: $e');
+    }
   }
 
   void onUserTap(ChatThread conversation) {
@@ -253,14 +226,16 @@ class ShareSheetWidgetController extends BaseController {
     showSnackBar(LKey.postSentSuccessfully.tr);
     final controller = Get.find<ShareSheetWidgetController>();
     for (var element in controller.selectedConversation) {
-      final controller = Get.put(ChatScreenController(element.obs),
-          tag: '${element.conversationId}');
-      await controller.sendMessageToFireStore(
-          type: MessageType.post,
-          postMessage: jsonEncode(post?.toJsonForChat()));
-
-      await Get.delete<ChatScreenController>(tag: '${element.conversationId}');
-      increaseShareCount(post?.id);
+      try {
+        await ChatService.instance.sendMessage(
+            threadId: element.threadId,
+            receiverId: element.threadId == null ? element.userId : null,
+            type: MessageType.post,
+            postMessage: jsonEncode(post?.toJsonForChat()));
+        increaseShareCount(post?.id);
+      } catch (e) {
+        Loggers.error('share to chat failed: $e');
+      }
     }
   }
 

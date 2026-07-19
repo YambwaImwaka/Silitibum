@@ -1,5 +1,5 @@
-import 'package:get/get.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+﻿import 'package:get/get.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 
@@ -48,7 +48,7 @@ class LivestreamComment {
 
   set senderUser(AppUser? user) {
     if (user == null) return;
-    final controller = Get.find<FirebaseFirestoreController>();
+    final controller = Get.find<AppUserCacheController>();
     final index =
         controller.users.indexWhere((element) => element.userId == user.userId);
     if (index != -1) {
@@ -59,14 +59,14 @@ class LivestreamComment {
   }
 
   AppUser? get receiverUser {
-    final controller = Get.find<FirebaseFirestoreController>();
+    final controller = Get.find<AppUserCacheController>();
     return controller.users
         .firstWhereOrNull((element) => element.userId == receiverId);
   }
 
   set receiverUser(AppUser? user) {
     if (user == null) return;
-    final controller = Get.find<FirebaseFirestoreController>();
+    final controller = Get.find<AppUserCacheController>();
     final index =
         controller.users.indexWhere((element) => element.userId == user.userId);
     if (index != -1) {
@@ -79,12 +79,12 @@ class LivestreamComment {
   // Reactive variable for chat user
   final Rx<AppUser?> _senderUser = Rx<AppUser?>(null);
 
-  /// ✅ Expose Rx version for reactive UI (`Obx`)
+  /// âœ… Expose Rx version for reactive UI (`Obx`)
   Rx<AppUser?> get senderUserRx => _senderUser;
 
-  /// ✅ Initialize and auto-sync with controller
+  /// âœ… Initialize and auto-sync with controller
   void bindCommentUser() {
-    final controller = Get.find<FirebaseFirestoreController>();
+    final controller = Get.find<AppUserCacheController>();
 
     void updateUser() {
       final appUser = controller.users.firstWhereOrNull((element) => element.userId == senderId);

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Mail\VerificationCodeMail;
+use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 use Google\Client;
@@ -1039,44 +1041,172 @@ class GlobalFunction extends Model
         return $guest;
     }
 
-    // Verifies a Firebase Auth ID token (JWT signed by Google's securetoken
-    // service) and returns its claims, or null when invalid/expired.
-    // Project: 'silitibum' — must match android/app/google-services.json.
-    public static function verifyFirebaseIdToken($idToken)
+    // Verifies a Google Sign-In ID token (issued to the app by google_sign_in)
+    // and returns its payload array, or null when invalid. Accepts any client
+    // id listed in GOOGLE_OAUTH_CLIENT_ID (comma-separated — the Android and
+    // iOS clients can issue tokens with different aud values).
+    public static function verifyGoogleIdToken($idToken)
     {
         try {
-            $projectId = 'silitibum';
+            $client = new Client();
+            $payload = $client->verifyIdToken($idToken); // signature + expiry
+            if (!$payload) {
+                return null;
+            }
+            $allowedIds = array_filter(array_map('trim', explode(',', env('GOOGLE_OAUTH_CLIENT_ID', ''))));
+            if (!empty($allowedIds) && !in_array($payload['aud'] ?? '', $allowedIds)) {
+                Log::error('verifyGoogleIdToken: aud not allowed: ' . ($payload['aud'] ?? 'null'));
+                return null;
+            }
+            if (($payload['iss'] ?? null) !== 'https://accounts.google.com'
+                && ($payload['iss'] ?? null) !== 'accounts.google.com') {
+                return null;
+            }
+            return $payload;
+        } catch (\Throwable $e) {
+            Log::error('verifyGoogleIdToken: ' . $e->getMessage());
+            return null;
+        }
+    }
 
-            // Google rotates these signing certs; cache them for an hour.
-            $certs = Cache::remember('firebase_securetoken_certs', 3600, function () {
-                $response = Http::timeout(10)->get(
-                    'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com'
-                );
+    // Verifies a Sign in with Apple identityToken (JWT signed by Apple) and
+    // returns its claims, or null when invalid. aud must be the iOS bundle id
+    // or the Service ID used by the Android web flow.
+    public static function verifyAppleIdentityToken($identityToken)
+    {
+        try {
+            $jwks = Cache::remember('apple_auth_jwks', 3600, function () {
+                $response = Http::timeout(10)->get('https://appleid.apple.com/auth/keys');
                 return $response->successful() ? $response->json() : null;
             });
-            if (!is_array($certs)) {
-                Log::error('verifyFirebaseIdToken: could not fetch signing certs');
+            if (!is_array($jwks)) {
+                Log::error('verifyAppleIdentityToken: could not fetch Apple JWKS');
                 return null;
             }
 
-            $keys = [];
-            foreach ($certs as $kid => $pem) {
-                $keys[$kid] = new Key($pem, 'RS256');
-            }
+            $claims = JWT::decode($identityToken, JWK::parseKeySet($jwks, 'RS256'));
 
-            $claims = JWT::decode($idToken, $keys); // throws on bad signature/expiry
-
-            if (($claims->aud ?? null) !== $projectId
-                || ($claims->iss ?? null) !== 'https://securetoken.google.com/' . $projectId
+            $allowedAud = array_filter([env('APPLE_BUNDLE_ID'), env('APPLE_SERVICE_ID')]);
+            if (($claims->iss ?? null) !== 'https://appleid.apple.com'
+                || !in_array($claims->aud ?? '', $allowedAud)
                 || empty($claims->sub)) {
                 return null;
             }
 
             return $claims;
         } catch (\Throwable $e) {
-            Log::error('verifyFirebaseIdToken: ' . $e->getMessage());
+            Log::error('verifyAppleIdentityToken: ' . $e->getMessage());
             return null;
         }
+    }
+
+    // Issues a 6-digit verification/reset code and emails it. Invalidates any
+    // previous unconsumed code of the same type. Returns [status, message];
+    // mail failure reports false but never throws (verification is soft).
+    public static function issueVerificationCode($user, $email, $type)
+    {
+        $recentSends = VerificationCode::where('user_id', $user->id)
+            ->where('type', $type)
+            ->where('created_at', '>=', Carbon::now()->subHour())
+            ->count();
+        if ($recentSends >= VerificationCode::MAX_SENDS_PER_HOUR) {
+            return [false, 'Too many codes requested, please try again later'];
+        }
+
+        VerificationCode::where('user_id', $user->id)
+            ->where('type', $type)
+            ->whereNull('consumed_at')
+            ->update(['consumed_at' => Carbon::now()]);
+
+        $code = new VerificationCode();
+        $code->user_id = $user->id;
+        $code->email = $email;
+        $code->code = strval(rand(100000, 999999));
+        $code->type = $type;
+        $code->expires_at = Carbon::now()->addMinutes(VerificationCode::EXPIRY_MINUTES);
+        $code->save();
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($email)->send(new VerificationCodeMail($code->code, $type));
+        } catch (\Throwable $e) {
+            Log::error('issueVerificationCode mail: ' . $e->getMessage());
+            return [false, 'Could not send the email, please try again later'];
+        }
+        return [true, 'Code sent successfully'];
+    }
+
+    // Validates a submitted code; counts failed attempts and consumes the code
+    // on success. Returns true only for a live, unconsumed, matching code.
+    public static function consumeVerificationCode($user, $type, $submittedCode)
+    {
+        $code = VerificationCode::where('user_id', $user->id)
+            ->where('type', $type)
+            ->whereNull('consumed_at')
+            ->orderBy('id', 'desc')
+            ->first();
+        if ($code == null || $code->expires_at < Carbon::now()
+            || $code->attempts >= VerificationCode::MAX_ATTEMPTS) {
+            return false;
+        }
+        if (!hash_equals($code->code, strval($submittedCode))) {
+            $code->attempts += 1;
+            $code->save();
+            return false;
+        }
+        $code->consumed_at = Carbon::now();
+        $code->save();
+        return true;
+    }
+
+    // Compact profile in the shape of the app's AppUser model (note the
+    // 'profile' key — not profile_photo). Embedded in chat/livestream
+    // payloads to seed the client-side user cache.
+    public static function appUserPayload($user)
+    {
+        if ($user == null) {
+            return null;
+        }
+        return [
+            'user_id' => $user->id,
+            'identity' => $user->identity,
+            'username' => $user->username,
+            'fullname' => $user->fullname,
+            'profile' => $user->profile_photo,
+            'is_verify' => $user->is_verify,
+        ];
+    }
+
+    // Single wallet transaction for gifting — shared by misc/sendGift (chat &
+    // profile gifts) and livestream/sendStreamGift. Returns null on success
+    // or an error message string.
+    public static function transferGiftCoins($sender, $receiver, $gift)
+    {
+        if ($sender->id == $receiver->id) {
+            return 'you can not gift yourself!';
+        }
+        if ($sender->coin_wallet < $gift->coin_price) {
+            return 'no enough coins in your wallet!';
+        }
+        $sender->coin_wallet -= $gift->coin_price;
+        $sender->coin_gifted_lifetime += $gift->coin_price;
+        $sender->save();
+
+        $receiver->coin_wallet += $gift->coin_price;
+        $receiver->coin_collected_lifetime += $gift->coin_price;
+        $receiver->save();
+
+        self::insertUserNotification(Constants::notify_gift_user, $sender->id, $receiver->id, $gift->id);
+        return null;
+    }
+
+    public static function maskEmail($email)
+    {
+        $parts = explode('@', $email);
+        if (count($parts) != 2 || strlen($parts[0]) < 2) {
+            return $email;
+        }
+        return $parts[0][0] . str_repeat('*', max(strlen($parts[0]) - 2, 1))
+            . substr($parts[0], -1) . '@' . $parts[1];
     }
 
     public static function generateRandomString($length)

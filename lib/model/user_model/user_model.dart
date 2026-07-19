@@ -49,6 +49,7 @@ class User {
       this.fullname,
       this.username,
       this.userEmail,
+      this.emailVerifiedAt,
       this.mobileCountryCode,
       this.userMobileNo,
       this.profilePhoto,
@@ -103,6 +104,7 @@ class User {
     String? fullname,
     String? username,
     String? userEmail,
+    String? emailVerifiedAt,
     int? mobileCountryCode,
     String? userMobileNo,
     String? profilePhoto,
@@ -158,6 +160,7 @@ class User {
         fullname: fullname ?? this.fullname,
         username: username ?? this.username,
         userEmail: userEmail ?? this.userEmail,
+        emailVerifiedAt: emailVerifiedAt ?? this.emailVerifiedAt,
         mobileCountryCode: mobileCountryCode ?? this.mobileCountryCode,
         userMobileNo: userMobileNo ?? this.userMobileNo,
         profilePhoto: profilePhoto ?? this.profilePhoto,
@@ -213,6 +216,7 @@ class User {
     fullname = json['fullname'];
     username = json['username'];
     userEmail = json['user_email'];
+    emailVerifiedAt = json['email_verified_at'];
     mobileCountryCode = json['mobile_country_code'];
     userMobileNo = json['user_mobile_no'];
     profilePhoto = json['profile_photo'];
@@ -282,6 +286,7 @@ class User {
   String? fullname;
   String? username;
   String? userEmail;
+  String? emailVerifiedAt;
   int? mobileCountryCode;
   String? userMobileNo;
   String? profilePhoto;
@@ -338,6 +343,7 @@ class User {
     map['fullname'] = fullname;
     map['username'] = username;
     map['user_email'] = userEmail;
+    map['email_verified_at'] = emailVerifiedAt;
     map['mobile_country_code'] = mobileCountryCode;
     map['user_mobile_no'] = userMobileNo;
     map['profile_photo'] = profilePhoto;

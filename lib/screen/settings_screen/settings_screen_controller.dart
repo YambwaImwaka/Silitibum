@@ -1,8 +1,8 @@
-import 'package:firebase_auth/firebase_auth.dart' as auth;
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
+import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
@@ -73,63 +73,27 @@ class SettingsScreenController extends BaseController {
     Get.bottomSheet(ConfirmationSheet(
         onTap: () async {
           showLoader(barrierDismissible: true);
-          StatusModel model = await UserService.instance.deleteMyAccount();
+          // Password accounts must confirm with their password (stored at
+          // login); the backend verifies it before deleting. Social accounts
+          // send none.
+          StatusModel model = await UserService.instance
+              .deleteMyAccount(password: SessionManager.instance.getPassword());
           stopLoader();
           if (model.status == true) {
-            FirebaseFirestoreController.instance.deleteUser(myUser.value?.id);
+            AppUserCacheController.instance.deleteUser(myUser.value?.id);
+            RealtimeService.instance.disconnect();
             SessionManager.instance.clear();
-            deleteCurrentUser();
             // Back to splash → guest Dashboard (TikTok-style: no forced login)
             RestartWidget.restartApp(Get.context!);
           } else {
-            showSnackBar(model.message);
+            showSnackBar(model.message == 'incorrect_password'
+                ? LKey.incorrectPassword.tr
+                : model.message);
           }
         },
         description: LKey.deleteAccountMessage.tr,
         description2: LKey.proceedConfirmation.tr,
         title: LKey.deleteYourAccount.tr));
-  }
-
-  Future<void> deleteCurrentUser() async {
-    try {
-      auth.User? user = auth.FirebaseAuth.instance.currentUser;
-
-      if (user != null) {
-        await user.delete(); // Deletes the account
-        Loggers.success("User account deleted successfully.");
-      } else {
-        Loggers.success("No user is signed in.");
-      }
-    } on auth.FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        Loggers.error(
-            '⚠️ The user must re-authenticate before deleting their account.');
-        reAuthenticateAndDelete(myUser.value?.identity ?? '');
-        // Prompt for re-authentication here
-      } else {
-        Loggers.error('❌ Error: ${e.message}');
-      }
-    }
-  }
-
-  Future<void> reAuthenticateAndDelete(String email) async {
-    try {
-      auth.User? user = auth.FirebaseAuth.instance.currentUser;
-
-      if (user != null) {
-        String? password = SessionManager.instance.getPassword();
-        if (password == null) return;
-        auth.AuthCredential credential =
-            auth.EmailAuthProvider.credential(email: email, password: password);
-
-        await user.reauthenticateWithCredential(credential);
-        await user.delete();
-
-        print("User re-authenticated and deleted.");
-      }
-    } catch (e) {
-      print("Error: $e");
-    }
   }
 
   void onLogout() {
@@ -139,12 +103,12 @@ class SettingsScreenController extends BaseController {
         try {
           StatusModel result = await UserService.instance.logoutUser();
           if (result.status == true) {
-            GoogleSignIn.instance.signOut();
             try {
-              await auth.FirebaseAuth.instance.signOut();
+              await GoogleSignIn.instance.signOut();
             } catch (e) {
-              Loggers.error('Firebase signOut failed: $e');
+              Loggers.error('Google signOut failed: $e');
             }
+            RealtimeService.instance.disconnect();
             SessionManager.instance.clearSomeKey();
             // Back to splash → guest Dashboard (TikTok-style: no forced login)
             RestartWidget.restartApp(Get.context!);

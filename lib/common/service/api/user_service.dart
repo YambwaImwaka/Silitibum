@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:image_picker/image_picker.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/api_service.dart';
 import 'package:shortzz/common/service/utils/params.dart';
@@ -10,6 +10,7 @@ import 'package:shortzz/model/general/status_model.dart';
 import 'package:shortzz/model/user_model/block_user_model.dart';
 import 'package:shortzz/model/user_model/follower_model.dart';
 import 'package:shortzz/model/user_model/following_model.dart';
+import 'package:shortzz/model/user_model/forgot_password_model.dart';
 import 'package:shortzz/model/user_model/links_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/model/user_model/users_model.dart';
@@ -41,12 +42,18 @@ class UserService {
 
   static final UserService instance = UserService._();
 
-  Future<User?> logInUser({
+  /// Login with MySQL-native credentials: password (phone/email), Google
+  /// [idToken] or Apple [identityToken] — the backend verifies the credential
+  /// directly (no Firebase). Returns the full model so callers can map the
+  /// failure tokens (account_not_found / incorrect_password) to messages.
+  Future<UserModel> logInUser({
     String? fullName,
     required String identity,
     String? deviceToken,
     required LoginMethod loginMethod,
-    String? firebaseToken,
+    String? password,
+    String? idToken,
+    String? identityToken,
   }) async {
     UserModel model = await ApiService.instance.call(
         url: WebService.user.loginInUser,
@@ -56,23 +63,108 @@ class UserService {
           Params.deviceToken: deviceToken,
           Params.device: Platform.isAndroid ? 0 : 1,
           Params.loginMethod: loginMethod.title(),
-          // Proof of identity — verified server-side (Firebase ID token)
-          Params.firebaseToken: firebaseToken,
+          Params.password: password,
+          Params.idToken: idToken,
+          Params.identityToken: identityToken,
         },
         fromJson: UserModel.fromJson);
 
+    _storeSession(model);
+    return model;
+  }
+
+  /// Signup for the password channels (phone / email). Never an upsert: an
+  /// identity that already holds a password gets account_exists back.
+  Future<UserModel> registerUser({
+    String? fullName,
+    required String identity,
+    required String password,
+    required LoginMethod loginMethod,
+    String? deviceToken,
+  }) async {
+    UserModel model = await ApiService.instance.call(
+        url: WebService.user.registerUser,
+        param: {
+          Params.fullname: fullName,
+          Params.identity: identity,
+          Params.password: password,
+          Params.deviceToken: deviceToken,
+          Params.device: Platform.isAndroid ? 0 : 1,
+          Params.loginMethod: loginMethod.title(),
+        },
+        fromJson: UserModel.fromJson);
+
+    _storeSession(model);
+    return model;
+  }
+
+  void _storeSession(UserModel model) {
     if (model.status == true) {
       Future.delayed(const Duration(milliseconds: 100), () {
         SessionManager.instance.setUser(model.data);
         SessionManager.instance.setAuthToken(model.data?.token);
       });
     }
-    return model.data;
   }
 
-  Future<StatusModel> deleteMyAccount() async {
+  Future<ForgotPasswordModel> forgotPassword({required String identity}) async {
+    return ApiService.instance.call(
+        url: WebService.user.forgotPassword,
+        param: {Params.identity: identity},
+        fromJson: ForgotPasswordModel.fromJson);
+  }
+
+  Future<StatusModel> resetPasswordWithCode(
+      {required String identity,
+      required String code,
+      required String newPassword}) async {
+    return ApiService.instance.call(
+        url: WebService.user.resetPasswordWithCode,
+        param: {
+          Params.identity: identity,
+          Params.code: code,
+          Params.newPassword: newPassword,
+        },
+        fromJson: StatusModel.fromJson);
+  }
+
+  Future<StatusModel> sendEmailVerificationCode() async {
+    return ApiService.instance.call(
+        url: WebService.user.sendEmailVerificationCode,
+        fromJson: StatusModel.fromJson);
+  }
+
+  /// On success the returned payload carries the refreshed user (with
+  /// email_verified_at set) and is stored in the session.
+  Future<UserModel> verifyEmailCode({required String code}) async {
+    UserModel model = await ApiService.instance.call(
+        url: WebService.user.verifyEmailCode,
+        param: {Params.code: code},
+        fromJson: UserModel.fromJson);
+    if (model.status == true && model.data != null) {
+      SessionManager.instance.setUser(model.data);
+    }
+    return model;
+  }
+
+  Future<StatusModel> changePassword(
+      {String? oldPassword, required String newPassword}) async {
+    return ApiService.instance.call(
+        url: WebService.user.changePassword,
+        param: {
+          Params.oldPassword: oldPassword,
+          Params.newPassword: newPassword,
+        },
+        fromJson: StatusModel.fromJson);
+  }
+
+  /// Password accounts confirm deletion with their password (replaces the old
+  /// Firebase re-auth); social accounts pass nothing.
+  Future<StatusModel> deleteMyAccount({String? password}) async {
     StatusModel response = await ApiService.instance.call(
-        url: WebService.user.deleteMyAccount, fromJson: StatusModel.fromJson);
+        url: WebService.user.deleteMyAccount,
+        param: {Params.password: password},
+        fromJson: StatusModel.fromJson);
     return response;
   }
 
@@ -166,7 +258,7 @@ class UserService {
         fromJson: UserModel.fromJson);
     if (userModel.status == true) {
       SessionManager.instance.setUser(userModel.data);
-      FirebaseFirestoreController.instance.updateUser(userModel.data);
+      AppUserCacheController.instance.updateUser(userModel.data);
     }
     return userModel.data;
   }

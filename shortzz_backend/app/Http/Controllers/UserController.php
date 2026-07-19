@@ -11,8 +11,10 @@ use App\Models\UserBlocks;
 use App\Models\UserLinks;
 use App\Models\UsernameRestrictions;
 use App\Models\Users;
+use App\Models\VerificationCode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -892,9 +894,15 @@ class UserController extends Controller
     public function deleteMyAccount(Request $request){
         $token = $request->header('authtoken');
         $user = GlobalFunction::getUserFromAuthToken($token);
-        if ($user) {
-           GlobalFunction::deleteUserAccount($user);
+        if ($user == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found!');
         }
+        // Password accounts confirm with their password (replaces the Firebase
+        // re-auth the app used to do); social accounts confirm via the OS UI.
+        if ($user->password != null && !Hash::check($request->password ?? '', $user->password)) {
+            return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
+        }
+        GlobalFunction::deleteUserAccount($user);
         $user->delete();
          return GlobalFunction::sendSimpleResponse(true, 'account deleted successfully');
     }
@@ -1015,6 +1023,87 @@ class UserController extends Controller
     }
 
 
+    // Builds (does not save) a fresh app user with username + registration bonus.
+    private function createAppUser(Request $request)
+    {
+        $user = new Users;
+        $user->fullname = $request->filled('fullname')
+            ? GlobalFunction::cleanString($request->fullname)
+            : 'User';
+        $user->identity = $request->identity;
+        $user->login_method = $request->login_method;
+        $user->username = GlobalFunction::generateUsername($user->fullname);
+
+        if ($request->has('profile_photo')) {
+            $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->profile_photo);
+        }
+
+        $settings = GlobalSettings::first();
+        if ($settings->registration_bonus_status == 1) {
+            $user->coin_wallet = $settings->registration_bonus_amount;
+            $user->coin_collected_lifetime = $settings->registration_bonus_amount;
+        }
+        return $user;
+    }
+
+    // Stamps device fields, issues a fresh auth token and returns the full
+    // user payload — the single success response for register/login.
+    private function respondWithUserData($user, Request $request, $newRegister)
+    {
+        $user->device_token = $request->device_token;
+        $user->device = $request->device;
+        $user->login_method = $request->login_method;
+        $user->save();
+
+        $token = GlobalFunction::generateUserAuthToken($user);
+        $user = GlobalFunction::prepareUserFullData($user->id);
+        $user->new_register = $newRegister;
+        $user->token = $token;
+        $user->following_ids = GlobalFunction::fetchUserFollowingIds($user->id);
+
+        return GlobalFunction::sendDataResponse(true, 'Data Fetch Successful!', $user);
+    }
+
+    // MySQL-native signup for the password channels (phone / email). Never an
+    // upsert: an identity that already holds a password must log in instead.
+    // An identity left over from the Firebase era (no password hash) is
+    // claimed by the first signup that proves nothing more — acceptable only
+    // because no real Firebase-credentialed users ever shipped.
+    function registerUser(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'fullname' => 'nullable',
+            'identity' => 'required',
+            'password' => 'required|min:6',
+            'login_method' => 'required|in:email,phone',
+            'device' => 'required',
+            'device_token' => 'nullable',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+
+        $user = Users::where('identity', $request->identity)->first();
+        if ($user != null && $user->password != null) {
+            return GlobalFunction::sendSimpleResponse(false, 'account_exists');
+        }
+
+        $newRegister = ($user == null);
+        if ($user == null) {
+            $user = $this->createAppUser($request);
+        }
+        $user->password = Hash::make($request->password);
+
+        if ($request->login_method == 'email') {
+            $user->user_email = $request->identity;
+            $user->save();
+            // Soft verification: mail failure must never fail the signup.
+            GlobalFunction::issueVerificationCode($user, $request->identity, VerificationCode::TYPE_VERIFY_EMAIL);
+        }
+
+        return $this->respondWithUserData($user, $request, $newRegister);
+    }
+
     function logInUser(Request $request){
         $validator = Validator::make($request->all(), [
             // fullname: only used when creating a new account (never overwrites).
@@ -1030,79 +1119,176 @@ class UserController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
-        // Identity proof: the updated app sends the signed-in user's Firebase ID
-        // token; verify it and require it to match the claimed identity. Calls
-        // without a token are only allowed while ALLOW_LEGACY_LOGIN stays true
-        // in .env — flip to false once the new app build is fully rolled out.
-        if ($request->filled('firebase_token')) {
-            $claims = GlobalFunction::verifyFirebaseIdToken($request->firebase_token);
+        $loginMethod = $request->login_method;
+
+        // MySQL-native credentials. Password methods never auto-create — the
+        // app routes new users through registerUser.
+        if ($request->filled('password') && in_array($loginMethod, ['email', 'phone'])) {
+            $user = Users::where('identity', $request->identity)->first();
+            if ($user == null) {
+                return GlobalFunction::sendSimpleResponse(false, 'account_not_found');
+            }
+            if ($user->password == null) {
+                // Firebase-era row without a local hash: first password login claims it.
+                $user->password = Hash::make($request->password);
+            } else if (!Hash::check($request->password, $user->password)) {
+                return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
+            }
+            return $this->respondWithUserData($user, $request, false);
+        }
+
+        // Google Sign-In: the app sends the provider ID token; verify it
+        // directly against Google (no Firebase in between).
+        if ($loginMethod == 'google' && $request->filled('id_token')) {
+            $payload = GlobalFunction::verifyGoogleIdToken($request->id_token);
+            if ($payload == null) {
+                return GlobalFunction::sendSimpleResponse(false, 'Identity verification failed!');
+            }
+            if (strcasecmp($payload['email'] ?? '', $request->identity) != 0) {
+                return GlobalFunction::sendSimpleResponse(false, 'Identity mismatch!');
+            }
+            $user = Users::where('identity', $request->identity)->first();
+            $newRegister = ($user == null);
+            if ($user == null) {
+                $user = $this->createAppUser($request);
+            }
+            $user->provider_uid = $payload['sub'] ?? $user->provider_uid;
+            // Google accounts arrive with a verified address.
+            $user->user_email = $user->user_email ?: $request->identity;
+            $user->email_verified_at = $user->email_verified_at ?: Carbon::now();
+            return $this->respondWithUserData($user, $request, $newRegister);
+        }
+
+        // Sign in with Apple: verify the identityToken against Apple's JWKS.
+        // Apple only reveals the email on the first grant, so the durable key
+        // is the token's sub claim (stored in provider_uid).
+        if ($loginMethod == 'apple' && $request->filled('identity_token')) {
+            $claims = GlobalFunction::verifyAppleIdentityToken($request->identity_token);
             if ($claims == null) {
                 return GlobalFunction::sendSimpleResponse(false, 'Identity verification failed!');
             }
-            $identity = $request->identity;
-            $digits = preg_replace('/\D/', '', $identity);
-            $claimEmail = $claims->email ?? null;
-            $claimPhone = $claims->phone_number ?? null;
-            $matches = ($claimEmail != null && strcasecmp($claimEmail, $identity) == 0)
-                || ($claimPhone != null && preg_replace('/\D/', '', $claimPhone) == $digits)
-                // Phone accounts also carry an internal alias-email credential
-                || ($claimEmail != null && strcasecmp($claimEmail, $digits . '@phone.silitibum.com') == 0);
-            if (!$matches) {
-                return GlobalFunction::sendSimpleResponse(false, 'Identity mismatch!');
+            $user = Users::where('provider_uid', $claims->sub)->first();
+            if ($user == null && !empty($claims->email)) {
+                $user = Users::where('identity', $claims->email)->first();
             }
-        } else if (env('ALLOW_LEGACY_LOGIN', true) != true) {
-            return GlobalFunction::sendSimpleResponse(false, 'Identity verification required!');
+            $newRegister = ($user == null);
+            if ($user == null) {
+                $user = $this->createAppUser($request);
+            }
+            $user->provider_uid = $claims->sub;
+            if (!empty($claims->email)) {
+                $user->user_email = $user->user_email ?: $claims->email;
+                $user->email_verified_at = $user->email_verified_at ?: Carbon::now();
+            }
+            return $this->respondWithUserData($user, $request, $newRegister);
         }
 
+        // No recognized credential: every login method requires proof
+        // (password, Google id_token or Apple identity_token).
+        return GlobalFunction::sendSimpleResponse(false, 'Identity verification required!');
+    }
+
+    // Re-sends the email verification code to the logged-in user.
+    function sendEmailVerificationCode(Request $request)
+    {
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        if (!$user) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found!');
+        }
+        $email = filter_var($user->identity, FILTER_VALIDATE_EMAIL) ? $user->identity : $user->user_email;
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return GlobalFunction::sendSimpleResponse(false, 'no_recovery_email');
+        }
+        [$ok, $msg] = GlobalFunction::issueVerificationCode($user, $email, VerificationCode::TYPE_VERIFY_EMAIL);
+        return GlobalFunction::sendSimpleResponse($ok, $msg);
+    }
+
+    function verifyEmailCode(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['code' => 'required']);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        if (!$user) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found!');
+        }
+        if (!GlobalFunction::consumeVerificationCode($user, VerificationCode::TYPE_VERIFY_EMAIL, $request->code)) {
+            return GlobalFunction::sendSimpleResponse(false, 'invalid_code');
+        }
+        $user->email_verified_at = Carbon::now();
+        $user->save();
+        return GlobalFunction::sendDataResponse(true, 'Email verified successfully', GlobalFunction::prepareUserFullData($user->id));
+    }
+
+    // Password reset entry point. Email identities get the code directly;
+    // phone identities fall back to their recovery email (user_email) — there
+    // is no SMS channel (an SMS gateway can slot in here later).
+    function forgotPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['identity' => 'required']);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
         $user = Users::where('identity', $request->identity)->first();
-
         if ($user == null) {
-            $user = new Users;
-            $user->fullname = $request->filled('fullname')
-                ? GlobalFunction::cleanString($request->fullname)
-                : 'User';
-            $user->identity = $request->identity;
-            $user->device_token = $request->device_token;
-            $user->device = $request->device;
-            $user->login_method = $request->login_method;
-            $user->username = GlobalFunction::generateUsername($user->fullname);
-
-            if ($request->has('profile_photo')) {
-                $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->profile_photo);
-            }
-
-            $settings = GlobalSettings::first();
-            if($settings->registration_bonus_status == 1){
-                $user->coin_wallet = $settings->registration_bonus_amount;
-                $user->coin_collected_lifetime = $settings->registration_bonus_amount;
-            }
-
-            $user->save();
-
-            $token = GlobalFunction::generateUserAuthToken($user);
-
-            $user =  GlobalFunction::prepareUserFullData($user->id);
-            $user->new_register = true;
-            $user->token = $token;
-
-            $user->following_ids = GlobalFunction::fetchUserFollowingIds($user->id);
-
-            return GlobalFunction::sendDataResponse(true,'Data Fetch Successful!', $user);
-
-        } else {
-            $user->device_token = $request->device_token;
-            $user->device = $request->device;
-            $user->login_method = $request->login_method;
-            $user->save();
-
-            $token = GlobalFunction::generateUserAuthToken($user);
-            $user = GlobalFunction::prepareUserFullData($user->id);
-            $user->new_register = false;
-            $user->token = $token;
-            $user->following_ids = GlobalFunction::fetchUserFollowingIds($user->id);
-
-            return GlobalFunction::sendDataResponse(true, 'Data Fetch Successful!', $user);
+            return GlobalFunction::sendSimpleResponse(false, 'account_not_found');
         }
+        $email = filter_var($request->identity, FILTER_VALIDATE_EMAIL) ? $request->identity : $user->user_email;
+        if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return GlobalFunction::sendSimpleResponse(false, 'no_recovery_email');
+        }
+        [$ok, $msg] = GlobalFunction::issueVerificationCode($user, $email, VerificationCode::TYPE_RESET_PASSWORD);
+        if (!$ok) {
+            return GlobalFunction::sendSimpleResponse(false, $msg);
+        }
+        return GlobalFunction::sendDataResponse(true, 'Code sent successfully', [
+            'masked_email' => GlobalFunction::maskEmail($email),
+        ]);
+    }
+
+    function resetPasswordWithCode(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'identity' => 'required',
+            'code' => 'required',
+            'new_password' => 'required|min:6',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+        $user = Users::where('identity', $request->identity)->first();
+        if ($user == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'account_not_found');
+        }
+        if (!GlobalFunction::consumeVerificationCode($user, VerificationCode::TYPE_RESET_PASSWORD, $request->code)) {
+            return GlobalFunction::sendSimpleResponse(false, 'invalid_code');
+        }
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+        // Invalidate existing sessions — the reset may follow a compromise.
+        UserAuthTokens::where('user_id', $user->id)->delete();
+        return GlobalFunction::sendSimpleResponse(true, 'Password reset successfully');
+    }
+
+    function changePassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['new_password' => 'required|min:6']);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        if (!$user) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found!');
+        }
+        // Social-only accounts (no hash yet) may set a first password without
+        // the old one; password accounts must prove it.
+        if ($user->password != null && !Hash::check($request->old_password ?? '', $user->password)) {
+            return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
+        }
+        $user->password = Hash::make($request->new_password);
+        $user->save();
+        return GlobalFunction::sendSimpleResponse(true, 'Password changed successfully');
     }
     function logOutUser(Request $request){
         // Validate user token and fetch user

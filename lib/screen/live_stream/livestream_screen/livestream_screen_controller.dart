@@ -1,20 +1,20 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
-import 'package:shortzz/common/extensions/user_extension.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/livestream_service.dart';
 import 'package:shortzz/common/service/api/notification_service.dart';
+import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/widget/confirmation_dialog.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
@@ -32,16 +32,17 @@ import 'package:shortzz/screen/live_stream/livestream_screen/host/widget/live_st
 import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 import 'package:shortzz/utilities/app_res.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:zego_express_engine/zego_express_engine.dart';
 
+/// Livestream room over the MySQL backend: REST for state changes, presence
+/// channel events for live updates, polling fallback while the WebSocket is
+/// down. Media transport is Zego, untouched by the Firebase removal.
 class LivestreamScreenController extends BaseController {
-  FirebaseFirestore db = FirebaseFirestore.instance;
   ZegoExpressEngine zegoEngine = ZegoExpressEngine.instance;
 
-  final firestoreController = Get.find<FirebaseFirestoreController>();
+  final cacheController = Get.find<AppUserCacheController>();
   final adsController = Get.find<AdsController>();
 
   Timer? timer;
@@ -63,29 +64,7 @@ class LivestreamScreenController extends BaseController {
   bool isFrontCamera = true;
   bool isHost;
 
-  StreamSubscription<DocumentSnapshot<Livestream>>? liveStreamDocListener;
-  StreamSubscription<QuerySnapshot<LivestreamUserState?>>?
-      liveStreamUserStatesListener;
-  StreamSubscription<QuerySnapshot<LivestreamComment?>>?
-      liveStreamCommentsListener;
-
   TextEditingController textCommentController = TextEditingController();
-
-  DocumentReference get liveStreamDocRef =>
-      db.collection(FirebaseConst.liveStreams).doc(liveData.value.roomID);
-
-  CollectionReference get liveStreamUsersRef =>
-      db.collection(FirebaseConst.appUsers);
-
-  CollectionReference get liveStreamUserStatesRef => db
-      .collection(FirebaseConst.liveStreams)
-      .doc(liveData.value.roomID)
-      .collection(FirebaseConst.userState);
-
-  CollectionReference get liveStreamCommentsRef => db
-      .collection(FirebaseConst.liveStreams)
-      .doc(liveData.value.roomID)
-      .collection(FirebaseConst.comments);
 
   Widget? hostPreview;
 
@@ -120,6 +99,16 @@ class LivestreamScreenController extends BaseController {
 
   List<User> usersList = [];
 
+  String get roomId => liveData.value.roomID ?? '';
+
+  StreamSubscription<RealtimeEvent>? _realtimeSub;
+  Timer? _pollTimer;
+  Timer? _likeFlushTimer;
+  String? _presenceChannelName;
+  int _lastCommentId = 0;
+  int _pendingLikes = 0;
+  int _knownLikeCount = 0;
+
   @override
   void onInit() {
     super.onInit();
@@ -130,16 +119,17 @@ class LivestreamScreenController extends BaseController {
       totalBattleSecond =
           Duration(minutes: liveData.value.battleDuration).inSeconds;
       remainingBattleSeconds.value = totalBattleSecond;
+      _knownLikeCount = liveData.value.likeCount ?? 0;
       zegoEngine.setAudioDeviceMode(ZegoAudioDeviceMode.General);
       loginRoom();
       startListenEvent();
       initAudioPlayer();
+      _startRealtime();
+      if (isHost) {
+        _fetchFullState();
+      }
     }
 
-    // Common listeners for all users
-    listenLiveStreamData();
-    listenUserState();
-    fetchLiveStreamComments();
     WakelockPlus.enable();
     FirebaseNotificationManager.instance
         .unsubscribeToTopic(topic: myUserId.toString());
@@ -152,9 +142,13 @@ class LivestreamScreenController extends BaseController {
     timer?.cancel();
     minViewerTimeoutTimer?.cancel();
     videoPlayerController.value?.dispose();
-    liveStreamUserStatesListener?.cancel();
-    liveStreamCommentsListener?.cancel();
-    liveStreamDocListener?.cancel();
+    _realtimeSub?.cancel();
+    _pollTimer?.cancel();
+    _likeFlushTimer?.cancel();
+    _flushPendingLikes();
+    if (_presenceChannelName != null) {
+      RealtimeService.instance.unsubscribe(_presenceChannelName!);
+    }
     countdownPlayer.dispose();
     winAudioPlayer.dispose();
     stopListenEvent();
@@ -191,17 +185,212 @@ class LivestreamScreenController extends BaseController {
     winAudioPlayer.setAsset(AssetRes.winSound);
   }
 
+  // ---------------------------------------------------------------------
+  // REALTIME + POLLING (replaces the Firestore listeners)
+  // ---------------------------------------------------------------------
+
+  void _startRealtime() {
+    if (roomId.isEmpty) return;
+    RealtimeService.instance
+        .subscribePresence('livestream.$roomId', RealtimeService.livestreamEvents);
+    _presenceChannelName = 'presence-livestream.$roomId';
+    _realtimeSub = RealtimeService.instance.events.listen(_onRealtimeEvent);
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!RealtimeService.instance.isConnected) _pollState();
+    });
+    _likeFlushTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _flushPendingLikes();
+    });
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    if (event.channel != _presenceChannelName) return;
+    switch (event.name) {
+      case 'livestream.updated':
+      case 'battle.updated':
+        if (event.data['livestream'] is Map) {
+          _applyStream(Livestream.fromJson(
+              (event.data['livestream'] as Map).cast<String, dynamic>()));
+        }
+        break;
+      case 'user_state.updated':
+        if (event.data['user_state'] is Map) {
+          final json =
+              (event.data['user_state'] as Map).cast<String, dynamic>();
+          final state = LivestreamUserState.fromJson(json);
+          if (state.user != null) cacheController.addAppUser(state.user);
+          _applyUserState(state);
+        }
+        break;
+      case 'comment.sent':
+        if (event.data['comment'] is Map) {
+          final json = (event.data['comment'] as Map).cast<String, dynamic>();
+          if (json['sender_user'] is Map) {
+            cacheController.addAppUser(AppUser.fromJson(
+                (json['sender_user'] as Map).cast<String, dynamic>()));
+          }
+          _appendComment(LivestreamComment.fromJson(json));
+        }
+        break;
+      case 'livestream.ended':
+        // The Zego stream-delete callback drives the exit UX; this event is
+        // just a log marker (and keeps polling from spinning).
+        Loggers.info('livestream.ended received for room $roomId');
+        break;
+    }
+  }
+
+  Future<void> _fetchFullState() async {
+    try {
+      final res = await LivestreamService.instance
+          .fetchStreamState(roomId: roomId, afterCommentId: null);
+      _applyStateResult(res, replaceComments: true);
+    } catch (e) {
+      Loggers.error('fetchStreamState failed: $e');
+    }
+  }
+
+  Future<void> _pollState() async {
+    if (roomId.isEmpty) return;
+    try {
+      final res = await LivestreamService.instance
+          .fetchStreamState(roomId: roomId, afterCommentId: _lastCommentId);
+      if (res.status != true && res.message == 'livestream_ended') {
+        _pollTimer?.cancel();
+        return;
+      }
+      _applyStateResult(res, replaceComments: false, replaceUsers: true);
+    } catch (e) {
+      Loggers.error('livestream poll failed: $e');
+    }
+  }
+
+  void _applyStateResult(StreamStateResult res,
+      {bool replaceComments = false, bool replaceUsers = true}) {
+    if (res.status != true) return;
+    if (res.livestream != null) _applyStream(res.livestream!);
+    if (replaceUsers && res.users.isNotEmpty) _applyUserStates(res.users);
+    if (replaceComments) {
+      comments.clear();
+      _lastCommentId = 0;
+    }
+    for (final comment in res.comments) {
+      _appendComment(comment);
+    }
+  }
+
+  /// Mirrors the old Firestore livestream-doc listener body.
+  void _applyStream(Livestream stream) {
+    if (stream.battleType == BattleType.initiate) {
+      timer?.cancel();
+      remainingBattleSeconds.value =
+          Duration(minutes: stream.battleDuration).inSeconds;
+      countdownPlayer.pause();
+    }
+
+    if (stream.battleType == BattleType.waiting) {
+      totalBattleSecond = Duration(minutes: stream.battleDuration).inSeconds;
+    }
+
+    liveData.value = stream;
+
+    // Trigger like animation if changed
+    final newLikeCount = stream.likeCount ?? 0;
+    if (_knownLikeCount != newLikeCount) {
+      onLikeTap?.call();
+      _knownLikeCount = newLikeCount;
+    }
+  }
+
+  void _applyUserStates(List<LivestreamUserState> states) {
+    for (final state in states) {
+      _applyUserState(state, recompute: false);
+    }
+    // Drop members no longer present in the authoritative snapshot.
+    final ids = states.map((e) => e.userId).toSet();
+    liveUsersStates.removeWhere((element) => !ids.contains(element.userId));
+    _recomputeUserLists();
+  }
+
+  void _applyUserState(LivestreamUserState state, {bool recompute = true}) {
+    final oldState = liveUsersStates
+        .firstWhereOrNull((element) => element.userId == state.userId);
+
+    if (oldState == null) {
+      _showJoinStreamSheet(state);
+      liveUsersStates.add(state);
+    } else {
+      updateStateAction(oldState, state);
+      final index =
+          liveUsersStates.indexWhere((u) => u.userId == state.userId);
+      if (index != -1) {
+        liveUsersStates[index] = state;
+      } else {
+        liveUsersStates.add(state);
+      }
+    }
+    if (recompute) _recomputeUserLists();
+  }
+
+  void _recomputeUserLists() {
+    requestList.value = liveUsersStates
+        .where((element) => element.type == LivestreamUserType.requested)
+        .toList();
+    audienceList.value = liveUsersStates
+        .where((element) =>
+            element.type != LivestreamUserType.host &&
+            element.type != LivestreamUserType.left)
+        .toList();
+    invitedList.value = liveUsersStates
+        .where((element) => element.type == LivestreamUserType.invited)
+        .toList();
+    coHostList.value = liveUsersStates
+        .where((element) => element.type == LivestreamUserType.coHost)
+        .toList();
+    audienceMemberList.value = liveUsersStates
+        .where((element) =>
+            element.type != LivestreamUserType.left &&
+            element.userId != myUserId)
+        .toList();
+  }
+
+  void _appendComment(LivestreamComment comment) {
+    if ((comment.id ?? 0) > _lastCommentId) {
+      _lastCommentId = comment.id ?? 0;
+    }
+    cacheController.fetchUserIfNeeded(comment.senderId ?? -1);
+    if (comment.commentType == LivestreamCommentType.request && !isHost) {
+      return;
+    }
+    if (comments.any((element) => element.id == comment.id)) return;
+    comment.gift ??=
+        gifts.firstWhereOrNull((gift) => gift.id == comment.giftId);
+    comments.add(comment);
+    comments.sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0));
+  }
+
+  // ---------------------------------------------------------------------
+  // ZEGO ROOM (unchanged mechanics)
+  // ---------------------------------------------------------------------
+
   Future<void> logoutRoom() async {
     if (isHost) {
-      deleteStreamOnFirebase();
+      _endStreamOnServer();
+    } else if (roomId.isNotEmpty) {
+      () async {
+        try {
+          await LivestreamService.instance.leaveLivestream(roomId: roomId);
+        } catch (e) {
+          Loggers.error('leaveLivestream failed: $e');
+        }
+      }();
     }
     stopPreview();
     stopPublish();
-    zegoEngine.logoutRoom(liveData.value.roomID ?? '');
+    zegoEngine.logoutRoom(roomId);
   }
 
   Future<ZegoRoomLoginResult> loginRoom() async {
-    final roomID = liveData.value.roomID ?? '';
     final user = ZegoUser('$myUserId', myUser.value?.username ?? '');
 
     final roomConfig = ZegoRoomConfig.defaultConfig()
@@ -209,7 +398,7 @@ class LivestreamScreenController extends BaseController {
 
     try {
       final result =
-          await zegoEngine.loginRoom(roomID, user, config: roomConfig);
+          await zegoEngine.loginRoom(roomId, user, config: roomConfig);
 
       if (result.errorCode != 0) {
         if (result.errorCode == 1001005) {
@@ -227,42 +416,19 @@ class LivestreamScreenController extends BaseController {
         return result;
       }
 
-      // For Audience
-      final userRef = liveStreamUsersRef.doc('$myUserId');
-      final userStateRef = liveStreamUserStatesRef.doc('$myUserId');
-
-      // Set user document if not exists
-      if (!(await userRef.get()).exists) {
-        final userModel = myUser.value?.appUser;
-        if (userModel != null) await userRef.set(userModel.toJson());
-      }
-
-      // Fetch user state
-      final stateSnap = await userStateRef
-          .withConverter(
-            fromFirestore: (snapshot, _) =>
-                LivestreamUserState.fromJson(snapshot.data()!),
-            toFirestore: (value, _) => value.toJson(),
-          )
-          .get();
-
-      if (!stateSnap.exists) {
-        User? myUser = this.myUser.value;
-        if (myUser != null) {
-          final initialState = myUser.streamState(time: 0);
-          await userStateRef.set(initialState.toJson());
-          _sendCommentToFirestore(type: LivestreamCommentType.joined);
-        } else {
-          Loggers.error('User not found');
+      // Audience: register with the backend and pull the full room snapshot
+      // (participants + last comments) in one round trip.
+      try {
+        final res =
+            await LivestreamService.instance.joinLivestream(roomId: roomId);
+        if (res.status == true) {
+          _applyStateResult(res, replaceComments: true);
+        } else if (res.message == 'livestream_ended') {
+          showSnackBar(LKey.livestreamHasEnded.tr);
+          Get.back();
         }
-      } else {
-        final state = stateSnap.data();
-        if (state != null) {
-          updateUserStateToFirestore(myUserId,
-              type: LivestreamUserType.audience,
-              audioStatus: state.audioStatus,
-              videoStatus: state.videoStatus);
-        }
+      } catch (e) {
+        Loggers.error('joinLivestream failed: $e');
       }
       return result;
     } catch (e) {
@@ -274,41 +440,24 @@ class LivestreamScreenController extends BaseController {
 
   void startListenEvent() async {
     // Callback for updates on the status of other users in the room.
-    // Users can only receive callbacks when the isUserStatusNotify property of ZegoRoomConfig is set to `true` when logging in to the room (loginRoom).
     ZegoExpressEngine.onRoomUserUpdate =
         (roomID, updateType, List<ZegoUser> userList) {
-      // Check if multiple users are in the room
       if (userList.length > 1) {
-        // Force audio to speaker
         ZegoExpressEngine.instance.setAudioRouteToSpeaker(true);
       }
-      if (isHost) {
-        switch (updateType) {
-          case ZegoUpdateType.Add:
-            for (var _ in userList) {
-              updateLiveStreamData(watchingCount: 1);
-            }
-            break;
-          case ZegoUpdateType.Delete:
-            Livestream stream = liveData.value;
-            for (var element in userList) {
-              if ((stream.watchingCount ?? 0) > 0) {
-                updateLiveStreamData(
-                    watchingCount: -1,
-                    coHostId: FieldValue.arrayRemove([element.userID]));
-              }
-              int coHostId = int.parse(element.userID);
-              bool isCoHostExist =
-                  stream.coHostIds?.contains(coHostId) ?? false;
-              if (isCoHostExist) {
-                updateUserStateToFirestore(coHostId,
-                    type: LivestreamUserType.audience,
-                    audioStatus: VideoAudioStatus.on,
-                    videoStatus: VideoAudioStatus.on);
-                updateLiveStreamData(
-                    coHostId: FieldValue.arrayRemove([coHostId]));
-              }
-            }
+      if (isHost && updateType == ZegoUpdateType.Delete) {
+        // Watching counts are server-maintained (join/leave endpoints); the
+        // host only cleans up co-host slots when someone drops off Zego.
+        Livestream stream = liveData.value;
+        for (var element in userList) {
+          int coHostId = int.tryParse(element.userID) ?? -1;
+          bool isCoHostExist = stream.coHostIds?.contains(coHostId) ?? false;
+          if (isCoHostExist) {
+            updateUserStateToFirestore(coHostId,
+                type: LivestreamUserType.audience,
+                audioStatus: VideoAudioStatus.on,
+                videoStatus: VideoAudioStatus.on);
+          }
         }
       }
       Loggers.info(
@@ -384,12 +533,12 @@ class LivestreamScreenController extends BaseController {
   }
 
   Future<void> startHostPublish() async {
-    if ((liveData.value.roomID ?? '').isEmpty) {
+    if (roomId.isEmpty) {
       return Loggers.error('No ID FOUND');
     }
-    String streamID = liveData.value.roomID ?? '';
+    String streamID = roomId;
     if (hostPreview == null) {
-      deleteStreamOnFirebase();
+      _endStreamOnServer();
       Get.back();
       return;
     }
@@ -417,10 +566,6 @@ class LivestreamScreenController extends BaseController {
             ZegoCanvas(viewID, viewMode: ZegoViewMode.AspectFill);
         ZegoPlayerConfig config = ZegoPlayerConfig.defaultConfig();
         config.resourceMode = ZegoStreamResourceMode.Default; // live streaming(cdn)
-        // config.resourceMode = ZegoStreamResourceMode.OnlyL3; // interactive live streaming
-
-        Loggers.info(
-            'StartPlayStream playback: StreamID: $streamID, ViewMode: ${canvas.viewMode}, ResourceMode: ${config.resourceMode}');
 
         try {
           await zegoEngine.startPlayingStream(streamID, canvas: canvas, config: config);
@@ -469,27 +614,32 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // SERVER STATE CHANGES (replaces Firestore doc updates)
+  // ---------------------------------------------------------------------
+
+  /// Battle/type changes go to the server; watching counts and co-host id
+  /// lists are server-maintained side effects of join/leave/updateUserState,
+  /// so those legacy parameters are accepted but ignored.
   Future<void> updateLiveStreamData({
     BattleType? battleType,
     LivestreamType? type,
     int? battleCreatedAt,
     int? battleDuration,
     int watchingCount = 0,
-    FieldValue? coHostId,
+    dynamic coHostId,
   }) async {
-    bool isExist = (await liveStreamDocRef.get()).exists;
-    if (!isExist) return;
-
-    liveStreamDocRef.update({
-      if (battleType != null) FirebaseConst.battleType: battleType.value,
-      if (type != null) FirebaseConst.type: type.value,
-      if (battleCreatedAt != null)
-        FirebaseConst.battleCreatedAt: battleCreatedAt,
-      if (battleDuration != null) FirebaseConst.battleDuration: battleDuration,
-      if (watchingCount != 0)
-        FirebaseConst.watchingCount: FieldValue.increment(watchingCount),
-      if (coHostId != null) FirebaseConst.coHostIds: coHostId
-    });
+    if (battleType == null && type == null && battleDuration == null) return;
+    try {
+      await LivestreamService.instance.updateBattleState(
+          roomId: roomId,
+          battleType: (battleType ?? liveData.value.battleType)?.value ??
+              BattleType.initiate.value,
+          type: type?.value,
+          battleDuration: battleDuration);
+    } catch (e) {
+      Loggers.error('updateBattleState failed: $e');
+    }
   }
 
   void handleRequestResponse({
@@ -506,258 +656,25 @@ class LivestreamScreenController extends BaseController {
             ? LivestreamUserType.audience
             : LivestreamUserType.coHost);
 
-    // Determine the comment to delete
+    // The request line disappears from the host's feed locally (history on
+    // the server keeps it, harmless).
     final commentToDelete = comment ??
         comments.firstWhereOrNull((element) =>
             element.senderId == userId &&
             element.commentType == LivestreamCommentType.request);
-
     if (commentToDelete != null) {
-      liveStreamCommentsRef.doc(commentToDelete.id.toString()).delete();
+      comments.removeWhere((element) => element.id == commentToDelete.id);
     }
   }
 
-  Future<void> deleteStreamOnFirebase() async {
-    final String? roomId = liveData.value.roomID;
-
-    if (roomId == null) {
-      Loggers.error('Room ID is null. Cannot stop live stream.');
-      return;
-    }
-
-    Loggers.info('Stopping live stream Room : $roomId');
-
+  Future<void> _endStreamOnServer() async {
+    if (roomId.isEmpty) return;
     try {
-      // Get all users in the livestream and delete them
-      QuerySnapshot usersSnapshot = await liveStreamUserStatesRef.get();
-
-      WriteBatch batch = db.batch();
-
-      for (var doc in usersSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      Loggers.info(
-          'Deleted ${usersSnapshot.docs.length} livestream users_state.');
-
-      // Get all Comments in the livestream and delete them
-      QuerySnapshot commentsSnapshot = await liveStreamCommentsRef.get();
-
-      for (var doc in commentsSnapshot.docs) {
-        batch.delete(doc.reference);
-      }
-
-      Loggers.info(
-          'Deleted ${commentsSnapshot.docs.length} livestream comments.');
-
-      // Delete the main live stream document
-      batch.delete(liveStreamDocRef);
-
-      // Commit batch delete
-      await batch.commit();
-      Loggers.success(
-          'livestream , users_states , comments  deleted from Firestore.');
-    } catch (e, stackTrace) {
-      Loggers.error('Failed to stop live stream: $e');
-      Loggers.error('StackTrace: $stackTrace');
+      await LivestreamService.instance.endLivestream(roomId: roomId);
+      Loggers.success('livestream ended on server for room $roomId');
+    } catch (e) {
+      Loggers.error('endLivestream failed: $e');
     }
-  }
-
-  void listenLiveStreamData() {
-    int likeCount = liveData.value.likeCount ?? 0;
-    // liveStreamDocListener?.cancel();
-    liveStreamDocListener = liveStreamDocRef
-        .withConverter<Livestream>(
-          fromFirestore: (snapshot, _) {
-            if (!snapshot.exists) {
-              Loggers.error(
-                  'Livestream document not found for Room ID: ${liveData.value.roomID}');
-              return Livestream(); // default instance
-            }
-            return Livestream.fromJson(snapshot.data()!);
-          },
-          toFirestore: (value, _) => value.toJson(),
-        )
-        .snapshots()
-        .listen(
-      (event) async {
-        final stream = event.data();
-        if (stream == null) {
-          Loggers.warning('Livestream data is null');
-          return;
-        }
-
-        if (stream.battleType == BattleType.initiate) {
-          timer?.cancel();
-          remainingBattleSeconds.value =
-              Duration(minutes: stream.battleDuration).inSeconds;
-          countdownPlayer.pause();
-        }
-
-        if (stream.battleType == BattleType.waiting) {
-          totalBattleSecond =
-              Duration(minutes: stream.battleDuration).inSeconds;
-        }
-
-        // Update LiveData
-        liveData.value = stream;
-
-        // Trigger like animation if changed
-        final newLikeCount = stream.likeCount ?? 0;
-        if (likeCount != newLikeCount) {
-          onLikeTap?.call();
-          likeCount = newLikeCount;
-        }
-      },
-      onError: (error) =>
-          Loggers.error('Error listening to livestream: $error'),
-    );
-  }
-
-  void listenUserState() {
-    // Cancel any existing listener
-    liveStreamUserStatesListener?.cancel();
-    // Loggers.info('👂 Listening to live stream users state...');
-
-    liveStreamUserStatesListener = liveStreamUserStatesRef
-        .withConverter(
-          fromFirestore: (snapshot, options) {
-            if (!snapshot.exists) return null;
-            return LivestreamUserState.fromJson(snapshot.data()!);
-          },
-          toFirestore: (value, options) {
-            if (value == null) return {};
-            return value.toJson();
-          },
-        )
-        .snapshots()
-        .listen((event) {
-          // Loggers.info(
-          //     '📦 Firestore snapshot received with ${event.docChanges.length} changes');
-
-          for (var change in event.docChanges) {
-            final state = change.doc.data();
-            if (state == null) {
-              // Loggers.warning('⚠️ Null state found in change, skipping...');
-              continue;
-            }
-
-            switch (change.type) {
-              case DocumentChangeType.added:
-                _showJoinStreamSheet(state);
-                liveUsersStates.add(state);
-                // Loggers.info('➕ User added: ${state.userId}');
-                break;
-
-              case DocumentChangeType.modified:
-                LivestreamUserState? oldState =
-                    liveUsersStates.firstWhereOrNull(
-                        (element) => element.userId == state.userId);
-
-                updateStateAction(oldState, state);
-
-                int index =
-                    liveUsersStates.indexWhere((u) => u.userId == state.userId);
-                if (index != -1) {
-                  liveUsersStates[index] = state;
-                } else {
-                  liveUsersStates.add(state);
-                }
-                // Loggers.info('🔁 User modified: ${state.userId}');
-                break;
-
-              case DocumentChangeType.removed:
-                liveUsersStates.removeWhere((u) => u.userId == state.userId);
-                // Loggers.info('➖ User removed: ${state.userId}');
-                break;
-            }
-          }
-          requestList.value = liveUsersStates
-              .where((element) => element.type == LivestreamUserType.requested)
-              .toList();
-          audienceList.value = liveUsersStates
-              .where((element) =>
-                  element.type != LivestreamUserType.host &&
-                  element.type != LivestreamUserType.left)
-              .toList();
-          invitedList.value = liveUsersStates
-              .where((element) => element.type == LivestreamUserType.invited)
-              .toList();
-          coHostList.value = liveUsersStates
-              .where((element) => element.type == LivestreamUserType.coHost)
-              .toList();
-          audienceMemberList.value = liveUsersStates
-              .where((element) =>
-                  element.type != LivestreamUserType.left &&
-                  element.userId != myUserId)
-              .toList();
-        });
-  }
-
-  void fetchLiveStreamComments() {
-    Loggers.info('Fetching live stream comments...');
-    liveStreamCommentsListener?.cancel();
-    liveStreamCommentsListener = liveStreamCommentsRef
-        .withConverter(
-          fromFirestore: (snapshot, options) {
-            if (!snapshot.exists) {
-              Loggers.error('No comments found in Firestore.');
-              return null;
-            }
-            return LivestreamComment.fromJson(snapshot.data()!);
-          },
-          toFirestore: (value, options) => value?.toJson() ?? {},
-        )
-        .snapshots()
-        .listen((querySnapshot) {
-      // Loggers.info(
-      //     'Received comment changes: ${querySnapshot.docChanges.length}');
-
-      for (var change in querySnapshot.docChanges) {
-        LivestreamComment? comment = change.doc.data();
-        if (comment == null) {
-          Loggers.error('Null comment received.');
-          continue;
-        }
-
-        switch (change.type) {
-          case DocumentChangeType.added:
-            firestoreController.fetchUserIfNeeded(comment.senderId ?? -1);
-            if (comment.commentType == LivestreamCommentType.request &&
-                !isHost) {
-              continue;
-            }
-            comments.add(comment);
-            // Loggers.info('New comment added: ${comment.toJson()}');
-            break;
-
-          case DocumentChangeType.modified:
-            if (comment.commentType == LivestreamCommentType.request &&
-                !isHost) {
-              return;
-            }
-            int index = comments.indexWhere((c) => c.id == comment.id);
-            if (index != -1) {
-              comments[index] = comment;
-              // Loggers.info('Comment modified: ${comment.toJson()}');
-            }
-            break;
-
-          case DocumentChangeType.removed:
-            comments.removeWhere((c) => c.id == comment.id);
-            // Loggers.info('Comment removed: ${comment.id}');
-            break;
-        }
-      }
-
-      // Assign sender and receiver users to comments
-      for (var comment in comments) {
-        comment.gift =
-            gifts.firstWhereOrNull((gift) => gift.id == comment.giftId);
-      }
-
-      comments.sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0));
-    });
   }
 
   void toggleCamera() {
@@ -787,22 +704,18 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
-  // RxBool isVideoOn = true.obs;
   void toggleVideo(LivestreamUserState? state) async {
     if (state?.videoStatus == VideoAudioStatus.offByHost) {
       return showSnackBar(LKey.theHostHasTurnedOffYourVideo.tr);
     }
     bool isVideoOn = state?.videoStatus == VideoAudioStatus.on;
-    Loggers.error(isVideoOn);
     if (isVideoOn) {
       updateUserStateToFirestore(myUserId,
           videoStatus: VideoAudioStatus.offByMe);
       await zegoEngine.enableCamera(false);
-      print('HELLO WOW');
     } else {
       updateUserStateToFirestore(myUserId, videoStatus: VideoAudioStatus.on);
       await zegoEngine.enableCamera(true);
-      print('HELLO NOTHING');
     }
   }
 
@@ -820,13 +733,27 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
+  /// Hearts: instant local animation, batched server flush (one addLikes call
+  /// per few seconds instead of one write per tap).
   void onLikeButtonTap() async {
-    bool isExist = (await liveStreamDocRef.get()).exists;
-    if (isExist) {
-      HapticManager.shared.light();
-      liveStreamDocRef
-          .update({FirebaseConst.likeCount: FieldValue.increment(1)});
-    }
+    HapticManager.shared.light();
+    _pendingLikes++;
+    _knownLikeCount++;
+    liveData.update((val) => val?.likeCount = (val.likeCount ?? 0) + 1);
+    onLikeTap?.call();
+  }
+
+  void _flushPendingLikes() {
+    if (_pendingLikes <= 0 || roomId.isEmpty) return;
+    final count = _pendingLikes;
+    _pendingLikes = 0;
+    () async {
+      try {
+        await LivestreamService.instance.addLikes(roomId: roomId, count: count);
+      } catch (e) {
+        Loggers.error('addLikes failed: $e');
+      }
+    }();
   }
 
   void onTextCommentSend() {
@@ -834,7 +761,7 @@ class LivestreamScreenController extends BaseController {
     textCommentController.clear();
     isTextEmpty.value = true;
     if (comment.isEmpty) return;
-    _sendCommentToFirestore(type: LivestreamCommentType.text, comment: comment);
+    _sendComment(type: LivestreamCommentType.text, comment: comment);
   }
 
   void onGiftTap(GiftType type,
@@ -846,59 +773,47 @@ class LivestreamScreenController extends BaseController {
       return showSnackBar(LKey.battleEndedGiftNotSent.tr);
     }
     GiftManager.openGiftSheet(
-        onCompletion: (giftManager) {
+        onCompletion: (giftManager) async {
           Gift gift = giftManager.gift;
           AppUser? user = giftManager.streamUser;
+          if (user?.userId == null || gift.id == null) return;
 
-          int coinPrice = gift.coinPrice?.toInt() ?? 0;
-
-          _sendCommentToFirestore(
-              type: LivestreamCommentType.gift,
-              giftId: gift.id,
-              receiverId: user?.userId);
-          updateUserStateToFirestore(
-            user?.userId,
-            battleCoin: type == GiftType.battle ? coinPrice : null,
-            currentBattleCoin: type == GiftType.battle ? coinPrice : null,
-            liveCoin: type == GiftType.livestream ? coinPrice : null,
-          );
+          // The livestream endpoint is the single payer: it moves the coins,
+          // records participant earnings and broadcasts the gift comment.
+          try {
+            final res = await LivestreamService.instance.sendStreamGift(
+                roomId: roomId,
+                receiverUserId: user!.userId!,
+                giftId: gift.id!.toInt());
+            if (res.status == true) {
+              final me = SessionManager.instance.getUser();
+              me?.removeCoinFromWallet(gift.coinPrice ?? 0);
+              SessionManager.instance.setUser(me);
+            } else {
+              showSnackBar(res.message);
+            }
+          } catch (e) {
+            Loggers.error('sendStreamGift failed: $e');
+            showSnackBar(LKey.somethingWentWrong.tr);
+          }
         },
         giftType: type,
         battleViewType: battleViewType,
         streamUsers: users);
   }
 
-  _sendCommentToFirestore(
+  Future<void> _sendComment(
       {required LivestreamCommentType type,
       String? comment,
-      int? giftId,
       int? receiverId}) async {
-    int time = DateTime.now().millisecondsSinceEpoch;
     try {
-      await _addUsersFirebaseFireStore();
-      liveStreamCommentsRef.doc('$time').set(LivestreamComment(
-              comment: comment,
-              commentType: type,
-              id: time,
-              senderId: myUserId,
-              receiverId: receiverId,
-              giftId: giftId)
-          .toJson());
+      await LivestreamService.instance.sendComment(
+          roomId: roomId,
+          comment: comment,
+          commentType: type.value,
+          receiverId: receiverId);
     } catch (e) {
-      Loggers.error('Message Error : $e');
-    }
-  }
-
-  Future<void> _addUsersFirebaseFireStore() async {
-    DocumentReference myUserRef = liveStreamUsersRef.doc(myUserId.toString());
-
-    DocumentSnapshot isMyUserExist = await myUserRef.get();
-    if (myUser.value != null) {
-      if (isMyUserExist.exists) {
-        myUserRef.update(myUser.value!.appUser.toJson());
-      } else {
-        myUserRef.set(myUser.value?.appUser.toJson());
-      }
+      Loggers.error('sendComment failed: $e');
     }
   }
 
@@ -911,7 +826,7 @@ class LivestreamScreenController extends BaseController {
       case LivestreamUserType.audience:
         updateUserStateToFirestore(myUserId,
             type: LivestreamUserType.requested);
-        _sendCommentToFirestore(
+        _sendComment(
             type: LivestreamCommentType.request, receiverId: liveData.hostId);
         showSnackBar(LKey.requestJoinToHost.tr);
         break;
@@ -926,6 +841,9 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
+  /// Legacy name kept for the widgets: state changes go to the backend now.
+  /// Coin parameters are server-managed (gifts / battle banking) and follow
+  /// registration has its own endpoint — they are ignored here.
   Future<void> updateUserStateToFirestore(
     int? userId, {
     LivestreamUserType? type,
@@ -938,48 +856,30 @@ class LivestreamScreenController extends BaseController {
     int? currentBattleCoin,
   }) async {
     if (userId == null) {
-      Loggers.error('updateUserStateToFirestore: userId is null');
+      Loggers.error('updateUserState: userId is null');
       return;
     }
 
-    DocumentReference reference =
-        liveStreamUserStatesRef.doc(userId.toString());
-    bool isExist = (await reference.get()).exists;
-    if (!isExist) {
-      Loggers.error('updateUserStateToFirestore Not Found $userId');
-      return;
-    }
-
-    try {
-      final updateData = <String, dynamic>{
-        if (type != null) FirebaseConst.type: type.value,
-        if (audioStatus != null) FirebaseConst.audioStatus: audioStatus.value,
-        if (videoStatus != null) FirebaseConst.videoStatus: videoStatus.value,
-        if (battleCoin != null)
-          FirebaseConst.totalBattleCoin:
-              battleCoin == 0 ? 0 : FieldValue.increment(battleCoin),
-        if (currentBattleCoin != null)
-          FirebaseConst.currentBattleCoin: currentBattleCoin == 0
-              ? 0
-              : FieldValue.increment(currentBattleCoin),
-        if (liveCoin != null)
-          FirebaseConst.liveCoin:
-              liveCoin == 0 ? 0 : FieldValue.increment(liveCoin),
-        if (isFollow != null)
-          FirebaseConst.followersGained: isFollow
-              ? FieldValue.arrayUnion([myUserId])
-              : FieldValue.arrayRemove([myUserId]),
-        if (joinTime != null) FirebaseConst.joinStreamTime: joinTime,
-      };
-      if (battleCoin != null || liveCoin != null) {
-        myUser.value?.coinEstimatedValue(
-            battleCoin?.toDouble() ?? liveCoin?.toDouble());
-        SessionManager.instance.setUser(myUser.value);
+    if (isFollow == true) {
+      try {
+        await LivestreamService.instance
+            .registerFollowGained(roomId: roomId, userId: userId);
+      } catch (e) {
+        Loggers.error('registerFollowGained failed: $e');
       }
-      await liveStreamUserStatesRef.doc(userId.toString()).update(updateData);
+    }
+
+    if (type == null && audioStatus == null && videoStatus == null) return;
+    try {
+      await LivestreamService.instance.updateUserState(
+          roomId: roomId,
+          userId: userId,
+          type: type?.value,
+          audioStatus: audioStatus?.value,
+          videoStatus: videoStatus?.value);
       Loggers.success('User state updated for userId: $userId');
-    } catch (e, stack) {
-      Loggers.error('Failed to update user state: $e\n$stack');
+    } catch (e) {
+      Loggers.error('Failed to update user state: $e');
     }
   }
 
@@ -992,7 +892,7 @@ class LivestreamScreenController extends BaseController {
 
   void _showJoinStreamSheet(LivestreamUserState state) {
     if (state.userId == myUserId && state.type == LivestreamUserType.invited) {
-      AppUser? hostUser = liveData.value.getHostUser(firestoreController.users);
+      AppUser? hostUser = liveData.value.getHostUser(cacheController.users);
       isJoinSheetOpen = true;
       Get.bottomSheet(
               LiveStreamJoinSheet(
@@ -1056,10 +956,9 @@ class LivestreamScreenController extends BaseController {
         zegoEngine.setAudioRouteToSpeaker(true);
       });
 
-      updateLiveStreamData(coHostId: FieldValue.arrayUnion([streamId]));
-      _sendCommentToFirestore(type: LivestreamCommentType.joinedCoHost);
-      updateUserStateToFirestore(myUserId,
-          joinTime: DateTime.now().millisecondsSinceEpoch);
+      // Server side already flipped this user to CO-HOST (that's what
+      // triggered this publish) — just announce it in the feed.
+      _sendComment(type: LivestreamCommentType.joinedCoHost);
     } else {
       Get.bottomSheet(ConfirmationSheet(
         title: LKey.cameraMicrophonePermissionTitle.tr,
@@ -1075,19 +974,14 @@ class LivestreamScreenController extends BaseController {
     if (view != null) {
       stopPreview(viewId: view.streamViewId);
       stopPublish();
-      updateLiveStreamData(coHostId: FieldValue.arrayRemove([streamId]));
-      LivestreamComment? comment = comments.firstWhereOrNull((element) =>
+      // The joined-co-host line disappears locally.
+      comments.removeWhere((element) =>
           element.senderId == myUserId &&
           element.commentType == LivestreamCommentType.joinedCoHost);
-      if (comment != null) {
-        liveStreamCommentsRef.doc(comment.id.toString()).delete();
-      }
       updateUserStateToFirestore(streamId,
           type: LivestreamUserType.audience,
           audioStatus: VideoAudioStatus.offByMe,
-          videoStatus: VideoAudioStatus.offByMe,
-          battleCoin: 0,
-          currentBattleCoin: 0);
+          videoStatus: VideoAudioStatus.offByMe);
       streamViews.removeWhere((element) => element.streamId == '$streamId');
       stopPlayStream(streamId.toString());
       streamEnded();
@@ -1169,7 +1063,6 @@ class LivestreamScreenController extends BaseController {
 
   void coHostDelete(LivestreamUserState state) {
     if (state.type == LivestreamUserType.coHost) {
-      updateLiveStreamData(coHostId: FieldValue.arrayRemove([state.userId]));
       updateUserStateToFirestore(state.userId,
           type: LivestreamUserType.audience);
     }
@@ -1185,9 +1078,6 @@ class LivestreamScreenController extends BaseController {
       const Duration(milliseconds: 100),
       (t) {
         callBack.call();
-        // if (t.tick >= totalBattleSecond) {
-        //   timer?.cancel();
-        // }
       },
     );
   }
@@ -1225,7 +1115,7 @@ class LivestreamScreenController extends BaseController {
   void streamEnded() {
     LivestreamUserState? userState = liveUsersStates
         .firstWhereOrNull((element) => element.userId == myUserId);
-    AppUser? user = firestoreController.users
+    AppUser? user = cacheController.users
         .firstWhereOrNull((element) => element.userId == myUserId);
     userState?.user = user;
     int viewers = liveUsersStates.length;
@@ -1241,11 +1131,8 @@ class LivestreamScreenController extends BaseController {
                 isScrollControlled: true)
             .then((value) {
           updateUserStateToFirestore(myUserId,
-              battleCoin: 0,
-              liveCoin: 0,
-              currentBattleCoin: 0,
               type: LivestreamUserType.audience);
-          if ((liveData.value.roomID ?? '').isEmpty) {
+          if (roomId.isEmpty) {
             Get.back();
           }
         });
@@ -1266,14 +1153,12 @@ class LivestreamScreenController extends BaseController {
     updateLiveStreamData(
       battleType: BattleType.waiting,
       battleDuration: AppRes.battleDurationInMinutes,
-      battleCreatedAt: DateTime.now().millisecondsSinceEpoch,
     );
   }
 
   void battleRunning() {
     Livestream stream = liveData.value;
-    // Battle Start Timer Logic
-
+    // Battle Start Timer Logic — counts down from the server-stamped start.
     final startTime =
         DateTime.fromMillisecondsSinceEpoch(stream.battleCreatedAt ?? 0);
     final endTime = startTime
@@ -1293,14 +1178,15 @@ class LivestreamScreenController extends BaseController {
         }
       }
 
-      Loggers.info(
-          '[BATTLE RUNNING] Battle end in ${remainingBattleSeconds.value} sec.');
-
       if (remainingBattleSeconds.value <= 0) {
         winAudioPlayer.seek(const Duration(seconds: 0));
         winAudioPlayer.play();
         timer?.cancel();
-        updateLiveStreamData(battleType: BattleType.end);
+        // Only the host is authoritative for ending the round (the server
+        // banks the coins exactly once).
+        if (isHost) {
+          updateLiveStreamData(battleType: BattleType.end);
+        }
       }
     });
   }
