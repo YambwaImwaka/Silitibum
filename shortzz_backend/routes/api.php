@@ -11,9 +11,12 @@
 |
 */
 
+use App\Http\Controllers\BroadcastAuthController;
+use App\Http\Controllers\ChatController;
 use App\Http\Controllers\CommentController;
 use App\Http\Controllers\CronsController;
 use App\Http\Controllers\HashtagController;
+use App\Http\Controllers\LivestreamApiController;
 use App\Http\Controllers\ModeratorController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\NotificationController;
@@ -32,6 +35,14 @@ Route::middleware('checkHeader')->group(function () {
     Route::prefix('user')->group(function () {
         Route::post('logInUser', [UserController::class, 'logInUser']);
         Route::post('logOutUser', [UserController::class, 'logOutUser']);
+
+        // MySQL-native auth (post-Firebase)
+        Route::post('registerUser', [UserController::class, 'registerUser']);
+        Route::post('forgotPassword', [UserController::class, 'forgotPassword']);
+        Route::post('resetPasswordWithCode', [UserController::class, 'resetPasswordWithCode']);
+        Route::post('sendEmailVerificationCode', [UserController::class, 'sendEmailVerificationCode'])->middleware('authorizeUser');
+        Route::post('verifyEmailCode', [UserController::class, 'verifyEmailCode'])->middleware('authorizeUser');
+        Route::post('changePassword', [UserController::class, 'changePassword'])->middleware('authorizeUser');
         Route::post('updateUserDetails', [UserController::class, 'updateUserDetails'])->middleware('authorizeUser');
         Route::post('addUserLink', [UserController::class, 'addUserLink'])->middleware('authorizeUser');
         Route::post('deleteUserLink', [UserController::class, 'deleteUserLink'])->middleware('authorizeUser');
@@ -181,6 +192,40 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('uploadFileGivePath', [SettingsController::class, 'uploadFileGivePath'])->middleware('authorizeUser');
         Route::post('deleteFile', [SettingsController::class, 'deleteFile'])->middleware('authorizeUser');
     });
+
+    // Chat (MySQL + realtime broadcasting)
+    Route::prefix('chat')->group(function () {
+        Route::post('fetchThreads', [ChatController::class, 'fetchThreads'])->middleware('authorizeUser');
+        Route::post('fetchUnreadCounts', [ChatController::class, 'fetchUnreadCounts'])->middleware('authorizeUser');
+        Route::post('fetchMessages', [ChatController::class, 'fetchMessages'])->middleware('authorizeUser');
+        Route::post('sendMessage', [ChatController::class, 'sendMessage'])->middleware('authorizeUser');
+        Route::post('markThreadRead', [ChatController::class, 'markThreadRead'])->middleware('authorizeUser');
+        Route::post('acceptChatRequest', [ChatController::class, 'acceptChatRequest'])->middleware('authorizeUser');
+        Route::post('rejectChatRequest', [ChatController::class, 'rejectChatRequest'])->middleware('authorizeUser');
+        Route::post('unsendMessage', [ChatController::class, 'unsendMessage'])->middleware('authorizeUser');
+        Route::post('deleteMessageForMe', [ChatController::class, 'deleteMessageForMe'])->middleware('authorizeUser');
+        Route::post('deleteThread', [ChatController::class, 'deleteThread'])->middleware('authorizeUser');
+    });
+
+    // Livestream signalling (MySQL + presence channels; Zego carries media)
+    Route::prefix('livestream')->group(function () {
+        // Guest-open: the Live tab lists streams without a session
+        Route::post('fetchLivestreams', [LivestreamApiController::class, 'fetchLivestreams']);
+        Route::post('createLivestream', [LivestreamApiController::class, 'createLivestream'])->middleware('authorizeUser');
+        Route::post('joinLivestream', [LivestreamApiController::class, 'joinLivestream'])->middleware('authorizeUser');
+        Route::post('leaveLivestream', [LivestreamApiController::class, 'leaveLivestream'])->middleware('authorizeUser');
+        Route::post('fetchStreamState', [LivestreamApiController::class, 'fetchStreamState'])->middleware('authorizeUser');
+        Route::post('sendComment', [LivestreamApiController::class, 'sendComment'])->middleware('authorizeUser');
+        Route::post('addLikes', [LivestreamApiController::class, 'addLikes'])->middleware('authorizeUser');
+        Route::post('sendStreamGift', [LivestreamApiController::class, 'sendStreamGift'])->middleware('authorizeUser');
+        Route::post('updateUserState', [LivestreamApiController::class, 'updateUserState'])->middleware('authorizeUser');
+        Route::post('updateBattleState', [LivestreamApiController::class, 'updateBattleState'])->middleware('authorizeUser');
+        Route::post('registerFollowGained', [LivestreamApiController::class, 'registerFollowGained'])->middleware('authorizeUser');
+        Route::post('endLivestream', [LivestreamApiController::class, 'endLivestream'])->middleware('authorizeUser');
+    });
+
+    // Pusher-protocol channel authorization (custom authtoken scheme)
+    Route::post('broadcasting/auth', [BroadcastAuthController::class, 'authenticate']);
 });
 
 // Misc

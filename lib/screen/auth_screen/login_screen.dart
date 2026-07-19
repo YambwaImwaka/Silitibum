@@ -276,8 +276,8 @@ class PhoneCodeChip extends StatelessWidget {
   }
 }
 
-/// Phone accounts reset their password by re-proving phone possession with an
-/// SMS OTP (no email involved).
+/// Phone accounts reset their password with a code sent to their recovery
+/// email — there is no SMS channel.
 class PhoneForgotPasswordSheet extends StatelessWidget {
   const PhoneForgotPasswordSheet({super.key});
 
@@ -285,7 +285,7 @@ class PhoneForgotPasswordSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final controller = Get.find<AuthScreenController>();
     return Container(
-      height: 480,
+      height: 380,
       margin: EdgeInsets.only(top: AppBar().preferredSize.height * 2),
       decoration: ShapeDecoration(
           shape: const SmoothRectangleBorder(
@@ -305,7 +305,7 @@ class PhoneForgotPasswordSheet extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 20.0, vertical: 5),
-                      child: Text(LKey.resetPasswordViaOtp.tr,
+                      child: Text(LKey.resetPasswordViaRecoveryEmail.tr,
                           style: TextStyleCustom.outFitRegular400(
                               fontSize: 15, color: textLightGrey(context))),
                     ),
@@ -315,22 +315,12 @@ class PhoneForgotPasswordSheet extends StatelessWidget {
                       isPrefixIconShow: true,
                       keyboardType: TextInputType.phone,
                     ),
-                    TextFieldCustom(
-                      controller: controller.passwordController,
-                      title: LKey.newPassword.tr,
-                      isPasswordField: true,
-                    ),
-                    TextFieldCustom(
-                      controller: controller.confirmPassController,
-                      title: LKey.reTypePassword.tr,
-                      isPasswordField: true,
-                    ),
                     const SizedBox(height: 10),
                     TextButtonCustom(
                         onTap: () {
                           // Keep the sheet open: validation errors surface as
-                          // snackbars above it; on success the OTP screen is
-                          // pushed on top and Get.offAll cleans up after.
+                          // snackbars above it; on success the code sheet is
+                          // shown and Get.offAll cleans up after login.
                           controller.onPhoneForgotPassword();
                         },
                         title: LKey.forgetPassword.tr,

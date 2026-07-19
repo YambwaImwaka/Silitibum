@@ -1,5 +1,5 @@
 import 'package:get/get.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/utilities/app_res.dart';
 
@@ -91,7 +91,7 @@ class Livestream {
   }
 
   AppUser? getHostUser(List<AppUser> users) {
-    final controller = Get.find<FirebaseFirestoreController>();
+    final controller = Get.find<AppUserCacheController>();
     AppUser? hostUser = controller.users
         .firstWhereOrNull((element) => element.userId == hostId);
     return hostUser;

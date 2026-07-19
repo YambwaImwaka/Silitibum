@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -9,13 +8,14 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart' show SessionManager;
+import 'package:shortzz/common/service/api/chat_service.dart';
+import 'package:shortzz/common/service/api/livestream_service.dart';
 import 'package:shortzz/common/service/api/notification_service.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/languages/languages_keys.dart';
-import 'package:shortzz/model/chat/chat_thread.dart';
 import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/chat_screen/chat_screen.dart';
@@ -27,7 +27,6 @@ import 'package:shortzz/screen/post_screen/single_post_screen.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
 import 'package:shortzz/utilities/const_res.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse notificationResponse) {
@@ -102,9 +101,15 @@ class FirebaseNotificationManager {
       String data = message.data['notification_data'] ?? '';
 
       if (message.data['type'] == NotificationType.chat.type) {
-        ChatThread conversationUser = ChatThread.fromJson(jsonDecode(data));
-        if (conversationUser.conversationId == ChatScreenController.chatId) {
-          return;
+        // Suppress the banner while that thread's chat screen is open.
+        try {
+          final int? threadId = jsonDecode(data)['thread_id'];
+          if (threadId != null &&
+              threadId == ChatScreenController.activeThreadId) {
+            return;
+          }
+        } catch (e) {
+          Loggers.error('chat notification payload parse failed: $e');
         }
       } else {
         SessionManager.instance.setNotifyCount(1);
@@ -197,8 +202,14 @@ class FirebaseNotificationManager {
 
   Future<void> _handleChatNotification(String data) async {
     try {
-      final conversationUser = ChatThread.fromJson(jsonDecode(data));
-      Loggers.info('Navigating to chat: ${conversationUser.toJson()}');
+      // Payload carries only ids; resolve the thread over REST before
+      // opening the screen.
+      final int? threadId = jsonDecode(data)['thread_id'];
+      if (threadId == null) return;
+      final page = await ChatService.instance.fetchMessages(
+          threadId: threadId, limit: 1);
+      final conversationUser = page.thread;
+      if (conversationUser == null) return;
       await Get.to(() => ChatScreen(conversationUser: conversationUser));
     } catch (e) {
       Loggers.error('Failed to handle chat notification: $e');
@@ -317,24 +328,16 @@ class FirebaseNotificationManager {
   Future<void> _handleLivestreamNotification(String dataString) async {
     final incomingStream = Livestream.fromJson(jsonDecode(dataString));
 
-    // If controller not registered, fetch from Firestore
-    final snapshot = await FirebaseFirestore.instance
-        .collection(FirebaseConst.liveStreams)
-        .withConverter<Livestream>(
-          fromFirestore: (snapshot, _) => Livestream.fromJson(snapshot.data()!),
-          toFirestore: (livestream, _) => livestream.toJson(),
-        )
-        .get();
+    // Confirm the stream is still live before routing into it.
+    final streams = await LivestreamService.instance.fetchLivestreams();
+    final stream = streams
+        .firstWhereOrNull((element) => element.roomID == incomingStream.roomID);
 
-    final matchedDoc =
-        snapshot.docs.firstWhereOrNull((doc) => doc.data().roomID == incomingStream.roomID);
-
-    if (matchedDoc == null) {
+    if (stream == null) {
       BaseController.share.showSnackBar(LKey.livestreamHasEnded.tr);
       return;
     }
 
-    final stream = matchedDoc.data();
     final myUser = SessionManager.instance.getUser();
 
     if (stream.hostId == myUser?.id) {

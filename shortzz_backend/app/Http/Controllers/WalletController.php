@@ -582,23 +582,10 @@ class WalletController extends Controller
         }
         $dataUser = GlobalFunction::prepareUserFullData($request->user_id);
         $gift = Gifts::find($request->gift_id);
-        // Self check
-         if($user->id == $dataUser->id){
-            return GlobalFunction::sendSimpleResponse(false, 'you can not gift yourself!');
+        $error = GlobalFunction::transferGiftCoins($user, $dataUser, $gift);
+        if ($error !== null) {
+            return GlobalFunction::sendSimpleResponse(false, $error);
         }
-        if($user->coin_wallet < $gift->coin_price){
-            return GlobalFunction::sendSimpleResponse(false, 'no enough coins in your wallet!');
-        }
-        $user->coin_wallet -= $gift->coin_price;
-        $user->coin_gifted_lifetime += $gift->coin_price;
-        $user->save();
-
-        $dataUser->coin_wallet += $gift->coin_price;
-        $dataUser->coin_collected_lifetime += $gift->coin_price;
-        $dataUser->save();
-
-         // Insert Notification Data : Gift Sent
-         $notificationData = GlobalFunction::insertUserNotification(Constants::notify_gift_user,$user->id, $dataUser->id, $gift->id);
 
         return GlobalFunction::sendSimpleResponse(true, 'gift sent successfully!');
     }

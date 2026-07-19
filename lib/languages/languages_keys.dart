@@ -618,4 +618,14 @@ class LKey {
       "We'll send a code to your number to reset your password.";
   static const String passwordUpdated =
       "Your password has been updated. You are signed in.";
+  static const String verificationCodeSentTo =
+      "A verification code has been sent. Please check your inbox.";
+  static const String verifyEmailReminderCode =
+      "Your email isn't verified yet. Enter the code we emailed you.";
+  static const String noRecoveryEmail =
+      "No recovery email is linked to this account. Add one in Edit Profile, or contact support.";
+  static const String resetPasswordViaRecoveryEmail =
+      "We'll email a code to your recovery address to reset your password.";
+  static const String emailVerifiedSuccessfully =
+      "Your email has been verified.";
 }

@@ -118,7 +118,7 @@ class ChatDateView extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(left: 5.0, right: 5, top: 3),
       child: Text(
-        '${message.id ?? 0}'.chatTimeFormat,
+        '${message.createdAt ?? message.id ?? 0}'.chatTimeFormat,
         style: TextStyleCustom.outFitLight300(
             fontSize: 12, color: textLightGrey(context)),
       ),

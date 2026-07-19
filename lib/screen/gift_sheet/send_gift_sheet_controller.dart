@@ -79,6 +79,16 @@ class SendGiftSheetController extends BaseController {
       return Loggers.error(
           'Invalid coin price: $coinPrice, skipping gift sending.');
     }
+
+    // Stream/battle gifts are paid by the livestream endpoint (the caller's
+    // onCompletion) — paying here too would double-charge the wallet.
+    if (giftType != GiftType.none) {
+      Get.back(
+          result: GiftManager(gift,
+              streamUser: livestreamController.selectedGiftUser.value));
+      return;
+    }
+
     showLoader();
     final response = await GiftWalletService.instance
         .sendGift(giftId: giftId, userId: userId);
@@ -90,13 +100,7 @@ class SendGiftSheetController extends BaseController {
       });
       Loggers.info(myUser.value?.coinWallet);
       SessionManager.instance.setUser(myUser.value);
-      if (giftType == GiftType.none) {
-        Get.back(result: GiftManager(gift));
-      } else {
-        Get.back(
-            result: GiftManager(gift,
-                streamUser: livestreamController.selectedGiftUser.value));
-      }
+      Get.back(result: GiftManager(gift));
     } else {
       showSnackBar(response.message);
     }

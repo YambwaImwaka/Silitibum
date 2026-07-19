@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:audio_waveforms/audio_waveforms.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:get/get.dart';
@@ -11,15 +10,14 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/enum/chat_enum.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
-import 'package:shortzz/common/extensions/user_extension.dart';
 import 'package:shortzz/common/functions/media_picker_helper.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/chat_service.dart';
 import 'package:shortzz/common/service/api/common_service.dart';
-import 'package:shortzz/common/service/api/notification_service.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
+import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/widget/confirmation_dialog.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/chat/chat_thread.dart';
@@ -34,6 +32,7 @@ import 'package:shortzz/screen/blocked_user_screen/block_user_controller.dart';
 import 'package:shortzz/screen/chat_screen/message_type_widget/chat_audio_message.dart';
 import 'package:shortzz/screen/chat_screen/widget/select_media_sheet.dart';
 import 'package:shortzz/screen/chat_screen/widget/send_media_sheet.dart';
+import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
 import 'package:shortzz/screen/gif_sheet/gif_sheet.dart';
 import 'package:shortzz/screen/gift_sheet/send_gift_sheet_controller.dart';
 import 'package:shortzz/screen/post_screen/post_screen_controller.dart';
@@ -45,9 +44,11 @@ import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 import 'package:shortzz/screen/story_view_screen/story_view_screen.dart';
 import 'package:shortzz/utilities/app_res.dart';
 import 'package:shortzz/utilities/color_res.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 import 'package:shortzz/utilities/style_res.dart';
 
+/// 1:1 chat over the MySQL backend: REST for history and sends, realtime
+/// events for live updates, and a short-interval polling fallback whenever
+/// the WebSocket is down (replaces the Firestore implementation).
 class ChatScreenController extends BlockUserController with GetTickerProviderStateMixin {
   List<UserRequestAction> requestType = UserRequestAction.values;
   User? myUser = SessionManager.instance.getUser();
@@ -62,25 +63,17 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   TextEditingController textController = TextEditingController();
   TextEditingController mediaTextController = TextEditingController();
   Rx<ChatThread> conversationUser;
-  ChatThread? myConversationUser;
 
-  late DocumentReference documentSender;
-  late CollectionReference collectionUsersRef;
-  late DocumentReference documentReceiver;
-  late CollectionReference chatCollection;
   late AnimationController audioAnimationController;
   Animation<double>? audioWidthAnimation;
 
-  FirebaseFirestore db = FirebaseFirestore.instance;
   MessageType chatType = MessageType.text;
 
   RxList<MessageData> chatList = <MessageData>[].obs;
-  List<StreamSubscription<QuerySnapshot<MessageData>>> chatListeners = [];
-  List<StreamSubscription<DocumentSnapshot<ChatThread>>> usersStreams = [];
 
   StreamSubscription<PlayerState>? playerControllerListen;
-
-  DocumentSnapshot<MessageData>? lastDocument;
+  StreamSubscription<RealtimeEvent>? _realtimeSub;
+  Timer? _pollTimer;
 
   RecorderController recorderController = RecorderController();
   PlayerController playerController = PlayerController();
@@ -88,47 +81,41 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
 
   ChatScreenController(this.conversationUser);
 
+  /// Set while a chat screen is open — the FCM foreground handler suppresses
+  /// notifications for the visible thread.
   static String chatId = '';
+  static int? activeThreadId;
+
+  int? get threadId => conversationUser.value.threadId;
+
+  /// Highest server-assigned message id we hold (optimistic temp ids are
+  /// epoch-ms and must not feed the polling cursor).
+  int _maxServerMessageId = 0;
+  String? _subscribedChannel;
 
   @override
   void onInit() {
     super.onInit();
     chatId = conversationUser.value.conversationId ?? 'No CONVERSATION';
-    String otherUserid = '${conversationUser.value.chatUser?.userId ?? -1}';
-    String conversationId = conversationUser.value.conversationId ?? 'No CONVERSATION';
-    collectionUsersRef = db.collection(FirebaseConst.appUsers);
-
-    documentSender = db
-        .collection(FirebaseConst.users)
-        .doc(myUser?.id.toString())
-        .collection(FirebaseConst.usersList)
-        .doc(otherUserid);
-    documentReceiver = db
-        .collection(FirebaseConst.users)
-        .doc(otherUserid)
-        .collection(FirebaseConst.usersList)
-        .doc(myUser?.id.toString());
-    chatCollection =
-        db.collection(FirebaseConst.chats).doc(conversationId).collection(FirebaseConst.messages);
+    activeThreadId = conversationUser.value.threadId;
   }
 
   @override
   void onReady() {
     super.onReady();
     _init();
-    _getChat();
-    _addUsersFirebaseFireStore();
+    _fetchInitialMessages();
   }
 
   @override
   void onClose() {
     super.onClose();
     chatId = '';
-    for (var listener in chatListeners) {
-      listener.cancel();
-    }
-    for (var listener in usersStreams) {
-      listener.cancel();
+    activeThreadId = null;
+    _realtimeSub?.cancel();
+    _pollTimer?.cancel();
+    if (_subscribedChannel != null) {
+      RealtimeService.instance.unsubscribe(_subscribedChannel!);
     }
 
     playerControllerListen?.cancel();
@@ -170,55 +157,185 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
     int userId = conversationUser.value.userId ?? -1;
     if (userId != -1) {
       otherUser = await UserService.instance.fetchUserDetails(userId: userId);
-      Loggers.info('Other User Device Token: ${otherUser?.deviceToken}');
     }
   }
 
-  void _listenToChatThreadUser() {
-    var otherConversationStream = documentSender
-        .withConverter(
-          fromFirestore: (snapshot, options) => ChatThread.fromJson(snapshot.data()!),
-          toFirestore: (ChatThread value, options) => value.toJson(),
-        )
-        .snapshots()
-        .listen((event) {
-      if (event.exists) {
-        conversationUser.value = event.data()!;
-        Loggers.info('Chat Updated: ${conversationUser.value.toJson()}');
-      } else {
-        Loggers.info('Chat User Not Found ${event.data()}');
-        conversationUser.update((val) => val?.chatType = ChatType.approved);
-      }
-    });
+  // ---------------------------------------------------------------------
+  // FETCH + REALTIME + POLLING
+  // ---------------------------------------------------------------------
 
-    var myConversationStream = documentReceiver
-        .withConverter(
-          fromFirestore: (snapshot, options) => ChatThread.fromJson(snapshot.data()!),
-          toFirestore: (ChatThread value, options) => value.toJson(),
-        )
-        .snapshots()
-        .listen((event) {
-      if (event.exists) {
-        myConversationUser = event.data()!;
-        Loggers.success('Other Chat Updated: ${myConversationUser?.toJson()}');
+  Future<void> _fetchInitialMessages() async {
+    if (!SessionManager.instance.isLogin()) return;
+    try {
+      final page = await ChatService.instance.fetchMessages(
+          threadId: threadId,
+          otherUserId: threadId == null ? conversationUser.value.userId : null,
+          limit: AppRes.chatPaginationLimit);
+      if (page.thread != null) {
+        _applyThread(page.thread!);
       }
-    });
-    usersStreams.addAll([otherConversationStream, myConversationStream]);
+      _mergeMessages(page.messages);
+      hasMore.value = page.messages.length >= AppRes.chatPaginationLimit;
+      _markAsRead();
+    } catch (e) {
+      Loggers.error('fetchInitialMessages failed: $e');
+    }
+    _startRealtime();
   }
+
+  Future<void> fetchMoreChatList() async {
+    if (!hasMore.value || isLoading.value || threadId == null) return;
+    isLoading.value = true;
+    try {
+      final serverIds = chatList.map((e) => e.id ?? 0).where(_isServerId);
+      final oldest = serverIds.isEmpty
+          ? null
+          : serverIds.reduce((a, b) => a < b ? a : b);
+      final page = await ChatService.instance.fetchMessages(
+          threadId: threadId,
+          lastMessageId: oldest,
+          limit: AppRes.chatPaginationLimit);
+      if (page.messages.isEmpty) {
+        hasMore.value = false;
+      } else {
+        _mergeMessages(page.messages);
+      }
+    } catch (e) {
+      Loggers.error('fetchMoreChatList failed: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  // Server ids are small sequential values; optimistic temp ids are epoch ms.
+  bool _isServerId(int id) => id > 0 && id < 1000000000000;
+
+  void _mergeMessages(List<MessageData> messages) {
+    for (final message in messages) {
+      chatList.removeWhere((element) => element.id == message.id);
+      chatList.add(message);
+      if (_isServerId(message.id ?? 0) && (message.id ?? 0) > _maxServerMessageId) {
+        _maxServerMessageId = message.id!;
+      }
+    }
+    chatList.sort((a, b) => (b.id ?? 0).compareTo(a.id ?? 0));
+  }
+
+  void _startRealtime() {
+    final tId = threadId;
+    if (tId != null && _subscribedChannel == null) {
+      RealtimeService.instance
+          .subscribePrivate('chat.thread.$tId', RealtimeService.chatEvents);
+      _subscribedChannel = 'private-chat.thread.$tId';
+      activeThreadId = tId;
+    }
+
+    _realtimeSub ??= RealtimeService.instance.events.listen(_onRealtimeEvent);
+
+    // Poll every few seconds while the socket is down (also covers the
+    // disabled-realtime configuration).
+    _pollTimer ??= Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!RealtimeService.instance.isConnected) _pollNewMessages();
+    });
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    final threadJson = event.data['thread'];
+    final int? eventThreadId =
+        threadJson is Map ? threadJson['id'] : event.data['thread_id'];
+    if (threadId == null || eventThreadId != threadId) return;
+
+    switch (event.name) {
+      case 'message.sent':
+        if (event.data['message'] is Map) {
+          final message = MessageData.fromServerJson(
+              (event.data['message'] as Map).cast<String, dynamic>());
+          // Own sends already landed via the REST response.
+          if (message.userId != myUser?.id) {
+            _mergeMessages([message]);
+            _markAsRead();
+          }
+        }
+        if (threadJson is Map) {
+          _applyThread(
+              ChatThread.fromServerJson(threadJson.cast<String, dynamic>()));
+        }
+        break;
+      case 'message.unsent':
+        final int? messageId = event.data['message_id'];
+        final index = chatList.indexWhere((element) => element.id == messageId);
+        if (index != -1) {
+          final message = chatList[index];
+          message.isUnsent = true;
+          message.textMessage = null;
+          message.imageMessage = null;
+          message.videoMessage = null;
+          message.audioMessage = null;
+          message.postMessage = null;
+          message.storyReplyMessage = null;
+          chatList[index] = message;
+        }
+        break;
+      case 'thread.updated':
+        if (threadJson is Map) {
+          _applyThread(
+              ChatThread.fromServerJson(threadJson.cast<String, dynamic>()));
+        }
+        break;
+      case 'thread.deleted':
+        // The other side rejected the request — leave the dead screen.
+        if (Get.isRegistered<ChatScreenController>(
+            tag: conversationUser.value.conversationId)) {
+          Get.back();
+        }
+        break;
+    }
+  }
+
+  Future<void> _pollNewMessages() async {
+    final tId = threadId;
+    if (tId == null || !SessionManager.instance.isLogin()) return;
+    try {
+      final page = await ChatService.instance
+          .fetchMessages(threadId: tId, afterMessageId: _maxServerMessageId);
+      if (page.messages.isNotEmpty) {
+        _mergeMessages(page.messages);
+        _markAsRead();
+      }
+      if (page.thread != null) _applyThread(page.thread!);
+    } catch (e) {
+      Loggers.error('chat poll failed: $e');
+    }
+  }
+
+  /// Applies a fresh thread payload while preserving the resolved chat user.
+  void _applyThread(ChatThread thread) {
+    final AppUser? existingUser = conversationUser.value.chatUser;
+    if (thread.chatUser == null && existingUser != null) {
+      thread.chatUser = existingUser;
+    }
+    conversationUser.value = thread;
+    activeThreadId = thread.threadId;
+  }
+
+  // ---------------------------------------------------------------------
+  // SEND
+  // ---------------------------------------------------------------------
 
   void onSendTextMessage() async {
     if (!AuthGate.check()) return;
     String text = textController.text.trim();
+    if (text.isEmpty) return;
     textController.clear();
     isTextEmpty.value = true;
     if (conversationUser.value.iAmBlocked ?? false) {
       return showSnackBar(
           'You cannot message ${conversationUser.value.chatUser?.username} because you are blocked by them.');
     }
-    sendMessageToFireStore(type: MessageType.text, textMessage: text);
+    sendChatMessage(type: MessageType.text, textMessage: text);
   }
 
-  Future<void> sendMessageToFireStore(
+  Future<void> sendChatMessage(
       {required MessageType type,
       String? textMessage,
       String? imageMessage,
@@ -227,155 +344,56 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
       String? postMessage,
       String? storyReplyMessage,
       List<double>? waveData}) async {
-    int time = DateTime.now().millisecondsSinceEpoch;
+    final int tempId = DateTime.now().millisecondsSinceEpoch;
 
-    List<int> noDeleteIds = [
-      myUser?.id ?? -1,
-      conversationUser.value.chatUser?.userId ?? -1,
-    ];
-
-    MessageData message = MessageData(
+    // Optimistic append; the server row replaces it on success.
+    final optimistic = MessageData(
+      id: tempId,
+      threadId: threadId,
       userId: myUser?.id,
       conversationId: conversationUser.value.conversationId,
+      messageType: type,
       textMessage: textMessage,
-      iAmBlocked: false,
-      iBlocked: false,
       imageMessage: imageMessage,
       videoMessage: videoMessage,
+      audioMessage: audioMessage,
       postMessage: postMessage,
       storyReplyMessage: storyReplyMessage,
-      messageType: type,
-      id: time,
-      noDeleteIds: noDeleteIds,
-      audioMessage: audioMessage,
       waveData: waveData?.join(','),
+      isUnsent: false,
+      createdAt: tempId,
     );
+    chatList.insert(0, optimistic);
 
-    Loggers.success('FIREBASE MESSAGE : ${message.toJson()}');
+    try {
+      final result = await ChatService.instance.sendMessage(
+          threadId: threadId,
+          receiverId: threadId == null ? conversationUser.value.userId : null,
+          type: type,
+          textMessage: textMessage,
+          imageMessage: imageMessage,
+          videoMessage: videoMessage,
+          audioMessage: audioMessage,
+          waveData: waveData?.join(','),
+          postMessage: postMessage,
+          storyReplyMessage: storyReplyMessage);
 
-    // Entry chat list
-    chatCollection.doc(time.toString()).set(message.toJson()).catchError((error) {
-      Loggers.error('Chat Collection ERROR : $error');
-    });
-
-    // For Sender side
-    bool isReceiverUserExist = (await documentSender.get()).exists;
-
-    // Loggers.success('RECEIVER USER isExist: $isReceiverUserExist');
-    String senderLastMessage = getLastMessage(type, message, isSender: true);
-    String receiverLastMessage = getLastMessage(type, message, isSender: false);
-    ChatThread conversation = conversationUser.value;
-    conversation.id = time.toString();
-    conversation.lastMsg = senderLastMessage;
-    conversation.msgCount = 0;
-    conversation.isDeleted = false;
-
-    if (isReceiverUserExist) {
-      documentSender.update(conversation.toJson());
-    } else {
-      documentSender.set(conversation.toJson());
-    }
-
-    // For Receiver side
-    bool isSenderUserExist = (await documentReceiver.get()).exists;
-    // Loggers.success('SENDER USER isExist: $isSenderUserExist');
-
-    if (isSenderUserExist) {
-      documentReceiver.update({
-        FirebaseConst.msgCount: FieldValue.increment(1),
-        FirebaseConst.lastMsg: receiverLastMessage,
-        FirebaseConst.isDeleted: false,
-        FirebaseConst.id: time.toString()
-      });
-    } else {
-      ChatType status = ChatType.approved;
-      String? requestType = UserRequestAction.accept.title;
-
-      if (otherUser != null) {
-        status = otherUser?.followStatus == 2 || otherUser?.followStatus == 3
-            ? ChatType.approved
-            : ChatType.request;
-        requestType = otherUser?.followStatus == 2 || otherUser?.followStatus == 3
-            ? UserRequestAction.accept.title
-            : null;
+      chatList.removeWhere((element) => element.id == tempId);
+      if (result.status == true) {
+        if (result.sentMessage != null) _mergeMessages([result.sentMessage!]);
+        if (result.thread != null) {
+          _applyThread(result.thread!);
+          _startRealtime(); // first message may have just created the thread
+        }
+      } else {
+        showSnackBar(result.message == 'blocked'
+            ? LKey.somethingWentWrong.tr
+            : result.message);
       }
-      ChatThread myConversation = ChatThread(
-          id: time.toString(),
-          conversationId: conversationUser.value.conversationId,
-          chatType: status,
-          msgCount: 1,
-          lastMsg: receiverLastMessage,
-          userId: myUser?.id,
-          isDeleted: false,
-          deletedId: 0,
-          iBlocked: false,
-          iAmBlocked: false,
-          requestType: requestType);
-      myConversationUser = myConversation;
-      documentReceiver.set(myConversation.toJson());
-    }
-
-    pushNotificationToUser(message);
-  }
-
-  void pushNotificationToUser(MessageData message) {
-    if (otherUser?.notifyChat == 0) return;
-
-    String bodyMessage = '';
-    switch (message.messageType) {
-      case MessageType.image:
-        bodyMessage =
-            'Shared a Photo${(message.textMessage ?? '').isNotEmpty ? ': ${message.textMessage}' : ""}';
-      case MessageType.video:
-        bodyMessage =
-            'Shared a Video${(message.textMessage ?? '').isNotEmpty ? ': ${message.textMessage}' : ""}';
-      case MessageType.post:
-        bodyMessage = 'Shared a Post';
-      case MessageType.audio:
-        bodyMessage = '🎙️ Sent a voice message';
-      case MessageType.text:
-        bodyMessage = message.textMessage ?? '';
-      case MessageType.gift:
-        bodyMessage = 'Sent a Gift';
-      case MessageType.gif:
-        bodyMessage = 'Sent a GIF';
-      case MessageType.storyReply:
-        bodyMessage = 'Sent a Story Reply';
-      case null:
-        bodyMessage = '';
-    }
-
-    NotificationService.instance.pushNotification(
-        title: myUser?.fullname ?? '',
-        body: bodyMessage,
-        token: otherUser?.deviceToken,
-        deviceType: otherUser?.device,
-        type: NotificationType.chat,
-        data: myConversationUser?.toJson());
-  }
-
-  String getLastMessage(MessageType type, MessageData message, {bool isSender = true}) {
-    String prefix = isSender ? "You: " : "";
-    String sentPrefix = isSender ? "You sent " : "Sent you ";
-
-    switch (type) {
-      case MessageType.text:
-        return "$prefix${message.textMessage ?? ''}";
-      case MessageType.image:
-        return '${sentPrefix}an Image';
-      case MessageType.video:
-        return '${sentPrefix}a Video';
-      case MessageType.gift:
-        return '${sentPrefix}a Gift';
-      case MessageType.audio:
-        return '${sentPrefix}a voice message';
-      case MessageType.gif:
-        return '${sentPrefix}a GIF';
-      case MessageType.post:
-        Post post = Post.fromJson(jsonDecode(message.postMessage ?? ''));
-        return '$sentPrefix@${post.user?.username ?? ''}\'s post';
-      case MessageType.storyReply:
-        return '${sentPrefix}a Story Reply';
+    } catch (e) {
+      chatList.removeWhere((element) => element.id == tempId);
+      Loggers.error('sendChatMessage failed: $e');
+      showSnackBar(LKey.somethingWentWrong.tr);
     }
   }
 
@@ -387,107 +405,9 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
     }
   }
 
-  void _getChat() async {
-    _listenToChatThreadUser();
-    await Future.delayed(const Duration(milliseconds: 100));
-    var subscription = chatCollection
-        .where(FirebaseConst.noDeleteIds, arrayContains: myUser?.id)
-        .where(FirebaseConst.id, isGreaterThan: conversationUser.value.deletedId)
-        .orderBy(FirebaseConst.id, descending: true)
-        .limit(AppRes.chatPaginationLimit)
-        .withConverter(
-            fromFirestore: (snapshot, options) => MessageData.fromJson(snapshot.data()!),
-            toFirestore: (MessageData value, options) => value.toJson())
-        .snapshots()
-        .listen((event) {
-      Loggers.info(' FETCHING CHAT MESSAGES : ${event.docChanges.length}');
-      for (var change in event.docChanges) {
-        final message = change.doc.data();
-        if (message == null) continue;
-        switch (change.type) {
-          case DocumentChangeType.added:
-            chatList.add(message);
-            break;
-          case DocumentChangeType.modified:
-            chatList.removeWhere((element) => element.id == message.id);
-            chatList.add(message);
-            break;
-          case DocumentChangeType.removed:
-            chatList.removeWhere((element) => element.id == message.id);
-            break;
-        }
-      }
-
-      chatList.sort((a, b) => b.id?.compareTo(a.id ?? 0) ?? 0);
-
-      if (event.docs.isNotEmpty) {
-        lastDocument = event.docs.last;
-      }
-    });
-    chatListeners.add(subscription);
-  }
-
-  Future<void> fetchMoreChatList() async {
-    if (!hasMore.value || isLoading.value) return;
-    isLoading.value = true;
-
-    try {
-      var query = chatCollection
-          .where(FirebaseConst.noDeleteIds, arrayContains: myUser?.id)
-          .where(FirebaseConst.id, isGreaterThan: conversationUser.value.deletedId)
-          .orderBy(FirebaseConst.id, descending: true)
-          .limit(AppRes.chatPaginationLimit);
-
-      if (lastDocument != null) {
-        query = query.startAfterDocument(lastDocument!);
-      }
-
-      // Use snapshots() instead of get()
-      var subscription = query
-          .withConverter(
-            fromFirestore: (snapshot, _) => MessageData.fromJson(snapshot.data()!),
-            toFirestore: (msg, _) => msg.toJson(),
-          )
-          .snapshots()
-          .listen((event) {
-        if (event.docs.isEmpty) {
-          hasMore.value = false;
-          return;
-        }
-
-        lastDocument = event.docs.last;
-
-        for (var change in event.docChanges) {
-          final message = change.doc.data();
-          if (message == null) continue;
-
-          switch (change.type) {
-            case DocumentChangeType.added:
-              if (!chatList.any((m) => m.id == message.id)) {
-                chatList.add(message);
-              }
-              break;
-            case DocumentChangeType.modified:
-              chatList.removeWhere((m) => m.id == message.id);
-              chatList.add(message);
-              break;
-            case DocumentChangeType.removed:
-              chatList.removeWhere((m) => m.id == message.id);
-              break;
-          }
-        }
-
-        chatList.sort((a, b) => b.id?.compareTo(a.id ?? 0) ?? 0);
-      });
-
-      // Store this listener
-      chatListeners.add(subscription);
-    } catch (e) {
-      Loggers.error("Error in live paginated fetch: $e");
-    } finally {
-      isLoading.value = false;
-    }
-  }
+  // ---------------------------------------------------------------------
+  // ACTIONS (gift / audio / sticker / media)
+  // ---------------------------------------------------------------------
 
   onChatActionTap(ChatAction action) {
     if (conversationUser.value.iAmBlocked ?? false) {
@@ -531,7 +451,7 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
     GiftManager.openGiftSheet(
         userId: userId ?? -1,
         onCompletion: (giftManager) {
-          sendMessageToFireStore(
+          sendChatMessage(
               type: MessageType.gift,
               textMessage: giftManager.gift.coinPrice.toString(),
               imageMessage: giftManager.gift.image);
@@ -541,7 +461,7 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   void pickSticker() {
     Get.bottomSheet<String?>(const GifSheet(), isScrollControlled: true).then((value) {
       if (value != null) {
-        sendMessageToFireStore(type: MessageType.gif, imageMessage: value);
+        sendChatMessage(type: MessageType.gif, imageMessage: value);
       }
     });
   }
@@ -571,13 +491,10 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
 
     String filePath = await _uploadFile(mediaFile.file);
 
-    Loggers.success(filePath);
-
     String thumbnailPath =
         mediaFile.type == MediaType.video ? await _uploadFile(mediaFile.thumbNail) : '';
     stopLoader();
     bool isImageMessage = mediaFile.type == MediaType.image;
-    Loggers.success('THIS IS IMAGE MESSAGE : $isImageMessage');
     if (filePath == '') {
       return Loggers.error('Filepath Not Found Please try Again');
     }
@@ -585,7 +502,7 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
       return Loggers.error('ThumbnailPath Not Found Please try Again');
     }
 
-    sendMessageToFireStore(
+    sendChatMessage(
       type: isImageMessage ? MessageType.image : MessageType.video,
       imageMessage: isImageMessage ? filePath : thumbnailPath,
       videoMessage: !isImageMessage ? filePath : thumbnailPath,
@@ -596,6 +513,10 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   Future<String> _uploadFile(XFile file) async {
     return (await CommonService.instance.uploadFileGivePath(file)).data ?? '';
   }
+
+  // ---------------------------------------------------------------------
+  // AUDIO RECORD / PLAYBACK (unchanged mechanics)
+  // ---------------------------------------------------------------------
 
   void toggleAnimation() {
     if (isExpanded.value) {
@@ -639,10 +560,8 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
         List<double> waveData = await playerController.waveformExtraction.extractWaveformData(
             path: recordedFilePath, noOfSamples: playerWaveStyle.getSamplesForWidth(wavesWidth));
 
-        Loggers.info('Recorded file path: $recordedFilePath');
-
         String audioUrl = await _uploadFile(XFile(recordedFilePath));
-        sendMessageToFireStore(
+        sendChatMessage(
           type: MessageType.audio,
           audioMessage: audioUrl,
           waveData: waveData,
@@ -701,29 +620,17 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
     });
   }
 
+  // ---------------------------------------------------------------------
+  // DELETE / UNSEND / REQUESTS
+  // ---------------------------------------------------------------------
+
   void onDeleteForYou(MessageData message) async {
     await Future.delayed(const Duration(milliseconds: 200));
     try {
-      MessageData? data = (await chatCollection
-              .doc(message.id.toString())
-              .withConverter(
-                  fromFirestore: (snapshot, options) => MessageData.fromJson(snapshot.data()!),
-                  toFirestore: (MessageData value, options) => value.toJson())
-              .get())
-          .data();
-
-      if (data != null) {
-        List<int> ids = data.noDeleteIds ?? [];
-        if (ids.length < 2) {
-          await chatCollection.doc(message.id.toString()).delete();
-          await _deleteAssociatedFiles(message);
-        } else {
-          await chatCollection.doc(message.id.toString()).update({
-            FirebaseConst.noDeleteIds: FieldValue.arrayRemove([myUser?.id])
-          });
-          chatList.removeWhere((element) => element.id == data.id);
-        }
+      if (_isServerId(message.id ?? 0)) {
+        await ChatService.instance.deleteMessageForMe(messageId: message.id!);
       }
+      chatList.removeWhere((element) => element.id == message.id);
     } catch (e) {
       Loggers.error('On Delete For You error : $e');
     }
@@ -732,7 +639,10 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   void onUnSend(MessageData message) async {
     await Future.delayed(const Duration(milliseconds: 200));
     try {
-      await chatCollection.doc(message.id.toString()).delete();
+      if (_isServerId(message.id ?? 0)) {
+        await ChatService.instance.unsendMessage(messageId: message.id!);
+      }
+      chatList.removeWhere((element) => element.id == message.id);
       await _deleteAssociatedFiles(message);
     } catch (e) {
       Loggers.error('Un-send message error: $e');
@@ -741,8 +651,6 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
 
   Future<void> _deleteAssociatedFiles(MessageData message) async {
     switch (message.messageType) {
-      case MessageType.text:
-        break;
       case MessageType.image:
         await deleteFile(message.imageMessage ?? '');
         break;
@@ -753,15 +661,7 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
       case MessageType.audio:
         await deleteFile(message.audioMessage ?? '');
         break;
-      case MessageType.gift:
-        break;
-      case MessageType.gif:
-        break;
-      case MessageType.post:
-        break;
-      case MessageType.storyReply:
-        break;
-      case null:
+      default:
         break;
     }
   }
@@ -782,25 +682,31 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
                 profilePhoto: user?.profile,
                 username: user?.username,
                 fullname: user?.fullname,
-                isVerify: user?.isVerify),
-            () {});
+                isVerify: user?.isVerify), () {
+          conversationUser.update((val) => val?.iBlocked = true);
+        });
         break;
       case UserRequestAction.reject:
-        await documentSender.update({
-          FirebaseConst.requestType: UserRequestAction.reject.title,
-          FirebaseConst.deletedId: DateTime.now().millisecondsSinceEpoch,
-          FirebaseConst.isDeleted: true,
-        });
+        if (threadId != null) {
+          await ChatService.instance.rejectChatRequest(threadId: threadId!);
+        }
         Get.back();
         break;
       case UserRequestAction.accept:
-        documentSender.update({
-          FirebaseConst.chatType: ChatType.approved.value,
-          FirebaseConst.requestType: UserRequestAction.accept.title,
+        if (threadId != null) {
+          await ChatService.instance.acceptChatRequest(threadId: threadId!);
+        }
+        conversationUser.update((val) {
+          val?.chatType = ChatType.approved;
+          val?.requestType = UserRequestAction.accept.title;
         });
         break;
     }
   }
+
+  // ---------------------------------------------------------------------
+  // POST / STORY / REPORT / BLOCK
+  // ---------------------------------------------------------------------
 
   void onPostTap(Post post) async {
     PostType type = post.postType;
@@ -844,14 +750,18 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
 
   void toggleBlockUnblock(ChatThread chatThread) {
     if (chatThread.iBlocked ?? false) {
-      unblockUser(otherUser, () {});
+      unblockUser(otherUser, () {
+        conversationUser.update((val) => val?.iBlocked = false);
+      });
     } else {
-      blockUser(otherUser, () {});
+      blockUser(otherUser, () {
+        conversationUser.update((val) => val?.iBlocked = true);
+      });
     }
   }
 
   void sendStoryReply({required Story story, required String textReply, String? imageReply}) {
-    sendMessageToFireStore(
+    sendChatMessage(
         type: MessageType.storyReply,
         imageMessage: imageReply,
         textMessage: textReply,
@@ -859,20 +769,28 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   }
 
   _markAsRead() async {
-    if ((await documentSender.get()).exists) {
-      await documentSender.update({FirebaseConst.msgCount: 0});
+    final tId = threadId;
+    if (tId == null || !SessionManager.instance.isLogin()) return;
+    try {
+      await ChatService.instance.markThreadRead(threadId: tId);
+      conversationUser.update((val) => val?.msgCount = 0);
+      if (Get.isRegistered<DashboardScreenController>()) {
+        Get.find<DashboardScreenController>().refreshUnreadCounts();
+      }
+    } catch (e) {
+      Loggers.error('markThreadRead failed: $e');
     }
   }
 
-  void removeStoryFromChat(MessageData message) async {
-    DocumentReference firebaseDocuments = chatCollection.doc(message.id.toString());
-    await firebaseDocuments.get().then((value) {
-      if (value.exists) {
-        firebaseDocuments.update({
-          FirebaseConst.storyReplyMessage: jsonEncode(Story()),
-        });
-      }
-    });
+  /// Expired/deleted story replies just blank locally — history stays on the
+  /// server, the placeholder renders from the empty JSON.
+  void removeStoryFromChat(MessageData message) {
+    final index = chatList.indexWhere((element) => element.id == message.id);
+    if (index != -1) {
+      final updated = chatList[index];
+      updated.storyReplyMessage = jsonEncode(Story());
+      chatList[index] = updated;
+    }
   }
 
   void onStoryTap(MessageData message, Story story) {
@@ -921,30 +839,6 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
       ignoreSafeArea: false,
       useRootNavigator: true,
     );
-  }
-
-  void _addUsersFirebaseFireStore() async {
-    DocumentReference myUserRef = collectionUsersRef.doc(myUser?.id.toString());
-    DocumentReference otherUserRef =
-        collectionUsersRef.doc(conversationUser.value.userId.toString());
-
-    DocumentSnapshot isMyUserExist = await myUserRef.get();
-    DocumentSnapshot isOtherUserExist = await otherUserRef.get();
-
-    if (myUser != null) {
-      if (isMyUserExist.exists) {
-        myUserRef.update(myUser!.appUser.toJson());
-      } else {
-        myUserRef.set(myUser!.appUser.toJson());
-      }
-    }
-    if (otherUser != null) {
-      if (isOtherUserExist.exists) {
-        otherUserRef.update(otherUser!.appUser.toJson());
-      } else {
-        otherUserRef.set(otherUser!.appUser.toJson());
-      }
-    }
   }
 }
 

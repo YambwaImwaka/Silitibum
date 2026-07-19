@@ -37,12 +37,13 @@ dependencies:
 
   cupertino_icons: ^1.0.9
 
-  ### 🔥 Firebase
+  ### 🔥 Firebase — FCM push delivery ONLY (auth + data live in MySQL)
   firebase_core: ^4.8.0
-  firebase_auth: ^6.5.0
-  cloud_firestore: ^6.4.0
   firebase_messaging: ^16.2.1
   google_mobile_ads: ^8.0.0
+
+  ### 📡 Realtime (Pusher protocol — works with Pusher cloud, Soketi, Reverb)
+  dart_pusher_channels: ^1.2.2
 
   ### 📦 State Management & Storage
   get: ^4.7.3

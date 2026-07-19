@@ -1,120 +1,140 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
-import 'package:shortzz/common/controller/firebase_firestore_controller.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/chat_service.dart';
+import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/widget/confirmation_dialog.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/chat/chat_thread.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
-import 'package:shortzz/utilities/firebase_const.dart';
 
+/// Thread list (chats + requests tabs) over the MySQL backend. Realtime
+/// user-channel events reorder the list live; a slow poll covers WS outages.
 class MessageScreenController extends BaseController {
   List<String> chatCategories = [LKey.chats.tr, LKey.requests.tr];
   RxInt selectedChatCategory = 0.obs;
-  FirebaseFirestore db = FirebaseFirestore.instance;
   PageController pageController = PageController();
   User? myUser = SessionManager.instance.getUser();
   RxList<ChatThread> chatsUsers = <ChatThread>[].obs;
   RxList<ChatThread> requestsUsers = <ChatThread>[].obs;
   final dashboardController = Get.find<DashboardScreenController>();
-  final firebaseFirestoreController = Get.find<FirebaseFirestoreController>();
+  final appUserCacheController = Get.find<AppUserCacheController>();
+
+  StreamSubscription<RealtimeEvent>? _realtimeSub;
+  Timer? _pollTimer;
+  RxBool hasMore = true.obs;
 
   @override
   void onInit() {
     super.onInit();
     pageController = PageController(initialPage: selectedChatCategory.value);
-    _listenToUserChatsAndRequests();
+    fetchThreads(refresh: true);
+    _realtimeSub = RealtimeService.instance.events.listen(_onRealtimeEvent);
+    _pollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!RealtimeService.instance.isConnected) fetchThreads(refresh: true);
+    });
+  }
+
+  @override
+  void onClose() {
+    _realtimeSub?.cancel();
+    _pollTimer?.cancel();
+    super.onClose();
   }
 
   void onPageChanged(int index) {
     selectedChatCategory.value = index;
   }
 
-  Future<void> _listenToUserChatsAndRequests() async {
+  Future<void> fetchThreads({bool refresh = false}) async {
+    if (isLoading.value) return;
     isLoading.value = true;
-    db
-        .collection(FirebaseConst.users)
-        .doc(myUser?.id.toString())
-        .collection(FirebaseConst.usersList)
-        .withConverter(
-            fromFirestore: (snapshot, options) => ChatThread.fromJson(snapshot.data()!),
-            toFirestore: (ChatThread value, options) => value.toJson())
-        .where(FirebaseConst.isDeleted, isEqualTo: false)
-        .orderBy(FirebaseConst.id, descending: true)
-        .snapshots()
-        .listen((event) {
-      isLoading.value = false;
-      for (var change in event.docChanges) {
-        final ChatThread? chatUser = change.doc.data();
-        if (chatUser == null) continue;
-
-        switch (change.type) {
-          case DocumentChangeType.added:
-            if (chatUser.userId != -1) {
-              firebaseFirestoreController.fetchUserIfNeeded(chatUser.userId ?? -1);
-            }
-            if (chatUser.chatType == ChatType.approved) {
-              chatsUsers.add(chatUser);
-            } else {
-              requestsUsers.add(chatUser);
-            }
-
-            break;
-          case DocumentChangeType.modified:
-            // Remove the user from their current list
-            final userId = chatUser.userId;
-            chatsUsers.removeWhere((user) => user.userId == userId);
-            requestsUsers.removeWhere((user) => user.userId == userId);
-
-            (chatUser.chatType == ChatType.approved ? chatsUsers : requestsUsers).add(chatUser);
-          case DocumentChangeType.removed:
-            // Remove the user from their current list
-            final userId = chatUser.userId;
-            chatsUsers.removeWhere((user) => user.userId == userId);
-            requestsUsers.removeWhere((user) => user.userId == userId);
-            break;
-        }
+    try {
+      final page = await ChatService.instance.fetchThreads(
+          lastMsgAt: refresh ? null : _oldestLastMsgAt());
+      if (refresh) {
+        chatsUsers.clear();
+        requestsUsers.clear();
       }
+      for (final thread in page.threads) {
+        _upsertThread(thread);
+      }
+      hasMore.value = page.threads.length >= 20;
+    } catch (e) {
+      Loggers.error('fetchThreads failed: $e');
+    } finally {
+      isLoading.value = false;
+    }
+  }
 
-      chatsUsers.sort(
-        (a, b) {
-          return (b.id ?? '0').compareTo(a.id ?? '0');
-        },
-      );
-      requestsUsers.sort(
-        (a, b) {
-          return (b.id ?? '0').compareTo(a.id ?? '0');
-        },
-      );
+  int? _oldestLastMsgAt() {
+    final all = [...chatsUsers, ...requestsUsers]
+        .map((e) => e.lastMsgAt ?? 0)
+        .where((e) => e > 0);
+    return all.isEmpty ? null : all.reduce((a, b) => a < b ? a : b);
+  }
 
-      // Loggers.success('CHAT USER: ${chatsUsers.length}');
-      // Loggers.success('REQUEST USER: ${requestsUsers.length}');
-    });
+  void _upsertThread(ChatThread thread) {
+    chatsUsers.removeWhere((element) => element.userId == thread.userId);
+    requestsUsers.removeWhere((element) => element.userId == thread.userId);
+    (thread.chatType == ChatType.approved ? chatsUsers : requestsUsers)
+        .add(thread);
+    _sort(chatsUsers);
+    _sort(requestsUsers);
+  }
+
+  void _sort(RxList<ChatThread> list) {
+    list.sort((a, b) => (b.lastMsgAt ?? 0).compareTo(a.lastMsgAt ?? 0));
+  }
+
+  void _onRealtimeEvent(RealtimeEvent event) {
+    // Only user-channel events matter here (thread list + badge).
+    if (!event.channel.startsWith('private-user.')) return;
+    switch (event.name) {
+      case 'message.sent':
+      case 'thread.updated':
+        final threadJson = event.data['thread'];
+        if (threadJson is Map) {
+          _upsertThread(
+              ChatThread.fromServerJson(threadJson.cast<String, dynamic>()));
+        }
+        dashboardController.refreshUnreadCounts();
+        break;
+      case 'thread.deleted':
+        final int? threadId = event.data['thread_id'];
+        chatsUsers.removeWhere((element) => element.threadId == threadId);
+        requestsUsers.removeWhere((element) => element.threadId == threadId);
+        break;
+    }
   }
 
   void onLongPress(ChatThread chatConversation) {
     Get.bottomSheet(ConfirmationSheet(
-      title: LKey.deleteChatUserTitle.trParams({'user_name': chatConversation.chatUser?.username ?? ''}),
+      title: LKey.deleteChatUserTitle
+          .trParams({'user_name': chatConversation.chatUser?.username ?? ''}),
       description: LKey.deleteChatUserDescription.tr,
       onTap: () async {
-        int time = DateTime.now().millisecondsSinceEpoch;
+        if (chatConversation.threadId == null) return;
         showLoader();
-        await db
-            .collection(FirebaseConst.users)
-            .doc(myUser?.id.toString())
-            .collection(FirebaseConst.usersList)
-            .doc(chatConversation.userId.toString())
-            .update({
-          FirebaseConst.deletedId: time,
-          FirebaseConst.isDeleted: true,
-        }).catchError((error) {
-          Loggers.error('USER NOT DELETE : $error');
-        });
-        stopLoader();
+        try {
+          await ChatService.instance
+              .deleteThread(threadId: chatConversation.threadId!);
+          chatsUsers.removeWhere(
+              (element) => element.threadId == chatConversation.threadId);
+          requestsUsers.removeWhere(
+              (element) => element.threadId == chatConversation.threadId);
+          dashboardController.refreshUnreadCounts();
+        } catch (e) {
+          Loggers.error('deleteThread failed: $e');
+        } finally {
+          stopLoader();
+        }
       },
     ));
   }
