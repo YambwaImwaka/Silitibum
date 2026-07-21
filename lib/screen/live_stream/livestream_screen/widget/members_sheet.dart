@@ -80,11 +80,11 @@ class _MembersSheetState extends State<MembersSheet> {
                         itemList =
                             controller.liveUsersStates.search(value, (p0) {
                           AppUser? data =
-                              p0.getUser(controller.firestoreController.users);
+                              p0.getUser(controller.cacheController.users);
                           return data?.username ?? '';
                         }, (p1) {
                           AppUser? data =
-                              p1.getUser(controller.firestoreController.users);
+                              p1.getUser(controller.cacheController.users);
                           return data?.fullname ?? '';
                         });
                         if (widget.isHost) {
@@ -121,7 +121,7 @@ class _MembersSheetState extends State<MembersSheet> {
                         itemCount: controller.audienceMemberList.length,
                         itemBuilder: (context, index) {
                           final state = controller.audienceMemberList[index];
-                          final user = controller.firestoreController.users
+                          final user = controller.cacheController.users
                               .firstWhereOrNull(
                                   (element) => element.userId == state.userId);
                           final bool isInvited =
@@ -148,7 +148,7 @@ class _MembersSheetState extends State<MembersSheet> {
                             itemCount: controller.requestList.length,
                             itemBuilder: (context, index) {
                               final state = controller.requestList[index];
-                              final user = controller.firestoreController.users
+                              final user = controller.cacheController.users
                                   .firstWhereOrNull((element) =>
                                       element.userId == state.userId);
                               final bool isInvited =
@@ -170,7 +170,7 @@ class _MembersSheetState extends State<MembersSheet> {
                             itemCount: controller.audienceList.length,
                             itemBuilder: (context, index) {
                               final state = controller.audienceList[index];
-                              final user = controller.firestoreController.users
+                              final user = controller.cacheController.users
                                   .firstWhereOrNull((element) =>
                                       element.userId == state.userId);
                               final bool isInvited =
@@ -192,7 +192,7 @@ class _MembersSheetState extends State<MembersSheet> {
                             itemCount: controller.invitedList.length,
                             itemBuilder: (context, index) {
                               final state = controller.invitedList[index];
-                              final user = controller.firestoreController.users
+                              final user = controller.cacheController.users
                                   .firstWhereOrNull((element) =>
                                       element.userId == state.userId);
                               final bool isInvited =
@@ -214,7 +214,7 @@ class _MembersSheetState extends State<MembersSheet> {
                             itemCount: controller.coHostList.length,
                             itemBuilder: (context, index) {
                               final state = controller.coHostList[index];
-                              final user = controller.firestoreController.users
+                              final user = controller.cacheController.users
                                   .firstWhereOrNull((element) =>
                                       element.userId == state.userId);
                               final bool isInvited =

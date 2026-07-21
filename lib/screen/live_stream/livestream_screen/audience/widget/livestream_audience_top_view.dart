@@ -121,7 +121,7 @@ class _BuildCenterView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       Livestream stream = controller.liveData.value;
-      AppUser? hostUser = controller.firestoreController.users
+      AppUser? hostUser = controller.cacheController.users
           .firstWhereOrNull((element) => element.userId == stream.hostId);
       return Row(
         spacing: 10,

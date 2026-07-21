@@ -30,7 +30,7 @@ class LiveStreamTextFieldView extends StatelessWidget {
           null;
 
       List<AppUser> users =
-          stream.getAllUsers(controller.firestoreController.users);
+          stream.getAllUsers(controller.cacheController.users);
 
       return Container(
         height: 43,

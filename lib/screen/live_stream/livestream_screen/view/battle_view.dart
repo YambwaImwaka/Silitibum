@@ -80,7 +80,7 @@ class _LiveBattleOverlayWidgetState extends State<LiveBattleOverlayWidget> {
     return Obx(() {
       Livestream stream = widget.controller.liveData.value;
       List<LivestreamUserState> userStates = widget.controller.liveUsersStates;
-      List<AppUser> liveUsers = widget.controller.firestoreController.users;
+      List<AppUser> liveUsers = widget.controller.cacheController.users;
 
       // Host
       LivestreamUserState? hostState;

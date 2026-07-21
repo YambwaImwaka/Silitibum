@@ -37,7 +37,7 @@ class LivestreamView extends StatelessWidget {
         views.insert(0, hostView);
       }
       int coHostCount = views.length;
-      List<AppUser> liveUsers = controller.firestoreController.users;
+      List<AppUser> liveUsers = controller.cacheController.users;
       List<AppUser> allUsers = stream.getAllUsers(liveUsers);
 
       if (allUsers.isEmpty) {
@@ -229,7 +229,7 @@ class LiveStreamUserView extends StatelessWidget {
       LivestreamUserState? state = controller.liveUsersStates.firstWhereOrNull(
           (element) =>
               element.userId == int.parse(streamingView?.streamId ?? ''));
-      AppUser? liveUser = controller.firestoreController.users.firstWhereOrNull((element) =>
+      AppUser? liveUser = controller.cacheController.users.firstWhereOrNull((element) =>
               element.userId == int.parse(streamingView?.streamId ?? ''));
 
       return Stack(

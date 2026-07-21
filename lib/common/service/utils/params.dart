@@ -92,7 +92,6 @@ class Params {
   static const String postImages = 'post_images';
   static const String comment = 'comment';
   static const String reply = 'reply';
-  static const String type = 'type';
   static const String types = 'types';
   static const String content = 'content';
   static const String duration = 'duration';
@@ -116,7 +115,6 @@ class Params {
   static const String notifyMention = 'notify_mention';
   static const String notifyGiftReceived = 'notify_gift_received';
   static const String notifyChat = 'notify_chat';
-  static const String giftId = 'gift_id';
   static const String musicId = 'music_id';
   static const String appLastUsedAt = 'app_last_used_at';
   static const String region = 'region';

@@ -360,9 +360,9 @@ class LiveStreamListView extends StatelessWidget {
 
     Widget _buildGridItem(Livestream stream) {
       return Obx(() {
-        AppUser? hostUser = stream.getHostUser(controller.firebaseFirestoreController.users);
+        AppUser? hostUser = stream.getHostUser(controller.appUserCacheController.users);
 
-        List<AppUser> allUsers = stream.getAllUsers(controller.firebaseFirestoreController.users);
+        List<AppUser> allUsers = stream.getAllUsers(controller.appUserCacheController.users);
         bool isBattleOn = stream.type == LivestreamType.battle;
         int userCount = allUsers.length;
         int count = stream.watchingCount ?? 0;
