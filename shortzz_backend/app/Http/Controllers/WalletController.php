@@ -9,8 +9,10 @@ use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
 use App\Models\RedeemRequests;
 use App\Models\Users;
+use App\Services\Payments\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -277,6 +279,86 @@ class WalletController extends Controller
 
         return GlobalFunction::sendSimpleResponse(true,'withdrawal complete successfully');
     }
+
+    // Manual "check now" for a Processing request — in case a webhook never
+    // arrived. Same server-side re-verify used by PaymentWebhookController,
+    // just triggered by an admin click instead of a provider callback.
+    public function recheckWithdrawal(Request $request){
+        $item = RedeemRequests::find($request->id);
+        if ($item == null || $item->status != Constants::withdrawalProcessing) {
+            return GlobalFunction::sendSimpleResponse(false, 'nothing to recheck');
+        }
+        $settings = GlobalSettings::first();
+        $gateway = PaymentGatewayFactory::forProvider($item->provider, $settings);
+        if ($gateway == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'that request\'s provider is not currently configured');
+        }
+        $result = $gateway->verify($item->provider_reference ?? $item->request_number);
+
+        if ($result['status'] === 'completed') {
+            $item->status = Constants::withdrawalCompleted;
+            $item->save();
+        } elseif ($result['status'] === 'failed') {
+            $item->status = Constants::withdrawalFailed;
+            $item->save();
+            $user = $item->user;
+            $user->coin_wallet += $item->coins;
+            $user->save();
+        }
+
+        return GlobalFunction::sendSimpleResponse(true, 'rechecked — status is now ' . $item->status);
+    }
+
+    // Re-attempts a Failed request through the currently active provider
+    // (which may differ from whichever provider failed the first time —
+    // this is exactly the "switch providers if one is down" freedom the
+    // provider-picker settings exist for). Re-debits the coins that were
+    // refunded on failure, same validation as a fresh submission.
+    public function retryWithdrawal(Request $request){
+        $item = RedeemRequests::find($request->id);
+        if ($item == null || $item->status != Constants::withdrawalFailed) {
+            return GlobalFunction::sendSimpleResponse(false, 'nothing to retry');
+        }
+        $user = $item->user;
+        if ($item->coins > $user->coin_wallet) {
+            return GlobalFunction::sendSimpleResponse(false, 'user no longer has enough coins to retry this withdrawal');
+        }
+        $settings = GlobalSettings::first();
+        $gateway = PaymentGatewayFactory::active();
+        if ($gateway == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'no active payout provider configured');
+        }
+
+        DB::transaction(function () use ($item, $user, $settings) {
+            $item->provider = $settings->active_payout_provider;
+            $item->status = Constants::withdrawalPending;
+            $item->save();
+            $user->coin_wallet -= $item->coins;
+            $user->save();
+        });
+
+        try {
+            $result = $gateway->payout($item->account, (float) $item->amount, $settings->currency ?? 'USD', $item->request_number);
+        } catch (\Throwable $e) {
+            Log::error('retryWithdrawal: gateway payout threw: ' . $e->getMessage());
+            $result = ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_exception'];
+        }
+
+        if ($result['status'] === 'failed') {
+            $item->status = Constants::withdrawalFailed;
+            $item->provider_reference = $result['provider_reference'] ?? null;
+            $item->save();
+            $user->coin_wallet += $item->coins;
+            $user->save();
+            return GlobalFunction::sendSimpleResponse(false, 'retry failed, coins refunded again');
+        }
+
+        $item->status = $result['status'] === 'completed' ? Constants::withdrawalCompleted : Constants::withdrawalProcessing;
+        $item->provider_reference = $result['provider_reference'] ?? null;
+        $item->save();
+
+        return GlobalFunction::sendSimpleResponse(true, 'retry submitted');
+    }
     public function deleteGift(Request $request){
         $item = Gifts::find($request->id);
         GlobalFunction::deleteFile($item->image);
@@ -459,6 +541,96 @@ class WalletController extends Controller
 
         return response()->json($json_data);
     }
+    public function listProcessingWithdrawals(Request $request)
+    {
+        $query = RedeemRequests::where('status', Constants::withdrawalProcessing);
+        $totalData = $query->count();
+
+        $limit = $request->input('length');
+        $start = $request->input('start');
+        $searchValue = $request->input('search.value');
+
+        if (!empty($searchValue)) {
+            $query->where(function ($q) use ($searchValue) {
+                $q->where('request_number', 'LIKE', "%{$searchValue}%");
+            });
+        }
+        $totalFiltered = $query->count();
+
+        $result = $query->offset($start)->limit($limit)->orderBy('id', 'DESC')->get();
+
+        $settings = GlobalSettings::first();
+        $data = $result->map(function ($item) use ($settings) {
+            $user = GlobalFunction::createUserDetailsColumn($item->user_id);
+            $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
+            $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
+            $gateway = "<span class='badge badge-info-lighten fs-6'>".($item->provider ?? $item->gateway)."</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span><br><span class='fs-6 text-muted'>ref: {$item->provider_reference}</span>";
+            $requestNumber = "<h5 class='text-primary'>#{$item->request_number}</h5>";
+
+            $recheck = "<a href='#'
+                        rel='{$item->id}'
+                        class='action-btn recheck d-flex align-items-center justify-content-center btn border rounded-2 text-info ms-1'
+                        title='Check status now'>
+                        <i class='uil-sync'></i>
+                        </a>";
+            $action = "<span class='d-flex justify-content-end align-items-center'>{$recheck}</span>";
+
+            return [$requestNumber, $user, $withdrawal, $paymentDetails, GlobalFunction::formateDatabaseTime($item->created_at), $action];
+        });
+
+        return response()->json([
+            "draw" => intval($request->input('draw')),
+            "recordsTotal" => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data" => $data,
+        ]);
+    }
+    public function listFailedWithdrawals(Request $request)
+    {
+        $query = RedeemRequests::where('status', Constants::withdrawalFailed);
+        $totalData = $query->count();
+
+        $limit = $request->input('length');
+        $start = $request->input('start');
+        $searchValue = $request->input('search.value');
+
+        if (!empty($searchValue)) {
+            $query->where(function ($q) use ($searchValue) {
+                $q->where('request_number', 'LIKE', "%{$searchValue}%");
+            });
+        }
+        $totalFiltered = $query->count();
+
+        $result = $query->offset($start)->limit($limit)->orderBy('id', 'DESC')->get();
+
+        $settings = GlobalSettings::first();
+        $data = $result->map(function ($item) use ($settings) {
+            $user = GlobalFunction::createUserDetailsColumn($item->user_id);
+            $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
+            $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
+            $gateway = "<span class='badge badge-danger-lighten fs-6'>".($item->provider ?? $item->gateway)."</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span>";
+            $requestNumber = "<h5 class='text-primary'>#{$item->request_number}</h5>";
+
+            $retry = "<a href='#'
+                        rel='{$item->id}'
+                        class='action-btn retry d-flex align-items-center justify-content-center btn border rounded-2 text-success ms-1'
+                        title='Retry via the currently active provider'>
+                        <i class='uil-redo'></i>
+                        </a>";
+            $action = "<span class='d-flex justify-content-end align-items-center'>{$retry}</span>";
+
+            return [$requestNumber, $user, $withdrawal, $paymentDetails, GlobalFunction::formateDatabaseTime($item->created_at), $action];
+        });
+
+        return response()->json([
+            "draw" => intval($request->input('draw')),
+            "recordsTotal" => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data" => $data,
+        ]);
+    }
     public function withdrawals(){
         return view('withdrawals');
     }
@@ -534,7 +706,12 @@ class WalletController extends Controller
         $rules = [
             'coins' => 'required',
             'gateway' => 'required',
-            'account' => 'required',
+            // MSISDN-style: optional leading +, 8-15 digits — loose on
+            // purpose (exact format varies by country/network) but enough
+            // to reject obviously-garbage input now that this string is
+            // actually sent to a live payout API instead of just displayed
+            // to a human admin.
+            'account' => 'required|regex:/^\+?[0-9]{8,15}$/',
         ];
 
         $validator = Validator::make($request->all(), $rules);
@@ -542,24 +719,69 @@ class WalletController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
         $settings = GlobalSettings::first();
+        if (($settings->is_withdrawal_on ?? 1) == 0) {
+            return GlobalFunction::sendSimpleResponse(false, 'withdrawals are currently disabled');
+        }
         if($request->coins < $settings->min_redeem_coins){
             return GlobalFunction::sendSimpleResponse(false, 'min. amount to Withdrawal is '. $settings->min_redeem_coins);
         }
         if($request->coins > $user->coin_wallet){
             return GlobalFunction::sendSimpleResponse(false, 'insufficient coins to redeem');
         }
-        $redeem = new RedeemRequests();
-        $redeem->request_number = GlobalFunction::generateRedeemRequestNumber($user->id);
-        $redeem->user_id = $user->id;
-        $redeem->gateway = $request->gateway;
-        $redeem->account = $request->account;
-        $redeem->coins = $request->coins;
-        $redeem->coin_value = $settings->coin_value;
-        $redeem->amount = $settings->coin_value * $request->coins;
-        $redeem->save();
 
-        $user->coin_wallet -= $request->coins;
-        $user->save();
+        $provider = $settings->active_payout_provider;
+        $gateway = PaymentGatewayFactory::forProvider($provider, $settings);
+        if ($gateway == null) {
+            Log::error("submitWithdrawalRequest: no active payout provider configured (active_payout_provider=$provider)");
+            return GlobalFunction::sendSimpleResponse(false, 'withdrawals are temporarily unavailable');
+        }
+
+        // Debit + request row are one atomic unit — the external gateway
+        // call happens after commit, deliberately outside the transaction
+        // (holding a DB transaction open across a slow network call is its
+        // own risk: lock contention on the user's row for however long the
+        // provider takes to respond).
+        $redeem = DB::transaction(function () use ($user, $request, $settings, $provider) {
+            $redeem = new RedeemRequests();
+            $redeem->request_number = GlobalFunction::generateRedeemRequestNumber($user->id);
+            $redeem->user_id = $user->id;
+            $redeem->gateway = $request->gateway;
+            $redeem->account = $request->account;
+            $redeem->provider = $provider;
+            $redeem->coins = $request->coins;
+            $redeem->coin_value = $settings->coin_value;
+            $redeem->amount = $settings->coin_value * $request->coins;
+            $redeem->status = Constants::withdrawalPending;
+            $redeem->save();
+
+            $user->coin_wallet -= $request->coins;
+            $user->save();
+
+            return $redeem;
+        });
+
+        try {
+            $result = $gateway->payout($redeem->account, (float) $redeem->amount, $settings->currency ?? 'USD', $redeem->request_number);
+        } catch (\Throwable $e) {
+            Log::error('submitWithdrawalRequest: gateway payout threw: ' . $e->getMessage());
+            $result = ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_exception'];
+        }
+
+        if ($result['status'] === 'failed') {
+            // Refund immediately — same coin-back logic as rejectWithdrawal,
+            // just triggered by a failed provider call instead of an admin
+            // rejecting it.
+            $redeem->status = Constants::withdrawalFailed;
+            $redeem->provider_reference = $result['provider_reference'] ?? null;
+            $redeem->save();
+            $user->coin_wallet += $redeem->coins;
+            $user->save();
+            return GlobalFunction::sendSimpleResponse(false, 'withdrawal could not be processed, your coins have been refunded');
+        }
+
+        $redeem->status = $result['status'] === 'completed' ? Constants::withdrawalCompleted : Constants::withdrawalProcessing;
+        $redeem->provider_reference = $result['provider_reference'] ?? null;
+        $redeem->save();
 
         return GlobalFunction::sendSimpleResponse(true, 'Withdrawal submitted successfully');
 

@@ -10,6 +10,7 @@ import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
+import 'package:shortzz/common/service/media/video_cache_service.dart';
 import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/comment_sheet/helper/comment_helper.dart';
@@ -66,11 +67,14 @@ class ReelsScreenController extends BaseController {
     /// Play 1st video
     _playControllerAtIndex(position.value);
 
-    /// Initialize 2nd vide
+    /// Initialize previous video (instant back-swipe)
     if (position >= 0) {
       await _initializeControllerAtIndex(position.value - 1);
     }
+
+    /// Always keep the next 2 videos loading in the background, in order.
     await _initializeControllerAtIndex(position.value + 1);
+    await _initializeControllerAtIndex(position.value + 2);
   }
 
   void onPageChanged(int index) {
@@ -91,6 +95,7 @@ class ReelsScreenController extends BaseController {
     if (position >= reels.length - 3) {
       await onFetchMoreData?.call().then((value) {
         _initializeControllerAtIndex(position.value + 1);
+        _initializeControllerAtIndex(position.value + 2);
       });
     }
   }
@@ -99,6 +104,7 @@ class ReelsScreenController extends BaseController {
     pauseAllPlayers();
     _initializeControllerAtIndex(index);
     _initializeControllerAtIndex(index + 1);
+    _initializeControllerAtIndex(index + 2);
     _initializeControllerAtIndex(index - 1);
 
     _disposeAllExcept(index);
@@ -108,13 +114,14 @@ class ReelsScreenController extends BaseController {
     pauseAllPlayers();
     _initializeControllerAtIndex(index);
     _initializeControllerAtIndex(index + 1);
+    _initializeControllerAtIndex(index + 2);
     _initializeControllerAtIndex(index - 1);
 
     _disposeAllExcept(index);
   }
 
   void _disposeAllExcept(int index) {
-    final validIndexes = {index - 1, index, index + 1};
+    final validIndexes = {index - 1, index, index + 1, index + 2};
 
     final keys = players.keys.toList(); // 👈 COPY
 
@@ -171,9 +178,18 @@ class ReelsScreenController extends BaseController {
           File(reel.video ?? ''),
         );
       } else {
-        controller = VideoPlayerController.networkUrl(
-          Uri.parse(reel.video?.addBaseURL() ?? ''),
-        );
+        final videoUrl = reel.video?.addBaseURL() ?? '';
+        // Play straight from disk when a prior prefetch already landed the
+        // file (this index was someone's +1/+2 lookahead, or a rewatch) —
+        // zero network cost. Otherwise stream it and cache it in the
+        // background so the next time (rewatch, back-swipe) is a disk hit.
+        final cachedFile = await VideoCacheService.getCachedFile(videoUrl);
+        if (cachedFile != null) {
+          controller = VideoPlayerController.file(cachedFile);
+        } else {
+          controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+          VideoCacheService.prefetch(videoUrl);
+        }
       }
 
       await controller.initialize();

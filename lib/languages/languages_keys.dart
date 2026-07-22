@@ -162,6 +162,8 @@ class LKey {
   static const String pending = "Pending";
   static const String completed = "Completed";
   static const String rejected = "Rejected";
+  static const String processing = "Processing";
+  static const String withdrawalFailed = "Failed";
   static const String coinBalance = "Coin Balance";
   static const String estimatedValue = "Estimated Value";
   static const String estimatedAmount = "Estimated Amount";

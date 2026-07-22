@@ -264,13 +264,7 @@ class CommentController extends Controller
         }
        $replies = $query ->get();
 
-        if($replies->count() > 0){
-            foreach($replies as $reply){
-                $reply->mentionedUsers = Users::whereIn('id', explode(',', $reply->mentioned_user_ids))
-                                        ->select(explode(',',Constants::userPublicFields))
-                                        ->get();
-            }
-        }
+        GlobalFunction::attachMentionedUsers($replies);
 
         return GlobalFunction::sendDataResponse(true,'comment replies fetched successfully', $replies);
 
@@ -315,31 +309,25 @@ class CommentController extends Controller
                     }
                    $comments = $query ->get();
 
-        // Like or not
-        foreach($comments as $comment){
-            $comment->is_liked = false;
-            $like = CommentLikes::where('comment_id', $comment->id)->where('user_id', $user->id)->first();
-            if($like){
-                $comment->is_liked = true;
-            }
-            $comment->mentionedUsers = Users::whereIn('id', explode(',', $comment->mentioned_user_ids))
-            ->select(explode(',',Constants::userPublicFields))
-            ->get();
-
+        // Like or not — batched: this used to run 2 extra queries PER
+        // comment (a like lookup + a mentioned-users lookup), so a page of
+        // 20 comments plus pinned ones cost 40+ queries just for this block.
+        $allCommentIds = collect($comments)->pluck('id')
+            ->merge(collect($pinnedComments)->pluck('id'))
+            ->unique()->all();
+        $likedCommentIds = [];
+        if ($user->id) {
+            $likedCommentIds = array_flip(CommentLikes::where('user_id', $user->id)
+                ->whereIn('comment_id', $allCommentIds)->pluck('comment_id')->all());
         }
-
-        if($pinnedComments->count() > 0){
-            foreach($pinnedComments as $comment){
-                $comment->is_liked = false;
-                $like = CommentLikes::where('comment_id', $comment->id)->where('user_id', $user->id)->first();
-                if($like){
-                    $comment->is_liked = true;
-                }
-            $comment->mentionedUsers = Users::whereIn('id', explode(',', $comment->mentioned_user_ids))
-            ->select(explode(',',Constants::userPublicFields))
-            ->get();
-            }
+        foreach ($comments as $comment) {
+            $comment->is_liked = isset($likedCommentIds[$comment->id]);
         }
+        foreach ($pinnedComments as $comment) {
+            $comment->is_liked = isset($likedCommentIds[$comment->id]);
+        }
+        GlobalFunction::attachMentionedUsers($comments);
+        GlobalFunction::attachMentionedUsers($pinnedComments);
         // End : Like or not
 
         $data['comments'] = $comments;

@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
@@ -34,6 +36,17 @@ Future<void> main() async {
   try {
     await Firebase.initializeApp();
 
+    // Crash reporting only — Crashlytics never sees auth/user data, it's
+    // purely uncaught-error telemetry. Disabled in debug builds so local
+    // development noise doesn't pollute the dashboard.
+    await FirebaseCrashlytics.instance
+        .setCrashlyticsCollectionEnabled(!kDebugMode);
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
     // Register background handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -59,6 +72,11 @@ Future<void> main() async {
     runApp(const RestartWidget(child: MyApp()));
   } catch (e, st) {
     Loggers.error('Fatal crash during app startup $st');
+    // Best-effort: Firebase may not have finished initializing yet if the
+    // crash happened before/during Firebase.initializeApp() itself.
+    try {
+      await FirebaseCrashlytics.instance.recordError(e, st, fatal: true);
+    } catch (_) {}
   }
 }
 

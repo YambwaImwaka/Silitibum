@@ -100,17 +100,16 @@ class SplashScreenController extends BaseController {
 
     if (SessionManager.instance.isLogin()) {
       UserService.instance.fetchUserDetails(userId: SessionManager.instance.getUserID()).then((value) {
-        if (value != null) {
-          Get.off(() => DashboardScreen(myUser: value));
-        } else {
-        // If fetching user details failed, continue as guest to Dashboard
-        Get.off(() => const DashboardScreen());
-        }
+        // The session stays logged in either way; on a failed refetch we
+        // still pass the last-known cached user (rather than null) so the
+        // profile tab doesn't render as "user not found" for someone who is
+        // actually signed in — it'll just refresh again from there.
+        Get.off(() => DashboardScreen(myUser: value ?? SessionManager.instance.getUser()));
       }).catchError((e, st) {
         // FIX: fetchUserDetails() had no error handling — a failed/timed
         // out call here would leave the app stuck after the restart.
-        Loggers.error('fetchUserDetails failed, falling back to DashboardScreen: $e');
-        Get.off(() => const DashboardScreen());
+        Loggers.error('fetchUserDetails failed, falling back to cached user: $e');
+        Get.off(() => DashboardScreen(myUser: SessionManager.instance.getUser()));
       });
     } else {
       bool isLanguageSelect = SessionManager.instance.getBool(SessionKeys.isLanguageScreenSelect);

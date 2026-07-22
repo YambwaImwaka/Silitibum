@@ -407,6 +407,28 @@ $(document).ready(function () {
             }
         });
     });
+    $("#paymentProviderSettingForm").on("submit", function (event) {
+        event.preventDefault();
+        checkUserType(function () {
+            var formId = '#paymentProviderSettingForm';
+            var formdata = collectFormData(formId);
+
+            var url = `${domainUrl}savePaymentProviderSettings`;
+            try {
+                doAjax(url, formdata).then(function (response){
+                    hideFormSpinner(formId);
+                    if(response.status){
+                        showSuccessToast(response.message);
+                    }else{
+                        showErrorToast(response.message);
+                    }
+                });
+            } catch (error) {
+            console.log('Error! : ', error.message);
+                showErrorToast(error.message);
+            }
+        });
+    });
     $("#brandSettingForm").on("submit", function (event) {
         event.preventDefault();
         checkUserType(function () {

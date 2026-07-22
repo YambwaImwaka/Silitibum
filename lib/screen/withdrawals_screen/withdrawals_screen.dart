@@ -36,11 +36,19 @@ class WithdrawalsScreen extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 1),
                         itemBuilder: (context, index) {
                           Withdraw withdraw = controller.withdraws[index];
-                          Color statusColor = withdraw.status == 0
-                              ? ColorRes.orange
-                              : withdraw.status == 1
-                                  ? ColorRes.green
-                                  : ColorRes.likeRed;
+                          // 0 pending, 1 completed, 2 rejected, 3 processing
+                          // (async provider call, awaiting confirmation), 4
+                          // failed (provider call failed, coins refunded).
+                          // An explicit switch — the old nested ternary
+                          // silently rendered any unrecognized status as
+                          // "rejected", which is exactly what would have
+                          // happened to the two new statuses if left as-is.
+                          Color statusColor = switch (withdraw.status) {
+                            0 => ColorRes.orange,
+                            1 => ColorRes.green,
+                            3 => ColorRes.blueFollow,
+                            _ => ColorRes.likeRed,
+                          };
                           return Container(
                             color: bgLightGrey(context),
                             margin: const EdgeInsets.symmetric(vertical: 1),
@@ -98,11 +106,13 @@ class WithdrawalsScreen extends StatelessWidget {
                                           const SizedBox(height: 5),
                                           TextButtonCustom(
                                             onTap: () {},
-                                            title: withdraw.status == 0
-                                                ? LKey.pending.tr
-                                                : withdraw.status == 1
-                                                    ? LKey.completed.tr
-                                                    : LKey.rejected.tr,
+                                            title: switch (withdraw.status) {
+                                              0 => LKey.pending.tr,
+                                              1 => LKey.completed.tr,
+                                              3 => LKey.processing.tr,
+                                              4 => LKey.withdrawalFailed.tr,
+                                              _ => LKey.rejected.tr,
+                                            },
                                             btnHeight: 23,
                                             horizontalMargin: 0,
                                             radius: 5,

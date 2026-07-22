@@ -21,6 +21,7 @@ use App\Models\UserLevels;
 use App\Models\Users;
 use Google\Client;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -688,32 +689,43 @@ class SettingsController extends Controller
 
 
 
+    // This is effectively static app-config data (admin-edited, rarely
+    // changed) but was being rebuilt from 11 separate uncached queries on
+    // every call — and it's one of the most frequently hit endpoints in the
+    // app (fetched on every cold start). A short TTL bounds staleness after
+    // an admin edit to a couple of minutes without having to track down and
+    // invalidate on every one of the many admin CRUD screens that touch
+    // these tables.
     public function fetchSettings()
     {
-        $data = GlobalSettings::first();
-        $languages = Language::all();
-        $gifts = Gifts::orderBy('coin_price','DESC')->get();
-        $onBoarding = OnboardingScreens::all();
-        $redeemGateways = RedeemGateways::all();
-        $reportReasons = ReportReasons::all();
-        $deepARFilters = DeepARFilters::all();
-        $coinPackages = CoinPackages::where('status', 1)->get();
-        $dummyLives = DummyLiveVideos::where('status', 1)->with(['user:'.Constants::userPublicFields])->get();
-        $userLevels = UserLevels::all();
-        $musicCategories = MusicCategories::where('is_deleted', 0)->withCount('musics')->get();
-        $itemBaseUrl = GlobalFunction::getItemBaseUrl();
+        $data = Cache::remember('app_settings_payload', now()->addMinutes(2), function () {
+            $data = GlobalSettings::first();
+            $languages = Language::all();
+            $gifts = Gifts::orderBy('coin_price','DESC')->get();
+            $onBoarding = OnboardingScreens::all();
+            $redeemGateways = RedeemGateways::all();
+            $reportReasons = ReportReasons::all();
+            $deepARFilters = DeepARFilters::all();
+            $coinPackages = CoinPackages::where('status', 1)->get();
+            $dummyLives = DummyLiveVideos::where('status', 1)->with(['user:'.Constants::userPublicFields])->get();
+            $userLevels = UserLevels::all();
+            $musicCategories = MusicCategories::where('is_deleted', 0)->withCount('musics')->get();
+            $itemBaseUrl = GlobalFunction::getItemBaseUrl();
 
-        $data->itemBaseUrl = $itemBaseUrl;
-        $data->languages = $languages;
-        $data->onBoarding = $onBoarding;
-        $data->coinPackages = $coinPackages;
-        $data->redeemGateways = $redeemGateways;
-        $data->reportReasons = $reportReasons;
-        $data->deepARFilters = $deepARFilters;
-        $data->gifts = $gifts;
-        $data->musicCategories = $musicCategories;
-        $data->userLevels = $userLevels;
-        $data->dummyLives = $dummyLives;
+            $data->itemBaseUrl = $itemBaseUrl;
+            $data->languages = $languages;
+            $data->onBoarding = $onBoarding;
+            $data->coinPackages = $coinPackages;
+            $data->redeemGateways = $redeemGateways;
+            $data->reportReasons = $reportReasons;
+            $data->deepARFilters = $deepARFilters;
+            $data->gifts = $gifts;
+            $data->musicCategories = $musicCategories;
+            $data->userLevels = $userLevels;
+            $data->dummyLives = $dummyLives;
+
+            return $data;
+        });
 
         return response()->json([
             'status' => true,
@@ -948,6 +960,37 @@ class SettingsController extends Controller
             'message' => 'Setting Updated Successfully',
         ]);
 
+    }
+
+    // Mobile-money provider config — see app/Services/Payments/. Switching
+    // active_payout_provider here takes effect on the very next payout/charge,
+    // no deploy needed (PaymentGatewayFactory::active() reads it live).
+    public function savePaymentProviderSettings(Request $request)
+    {
+        $setting = GlobalSettings::first();
+
+        if (!$setting) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Setting Not Found',
+            ]);
+        }
+
+        $setting->active_payout_provider = $request->active_payout_provider;
+        $setting->active_collection_provider = $request->active_collection_provider;
+        $setting->dpo_company_token = $request->dpo_company_token;
+        $setting->dpo_service_type = $request->dpo_service_type;
+        $setting->lenco_api_key = $request->lenco_api_key;
+        $setting->paystack_secret_key = $request->paystack_secret_key;
+        $setting->paystack_public_key = $request->paystack_public_key;
+        $setting->flutterwave_secret_key = $request->flutterwave_secret_key;
+
+        $setting->save();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Setting Updated Successfully',
+        ]);
     }
 
     public function changePassword(Request $request)

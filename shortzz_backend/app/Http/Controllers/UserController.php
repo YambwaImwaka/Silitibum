@@ -193,16 +193,14 @@ class UserController extends Controller
          }
         $data = $query ->get();
 
+        $myFollowingIds = [];
+        if ($user->id) {
+            $myFollowingIds = array_flip(Followers::where('from_user_id', $user->id)
+                ->whereIn('to_user_id', collect($data)->pluck('to_user_id')->all())
+                ->pluck('to_user_id')->all());
+        }
         foreach($data as $folliwingItem){
-            $folliwingItem->to_user->is_following = false;
-
-            $isFollow =  Followers::where([
-                    'from_user_id'=> $user->id,
-                    'to_user_id'=> $folliwingItem->to_user_id,
-                ])->first();
-            if($isFollow != null){
-                $folliwingItem->to_user->is_following = true;
-            }
+            $folliwingItem->to_user->is_following = isset($myFollowingIds[$folliwingItem->to_user_id]);
         }
 
         return GlobalFunction::sendDataResponse(true, 'following fetched successfully', $data);
@@ -241,15 +239,14 @@ class UserController extends Controller
          }
         $data = $query ->get();
 
+        $myFollowingIds = [];
+        if ($user->id) {
+            $myFollowingIds = array_flip(Followers::where('from_user_id', $user->id)
+                ->whereIn('to_user_id', collect($data)->pluck('from_user_id')->all())
+                ->pluck('to_user_id')->all());
+        }
         foreach($data as $followersItem){
-            $followersItem->from_user->is_following = false;
-            $isFollow =  Followers::where([
-                    'from_user_id'=> $user->id,
-                    'to_user_id'=> $followersItem->from_user_id,
-                ])->first();
-            if($isFollow != null){
-                $followersItem->from_user->is_following = true;
-            }
+            $followersItem->from_user->is_following = isset($myFollowingIds[$followersItem->from_user_id]);
         }
 
 
@@ -313,11 +310,11 @@ class UserController extends Controller
          }
         $data = $query ->get();
 
+        $myFollowingIds = array_flip(Followers::where('from_user_id', $user->id)
+            ->whereIn('to_user_id', collect($data)->pluck('from_user_id')->all())
+            ->pluck('to_user_id')->all());
         foreach($data as $item){
-            $item->from_user->is_following = Followers::where([
-                'from_user_id'=> $user->id,
-                'to_user_id'=> $item->from_user_id,
-            ])->exists();
+            $item->from_user->is_following = isset($myFollowingIds[$item->from_user_id]);
         }
 
         return GlobalFunction::sendDataResponse(true, 'my followers fetched successfully', $data);
@@ -391,26 +388,25 @@ class UserController extends Controller
         }
         $dataUser = Users::find($request->user_id);
 
-        GlobalFunction::settleUserTotalPostLikesCount($dataUser->id);
-        GlobalFunction::settleFollowCount($dataUser->id);
+        // Counters are maintained on the mutation paths (follow/unfollow,
+        // like/unlike) — recomputing them here on every profile view was
+        // pure write-on-read overhead, not something this read needs.
 
         $dataUser = GlobalFunction::prepareUserFullData($dataUser->id);
-         // Check follow
-         $dataUser->is_following = Followers::where([
-            'from_user_id'=> $user->id,
-            'to_user_id'=> $dataUser->id,
+
+        // Check follow status (single query reused for both directions'
+        // worth of state — this used to run the "am I following them" query
+        // twice).
+        $following = Followers::where([
+            'from_user_id' => $user->id,
+            'to_user_id' => $dataUser->id
         ])->exists();
+        $dataUser->is_following = $following;
 
-        // Check follow status
-            $following = Followers::where([
-                'from_user_id' => $user->id,
-                'to_user_id' => $dataUser->id
-            ])->exists();
-
-            $follower = Followers::where([
-                'from_user_id' => $dataUser->id,
-                'to_user_id' => $user->id
-            ])->exists();
+        $follower = Followers::where([
+            'from_user_id' => $dataUser->id,
+            'to_user_id' => $user->id
+        ])->exists();
 
             if ($following && $follower) {
                 $dataUser->follow_status = 3; // Both users follow each other
@@ -480,15 +476,14 @@ class UserController extends Controller
         $data = $query->get();
 
 
+        $myFollowingIds = [];
+        if ($user->id) {
+            $myFollowingIds = array_flip(Followers::where('from_user_id', $user->id)
+                ->whereIn('to_user_id', collect($data)->pluck('id')->all())
+                ->pluck('to_user_id')->all());
+        }
         foreach($data as $singleUser){
-            $singleUser->is_following = false;
-            $isFollow =  Followers::where([
-                    'from_user_id'=> $user->id,
-                    'to_user_id'=> $singleUser->id,
-                ])->first();
-            if($isFollow != null){
-                $singleUser->is_following = true;
-            }
+            $singleUser->is_following = isset($myFollowingIds[$singleUser->id]);
         }
 
         return GlobalFunction::sendDataResponse(true, 'search users fetched successfully', $data);
@@ -987,7 +982,9 @@ class UserController extends Controller
             'who_can_view_post',
             'saved_music_ids',
             'app_language',
-            'is_verify',
+            // is_verify is intentionally NOT here — it must only ever be set
+            // by the RevenueCat webhook (UserController::revenueCatWebhook),
+            // never by the client, so a subscription can't be self-granted.
         ];
 
         // Update user fields dynamically
@@ -1298,8 +1295,7 @@ class UserController extends Controller
             return GlobalFunction::sendSimpleResponse(false, 'User not found!');
         }
         $user->device_token = null;
-        $authToken = UserAuthTokens::where('user_id', $user->id)->first();
-        $authToken->delete();
+        UserAuthTokens::where('user_id', $user->id)->where('auth_token', $token)->delete();
         $user->save();
         return GlobalFunction::sendSimpleResponse(true, 'Log out Successful!');
     }

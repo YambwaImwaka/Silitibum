@@ -78,6 +78,57 @@ $(document).ready(function () {
         },
     });
 
+    $("#processingWithdrawalsTable").DataTable({
+        autoWidth: false,
+        processing: true,
+        serverSide: true,
+        serverMethod: "post",
+        ordering: false,
+        language: {
+            paginate: {
+                previous: "<i class='mdi mdi-chevron-left'>",
+                next: "<i class='mdi mdi-chevron-right'>",
+            },
+        },
+        ajax: {
+            url: `${domainUrl}listProcessingWithdrawals`,
+            data: function (data) {},
+            error: (error) => {
+                console.log(error);
+            },
+        },
+        drawCallback: function () {
+            $(".dataTables_paginate > .pagination").addClass(
+                "pagination-rounded"
+            );
+        },
+    });
+    $("#failedWithdrawalsTable").DataTable({
+        autoWidth: false,
+        processing: true,
+        serverSide: true,
+        serverMethod: "post",
+        ordering: false,
+        language: {
+            paginate: {
+                previous: "<i class='mdi mdi-chevron-left'>",
+                next: "<i class='mdi mdi-chevron-right'>",
+            },
+        },
+        ajax: {
+            url: `${domainUrl}listFailedWithdrawals`,
+            data: function (data) {},
+            error: (error) => {
+                console.log(error);
+            },
+        },
+        drawCallback: function () {
+            $(".dataTables_paginate > .pagination").addClass(
+                "pagination-rounded"
+            );
+        },
+    });
+
     $("#pendingWithdrawalsTable").on("click", ".complete", function (e) {
         e.preventDefault();
         checkUserType(() => {
@@ -98,7 +149,7 @@ $(document).ready(function () {
                         try {
                             doAjax(action_url, formData).then(function (response){
                                 if(response.status){
-                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable']);
+                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
                                     showSuccessToast(response.message);
                                 }else{
                                     showErrorToast(response.message);
@@ -132,7 +183,7 @@ $(document).ready(function () {
                         try {
                             doAjax(action_url, formData).then(function (response){
                                 if(response.status){
-                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable']);
+                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
                                     showSuccessToast(response.message);
                                 }else{
                                     showErrorToast(response.message);
@@ -147,6 +198,58 @@ $(document).ready(function () {
         });
     });
 
-
+    $("#processingWithdrawalsTable").on("click", ".recheck", function (e) {
+        e.preventDefault();
+        checkUserType(() => {
+            var item_id = $(this).attr("rel");
+            var formData = new FormData();
+            formData.append('id', item_id);
+            try {
+                doAjax(`${domainUrl}recheckWithdrawal`, formData).then(function (response){
+                    if(response.status){
+                        reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
+                        showSuccessToast(response.message);
+                    }else{
+                        showErrorToast(response.message);
+                    }
+                });
+            } catch (error) {
+                console.log('Error! : ', error.message);
+                showErrorToast(error.message);
+            }
+        });
+    });
+    $("#failedWithdrawalsTable").on("click", ".retry", function (e) {
+        e.preventDefault();
+        checkUserType(() => {
+            Swal.fire({
+                icon: "info",
+                title: "Retry this withdrawal?",
+                text: 'This will re-debit the coins and re-attempt payout via the currently active provider.',
+                showDenyButton: true,
+                denyButtonText: `Cancel`,
+                confirmButtonText: "Yes",
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    var item_id = $(this).attr("rel");
+                    var formData = new FormData();
+                    formData.append('id', item_id);
+                    try {
+                        doAjax(`${domainUrl}retryWithdrawal`, formData).then(function (response){
+                            if(response.status){
+                                reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
+                                showSuccessToast(response.message);
+                            }else{
+                                showErrorToast(response.message);
+                            }
+                        });
+                    } catch (error) {
+                        console.log('Error! : ', error.message);
+                        showErrorToast(error.message);
+                    }
+                }
+            });
+        });
+    });
 
 });

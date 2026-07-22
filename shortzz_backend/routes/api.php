@@ -33,13 +33,13 @@ Route::middleware('checkHeader')->group(function () {
 
     // Users
     Route::prefix('user')->group(function () {
-        Route::post('logInUser', [UserController::class, 'logInUser']);
+        Route::post('logInUser', [UserController::class, 'logInUser'])->middleware('throttle:auth');
         Route::post('logOutUser', [UserController::class, 'logOutUser']);
 
         // MySQL-native auth (post-Firebase)
-        Route::post('registerUser', [UserController::class, 'registerUser']);
-        Route::post('forgotPassword', [UserController::class, 'forgotPassword']);
-        Route::post('resetPasswordWithCode', [UserController::class, 'resetPasswordWithCode']);
+        Route::post('registerUser', [UserController::class, 'registerUser'])->middleware('throttle:auth');
+        Route::post('forgotPassword', [UserController::class, 'forgotPassword'])->middleware('throttle:auth');
+        Route::post('resetPasswordWithCode', [UserController::class, 'resetPasswordWithCode'])->middleware('throttle:auth');
         Route::post('sendEmailVerificationCode', [UserController::class, 'sendEmailVerificationCode'])->middleware('authorizeUser');
         Route::post('verifyEmailCode', [UserController::class, 'verifyEmailCode'])->middleware('authorizeUser');
         Route::post('changePassword', [UserController::class, 'changePassword'])->middleware('authorizeUser');

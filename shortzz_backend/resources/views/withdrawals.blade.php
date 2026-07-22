@@ -26,6 +26,14 @@
                         aria-selected="true">
                         <span class="d-md-block">{{__('Rejected')}}</span>
                     </a>
+                    <a class="nav-link " id="v-pills-processing-tab" data-bs-toggle="pill" href="#v-pills-processing" role="tab" aria-controls="v-pills-processing"
+                        aria-selected="true">
+                        <span class="d-md-block">{{__('Processing')}}</span>
+                    </a>
+                    <a class="nav-link " id="v-pills-failed-tab" data-bs-toggle="pill" href="#v-pills-failed" role="tab" aria-controls="v-pills-failed"
+                        aria-selected="true">
+                        <span class="d-md-block">{{__('Failed')}}</span>
+                    </a>
 
                 </div>
             </div> <!-- end col-->
@@ -76,6 +84,40 @@
                                         <th>{{ __('Coin Details')}}</th>
                                         <th>{{ __('Payment Details')}}</th>
                                         <th>{{ __('Created Date')}}</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </div>
+                    </div>
+                    {{-- Processing --}}
+                    <div class="tab-pane fade " id="v-pills-processing" role="tabpanel" aria-labelledby="v-pills-processing-tab">
+                        <div class="table-responsive">
+                            <table class="table table-centered table-hover w-100 dt-responsive nowrap mt-3" id="processingWithdrawalsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{{ __('Request Number')}}</th>
+                                        <th>{{ __('User')}}</th>
+                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Payment Details')}}</th>
+                                        <th>{{ __('Created Date')}}</th>
+                                        <th style="width: 100px;" class="text-end">{{ __('Action')}}</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </div>
+                    </div>
+                    {{-- Failed --}}
+                    <div class="tab-pane fade " id="v-pills-failed" role="tabpanel" aria-labelledby="v-pills-failed-tab">
+                        <div class="table-responsive">
+                            <table class="table table-centered table-hover w-100 dt-responsive nowrap mt-3" id="failedWithdrawalsTable">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{{ __('Request Number')}}</th>
+                                        <th>{{ __('User')}}</th>
+                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Payment Details')}}</th>
+                                        <th>{{ __('Created Date')}}</th>
+                                        <th style="width: 100px;" class="text-end">{{ __('Action')}}</th>
                                     </tr>
                                 </thead>
                             </table>

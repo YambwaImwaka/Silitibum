@@ -28,6 +28,12 @@ final class Constants
     const withdrawalPending = 0;
     const withdrawalCompleted = 1;
     const withdrawalRejected = 2;
+    // Added for automated payouts: an async provider call (DPO/Lenco/
+    // Paystack) accepted the request but hasn't confirmed completion yet
+    // (Processing), or the provider call itself failed outright (Failed) —
+    // neither existed when withdrawal completion was a manual admin click.
+    const withdrawalProcessing = 3;
+    const withdrawalFailed = 4;
 
     const postTypeReel = 1;
     const postTypeImage = 2;

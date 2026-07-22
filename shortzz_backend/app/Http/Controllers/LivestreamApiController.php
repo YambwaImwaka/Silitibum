@@ -38,6 +38,9 @@ class LivestreamApiController extends Controller
     public function createLivestream(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
 
         // A host can only run one live room at a time.
         Livestream::where('host_id', $user->id)
@@ -90,6 +93,9 @@ class LivestreamApiController extends Controller
     public function joinLivestream(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -133,6 +139,9 @@ class LivestreamApiController extends Controller
     public function leaveLivestream(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(true, 'livestream already ended');
@@ -200,6 +209,9 @@ class LivestreamApiController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -247,6 +259,9 @@ class LivestreamApiController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -294,6 +309,9 @@ class LivestreamApiController extends Controller
     public function updateUserState(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -349,6 +367,9 @@ class LivestreamApiController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -393,6 +414,9 @@ class LivestreamApiController extends Controller
     public function registerFollowGained(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
@@ -416,6 +440,9 @@ class LivestreamApiController extends Controller
     public function endLivestream(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $stream = Livestream::where('room_id', $request->room_id)->first();
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream not found');

@@ -28,6 +28,9 @@ class ChatController extends Controller
     public function fetchThreads(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $limit = (int) ($request->limit ?? 20);
 
         $query = ChatThread::where(function ($q) use ($user) {
@@ -76,6 +79,9 @@ class ChatController extends Controller
     public function fetchUnreadCounts(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $threads = ChatThread::where(function ($q) use ($user) {
             $q->where('user1_id', $user->id)->orWhere('user2_id', $user->id);
         })->get(['id', 'user1_id', 'user2_id', 'initiator_id', 'status',
@@ -101,6 +107,9 @@ class ChatController extends Controller
     public function fetchMessages(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
 
         // Accept thread_id, or other_user_id when the app opens a chat from a
         // profile and no thread exists yet (returns an empty page then).
@@ -155,6 +164,9 @@ class ChatController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
 
         // Resolve the receiver from an explicit id or an existing thread.
         $thread = null;
@@ -261,6 +273,9 @@ class ChatController extends Controller
     public function markThreadRead(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $thread = ChatThread::find($request->thread_id);
         if ($thread == null || !$thread->isMember($user->id)) {
             return GlobalFunction::sendSimpleResponse(false, 'thread not found');
@@ -280,6 +295,9 @@ class ChatController extends Controller
     public function acceptChatRequest(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $thread = ChatThread::find($request->thread_id);
         if ($thread == null || !$thread->isMember($user->id)) {
             return GlobalFunction::sendSimpleResponse(false, 'thread not found');
@@ -300,6 +318,9 @@ class ChatController extends Controller
     public function rejectChatRequest(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $thread = ChatThread::find($request->thread_id);
         if ($thread == null || !$thread->isMember($user->id)) {
             return GlobalFunction::sendSimpleResponse(false, 'thread not found');
@@ -322,6 +343,9 @@ class ChatController extends Controller
     public function unsendMessage(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $message = ChatMessage::find($request->message_id);
         if ($message == null || $message->sender_id != $user->id) {
             return GlobalFunction::sendSimpleResponse(false, 'message not found');
@@ -349,6 +373,9 @@ class ChatController extends Controller
     public function deleteMessageForMe(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $message = ChatMessage::find($request->message_id);
         if ($message == null) {
             return GlobalFunction::sendSimpleResponse(false, 'message not found');
@@ -366,6 +393,9 @@ class ChatController extends Controller
     public function deleteThread(Request $request)
     {
         $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
         $thread = ChatThread::find($request->thread_id);
         if ($thread == null || !$thread->isMember($user->id)) {
             return GlobalFunction::sendSimpleResponse(false, 'thread not found');

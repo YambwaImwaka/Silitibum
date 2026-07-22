@@ -82,6 +82,12 @@
                             <i class="mdi mdi-settings-outline d-md-none d-block"></i>
                             <span class="d-none d-md-block">{{ __('SightEngine') }}</span>
                         </a>
+                        <a class="main-nav-link nav-link" id="v-pills-paymentProviders-tab" data-bs-toggle="pill"
+                            href="#v-pills-paymentProviders" role="tab" aria-controls="v-pills-paymentProviders"
+                            aria-selected="false">
+                            <i class="mdi mdi-cash-multiple d-md-none d-block"></i>
+                            <span class="d-none d-md-block">{{ __('Payment Providers') }}</span>
+                        </a>
                         <a class="main-nav-link nav-link" id="v-pills-admob-tab" data-bs-toggle="pill" href="#v-pills-admob"
                             role="tab" aria-controls="v-pills-admob" aria-selected="false">
                             <i class="mdi mdi-settings-outline d-md-none d-block"></i>
@@ -721,6 +727,120 @@
                                         </div>
                                     </div>
 
+                                </div>
+                                <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {{-- Payment Providers --}}
+                <div class="tab-pane fade" id="v-pills-paymentProviders" role="tabpanel"
+                    aria-labelledby="v-pills-paymentProviders-tab">
+                    <div class="card">
+                        <div class="card-header border-bottom">
+                            <h4 class="m-0 header-title">{{ __('Payment Providers') }}</h4>
+                            <p class="text-muted mb-0">{{ __('Only the active provider is used for creator payouts and the web coin top-up page. Switching it takes effect immediately, no deploy needed.') }}</p>
+                        </div>
+                        <div class="card-body">
+                            <form id="paymentProviderSettingForm" method="POST">
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="active_payout_provider" class="form-label">{{ __('Active Payout Provider') }}</label>
+                                            <select class="form-control" id="active_payout_provider" name="active_payout_provider">
+                                                <option value="" {{ $setting->active_payout_provider == null ? 'selected' : '' }}>{{ __('None') }}</option>
+                                                <option value="dpo" {{ $setting->active_payout_provider == 'dpo' ? 'selected' : '' }}>DPO</option>
+                                                <option value="lenco" {{ $setting->active_payout_provider == 'lenco' ? 'selected' : '' }}>Lenco</option>
+                                                <option value="paystack" {{ $setting->active_payout_provider == 'paystack' ? 'selected' : '' }}>Paystack</option>
+                                                <option value="flutterwave" {{ $setting->active_payout_provider == 'flutterwave' ? 'selected' : '' }}>Flutterwave</option>
+                                            </select>
+                                            <small class="text-muted">{{ __('Used for creator withdrawals. Not every provider below supports every direction — check the notes on each before switching.') }}</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="active_collection_provider" class="form-label">{{ __('Active Collection Provider') }}</label>
+                                            <select class="form-control" id="active_collection_provider" name="active_collection_provider">
+                                                <option value="" {{ $setting->active_collection_provider == null ? 'selected' : '' }}>{{ __('None') }}</option>
+                                                <option value="dpo" {{ $setting->active_collection_provider == 'dpo' ? 'selected' : '' }}>DPO</option>
+                                                <option value="lenco" {{ $setting->active_collection_provider == 'lenco' ? 'selected' : '' }}>Lenco</option>
+                                                <option value="paystack" {{ $setting->active_collection_provider == 'paystack' ? 'selected' : '' }}>Paystack</option>
+                                                <option value="flutterwave" {{ $setting->active_collection_provider == 'flutterwave' ? 'selected' : '' }}>Flutterwave</option>
+                                            </select>
+                                            <small class="text-muted">{{ __('Used for the web coin top-up page.') }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-12 mb-3">
+                                        <div class="alert alert-warning mb-0">
+                                            {{ __('Coverage notes: DPO supports collections only (no payout API). Lenco supports payouts only, and only to Nigerian bank accounts (not mobile money by phone number) — not a fit for either side of this feature as-is. Flutterwave is confirmed to support mobile money on both sides. Paystack is very likely to (well-documented mobile money support for Ghana) but this integration was written without being able to reach Paystack\'s docs from the build environment — verify before relying on it.') }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h5>{{ __('DPO') }}</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="dpo_company_token" class="form-label">{{ __('Company Token') }}</label>
+                                            <input type="text" class="form-control" id="dpo_company_token"
+                                                name="dpo_company_token"
+                                                value="{{ $userType == 0 ? '---------' : $setting->dpo_company_token }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="dpo_service_type" class="form-label">{{ __('Service Type') }}</label>
+                                            <input type="text" class="form-control" id="dpo_service_type"
+                                                name="dpo_service_type"
+                                                value="{{ $userType == 0 ? '---------' : $setting->dpo_service_type }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h5>{{ __('Lenco') }}</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="lenco_api_key" class="form-label">{{ __('API Key') }}</label>
+                                            <input type="text" class="form-control" id="lenco_api_key"
+                                                name="lenco_api_key"
+                                                value="{{ $userType == 0 ? '---------' : $setting->lenco_api_key }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h5>{{ __('Paystack') }}</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="paystack_secret_key" class="form-label">{{ __('Secret Key') }}</label>
+                                            <input type="text" class="form-control" id="paystack_secret_key"
+                                                name="paystack_secret_key"
+                                                value="{{ $userType == 0 ? '---------' : $setting->paystack_secret_key }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="paystack_public_key" class="form-label">{{ __('Public Key') }}</label>
+                                            <input type="text" class="form-control" id="paystack_public_key"
+                                                name="paystack_public_key"
+                                                value="{{ $userType == 0 ? '---------' : $setting->paystack_public_key }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                <hr>
+                                <h5>{{ __('Flutterwave') }}</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="flutterwave_secret_key" class="form-label">{{ __('Secret Key') }}</label>
+                                            <input type="text" class="form-control" id="flutterwave_secret_key"
+                                                name="flutterwave_secret_key"
+                                                value="{{ $userType == 0 ? '---------' : $setting->flutterwave_secret_key }}">
+                                        </div>
+                                    </div>
                                 </div>
                                 <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
                             </form>

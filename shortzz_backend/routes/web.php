@@ -9,9 +9,13 @@ use App\Http\Controllers\LiveStreamController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\AppUserLoginController;
 use App\Http\Controllers\PostsController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\TopUpController;
 use App\Http\Controllers\RestrictionsController;
+use App\Http\Controllers\RevenueCatWebhookController;
 use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\ShareLinkController;
 use App\Http\Controllers\ShopCategoryController;
@@ -53,6 +57,28 @@ Route::get('testingRoute', [SettingsController::class, 'testingRoute'])->name('t
 // Deeplink
 Route::get('s/{encryptedId}', [ShareLinkController::class, 'encryptedId'])->name('encryptedId');
 
+// Payment/subscription provider webhooks (external services, not the app —
+// authenticated by a shared secret checked inside each controller, not by
+// the app's apikey/authtoken scheme, and exempted from CSRF below).
+Route::post('webhooks/revenuecat', [RevenueCatWebhookController::class, 'handle'])->name('webhooks.revenuecat');
+Route::post('webhooks/paystack', [PaymentWebhookController::class, 'paystack'])->name('webhooks.paystack');
+Route::post('webhooks/lenco', [PaymentWebhookController::class, 'lenco'])->name('webhooks.lenco');
+Route::post('webhooks/dpo', [PaymentWebhookController::class, 'dpo'])->name('webhooks.dpo');
+Route::post('webhooks/flutterwave', [PaymentWebhookController::class, 'flutterwave'])->name('webhooks.flutterwave');
+
+// Mobile-money coin top-up — public web page, separate account session from
+// both the mobile app (authtoken) and the admin panel (checkLogin). See
+// TopUpController/AppUserLoginController for why this lives on the web
+// instead of in the app.
+Route::get('topup/login', [AppUserLoginController::class, 'login'])->name('topup.login');
+Route::post('topup/login', [AppUserLoginController::class, 'checkLogin'])->name('topup.checkLogin');
+Route::get('topup/logout', [AppUserLoginController::class, 'logout'])->name('topup.logout');
+Route::middleware(['checkAppUserLogin'])->group(function () {
+    Route::get('topup', [TopUpController::class, 'show'])->name('topup.show');
+    Route::post('topup/charge', [TopUpController::class, 'initiateCharge'])->name('topup.charge');
+    Route::post('topup/status', [TopUpController::class, 'checkStatus'])->name('topup.status');
+});
+
 Route::get('/.well-known/apple-app-site-association', function () {
     $file = public_path('assets/apple-app-site-association');
     if (!File::exists($file)) {
@@ -91,6 +117,7 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('saveSettings', [SettingsController::class, 'saveSettings'])->name('saveSettings');
 
     Route::post('saveContentModerationSettings', [SettingsController::class, 'saveContentModerationSettings'])->name('saveContentModerationSettings');
+    Route::post('savePaymentProviderSettings', [SettingsController::class, 'savePaymentProviderSettings'])->name('savePaymentProviderSettings');
     Route::post('saveGIFSettings', [SettingsController::class, 'saveGIFSettings'])->name('saveGIFSettings');
     Route::post('saveDeepARSettings', [SettingsController::class, 'saveDeepARSettings'])->name('saveDeepARSettings');
     Route::post('saveBasicSettings', [SettingsController::class, 'saveBasicSettings'])->name('saveBasicSettings');
@@ -179,6 +206,10 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('listRejectedWithdrawals', [WalletController::class, 'listRejectedWithdrawals'])->name('listRejectedWithdrawals');
     Route::post('completeWithdrawal', [WalletController::class, 'completeWithdrawal'])->name('completeWithdrawal');
     Route::post('rejectWithdrawal', [WalletController::class, 'rejectWithdrawal'])->name('rejectWithdrawal');
+    Route::post('listProcessingWithdrawals', [WalletController::class, 'listProcessingWithdrawals'])->name('listProcessingWithdrawals');
+    Route::post('listFailedWithdrawals', [WalletController::class, 'listFailedWithdrawals'])->name('listFailedWithdrawals');
+    Route::post('recheckWithdrawal', [WalletController::class, 'recheckWithdrawal'])->name('recheckWithdrawal');
+    Route::post('retryWithdrawal', [WalletController::class, 'retryWithdrawal'])->name('retryWithdrawal');
 
     // Coin Packages
     Route::get('coinPackages', [WalletController::class, 'coinPackages'])->name('coinPackages');

@@ -14,7 +14,8 @@ import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
 /// Sign-up with the user's choice of channel:
-/// - Phone: name + phone + password, number verified once via SMS OTP.
+/// - Phone: name + phone + password, account created instantly (no SMS OTP —
+///   there is no SMS channel; see auth_screen_controller.dart).
 /// - Email: name + email + password, verification email sent (soft).
 class RegistrationScreen extends StatelessWidget {
   const RegistrationScreen({super.key});

@@ -752,6 +752,45 @@ class GlobalFunction extends Model
         return $new_post_list;
     }
 
+    // Same batching idea as processPostsListData, applied to comments/replies:
+    // resolves every item's @mentioned users in 1 query total instead of 1
+    // query per item. Mutates each item in place (sets ->mentionedUsers).
+    public static function attachMentionedUsers($items)
+    {
+        if (count($items) == 0) {
+            return;
+        }
+
+        $idsByItem = [];
+        $allMentionedIds = [];
+        foreach ($items as $item) {
+            $ids = $item->mentioned_user_ids ? array_filter(explode(',', $item->mentioned_user_ids)) : [];
+            $idsByItem[$item->id] = $ids;
+            foreach ($ids as $id) {
+                $allMentionedIds[] = $id;
+            }
+        }
+
+        $mentionedUsersById = collect();
+        if (count($allMentionedIds) > 0) {
+            $mentionedUsersById = Users::whereIn('id', array_unique($allMentionedIds))
+                ->select(explode(',', Constants::userPublicFields))
+                ->get()
+                ->keyBy('id');
+        }
+
+        foreach ($items as $item) {
+            $mentioned = [];
+            foreach ($idsByItem[$item->id] as $id) {
+                $mUser = $mentionedUsersById->get((int) $id);
+                if ($mUser != null) {
+                    $mentioned[] = $mUser;
+                }
+            }
+            $item->mentionedUsers = collect($mentioned);
+        }
+    }
+
     public static function checkUserBlock($firstUserId, $secondUserId)
     {
         return UserBlocks::where(function ($query) use ($firstUserId, $secondUserId) {
@@ -1014,15 +1053,25 @@ class GlobalFunction extends Model
 
         return $username;
     }
+    // Per-request memo: the authorizeUser middleware and the controller
+    // action it guards both resolve the same token, which used to mean 2-3
+    // identical queries per request. PHP-FPM/shared hosting tears the
+    // process down between requests, so a static cache here is safely
+    // request-scoped — it would NOT be safe under a long-lived worker
+    // runtime (e.g. Octane) without clearing it between requests.
+    private static array $userAuthTokenCache = [];
+
     public static function getUserFromAuthToken($token)
     {
-        $userToken = UserAuthTokens::where('auth_token', $token)->first();
-
-        if ($userToken == null) {
+        if ($token === null) {
             return null;
         }
-        $user = Users::find($userToken->user_id);
-        return $user;
+        if (array_key_exists($token, self::$userAuthTokenCache)) {
+            return self::$userAuthTokenCache[$token];
+        }
+        $userToken = UserAuthTokens::where('auth_token', $token)->first();
+        $user = $userToken == null ? null : Users::find($userToken->user_id);
+        return self::$userAuthTokenCache[$token] = $user;
     }
 
     // For endpoints that are open to guests (no/invalid auth token): returns the
@@ -1054,7 +1103,11 @@ class GlobalFunction extends Model
                 return null;
             }
             $allowedIds = array_filter(array_map('trim', explode(',', env('GOOGLE_OAUTH_CLIENT_ID', ''))));
-            if (!empty($allowedIds) && !in_array($payload['aud'] ?? '', $allowedIds)) {
+            if (empty($allowedIds)) {
+                Log::error('verifyGoogleIdToken: GOOGLE_OAUTH_CLIENT_ID is not configured; refusing to verify.');
+                return null;
+            }
+            if (!in_array($payload['aud'] ?? '', $allowedIds)) {
                 Log::error('verifyGoogleIdToken: aud not allowed: ' . ($payload['aud'] ?? 'null'));
                 return null;
             }
@@ -1324,7 +1377,8 @@ class GlobalFunction extends Model
 
     public static function generateUserAuthToken($user)
     {
-        UserAuthTokens::where('user_id', $user->id)->delete();
+        // Multiple concurrent sessions are allowed (one token per device/login);
+        // logout removes only the token being used, password reset removes all.
         $token = new UserAuthTokens();
         $token->user_id = $user->id;
         $token->auth_token = Crypt::encryptString($user->identity . Carbon::now());

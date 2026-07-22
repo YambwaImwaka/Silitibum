@@ -2,8 +2,7 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\UserAuthTokens;
-use App\Models\Users;
+use App\Models\GlobalFunction;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -22,9 +21,12 @@ class AuthorizeUser
         if (isset($_SERVER['HTTP_AUTHTOKEN'])) {
             $auth_token = $_SERVER['HTTP_AUTHTOKEN'];
 
-            $token = UserAuthTokens::where('auth_token', $auth_token)->first();
+            // Resolving (rather than a standalone token lookup) primes
+            // GlobalFunction's per-request memo, so the controller action
+            // this guards gets its user for free instead of re-querying.
+            $user = GlobalFunction::getUserFromAuthToken($auth_token);
 
-            if ($token != null) {
+            if ($user != null) {
                 return $next($request);
             } else {
                 $data['status']    = false;

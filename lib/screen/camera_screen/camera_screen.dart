@@ -48,9 +48,16 @@ class CameraScreen extends StatelessWidget {
     );
   }
 
+  // Strict 9:16 (portrait) — matches the vertical video format the feed and
+  // backend expect. The recorder (retrytech_plugin's native camera surface)
+  // fills whatever bounds this box gives it, so locking the box to an exact
+  // 9:16 ratio is what keeps the on-screen framing honest to what actually
+  // gets recorded, instead of the previous ad-hoc 0.52 ratio.
+  static const double _recordingAspectRatio = 9 / 16;
+
   Widget _buildCameraPreview(CameraScreenController controller) {
     return AspectRatio(
-      aspectRatio: 0.52,
+      aspectRatio: _recordingAspectRatio,
       child: ClipSmoothRect(
         radius: SmoothBorderRadius(cornerRadius: 20, cornerSmoothing: 1),
         child: controller.isDeepAr
@@ -60,6 +67,11 @@ class CameraScreen extends StatelessWidget {
                       controller.deepArControllerPlus.value;
                   return controller.isDeepARInitialized.value
                       ? Transform.scale(
+                          // Manually-tuned fill factor for the preview box
+                          // above; it was calibrated against the old 0.52
+                          // box ratio, so re-check this visually on a device
+                          // now that the box is a true 9:16 — it may need
+                          // adjusting to avoid over/under-filling the frame.
                           scale: deepArControllerPlus.aspectRatio *
                               0.62, //change value as needed
                           child: DeepArPreviewPlus(deepArControllerPlus),

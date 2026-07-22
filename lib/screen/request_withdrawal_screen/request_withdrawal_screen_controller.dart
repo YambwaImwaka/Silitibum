@@ -75,11 +75,16 @@ class RequestWithdrawalScreenController extends BaseController {
 
     stopLoader();
     if (model.status == true) {
+      // Only decrement on actual success — a failed automated payout
+      // already refunds server-side (see WalletController::
+      // submitWithdrawalRequest), so decrementing here regardless of the
+      // response used to leave the locally cached balance wrong after a
+      // failure.
+      myUser.value?.coinWallet = (myUser.value?.coinWallet ?? 0) -
+          int.parse(amountController.text.trim());
+      SessionManager.instance.setUser(myUser.value);
       Get.back();
     }
-    myUser.value?.coinWallet = (myUser.value?.coinWallet ?? 0) -
-        int.parse(amountController.text.trim());
-    SessionManager.instance.setUser(myUser.value);
     showSnackBar(model.message);
   }
 }

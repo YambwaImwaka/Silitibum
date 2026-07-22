@@ -59,5 +59,13 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('api', function (Request $request) {
             return Limit::perMinute(60)->by(optional($request->user())->id ?: $request->ip());
         });
+
+        // Tighter limit for login/register/forgot-password/reset-code — these
+        // are keyed by IP (no auth token exists yet) and are exactly what a
+        // brute-force/credential-stuffing/code-guessing attempt would hit
+        // hardest, so they need a much lower ceiling than general API traffic.
+        RateLimiter::for('auth', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
     }
 }

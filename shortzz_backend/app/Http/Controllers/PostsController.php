@@ -1213,8 +1213,7 @@ class PostsController extends Controller
             return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
         }
 
-        $post->shares += 1;
-        $post->save();
+        $post->increment('shares');
 
         return GlobalFunction::sendSimpleResponse(true, 'post share count increased successfully');
 
@@ -1236,8 +1235,7 @@ class PostsController extends Controller
             return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
         }
 
-        $post->views += 1;
-        $post->save();
+        $post->increment('views');
 
         return GlobalFunction::sendSimpleResponse(true, 'post view increased successfully');
 

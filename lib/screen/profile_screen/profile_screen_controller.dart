@@ -90,7 +90,13 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
 
   Future<void> fetchUserDetail() async {
     isLoading.value = true;
-    User? user = await UserService.instance.fetchUserDetails(userId: userData.value?.id?.toInt());
+    // Falls back to the session's own id: when this is "my profile" and the
+    // caller didn't have a User to hand us yet (e.g. splash's initial fetch
+    // failed on a flaky connection), userData.value can start out null even
+    // though the user is still logged in — without this fallback the backend
+    // rejects the missing user_id and the profile tab shows "user not found".
+    User? user = await UserService.instance.fetchUserDetails(
+        userId: userData.value?.id?.toInt() ?? SessionManager.instance.getUserID());
     profileController.updateUser(user);
     isLoading.value = false;
     if (user != null) {
@@ -106,7 +112,7 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
     try {
       UserPostData? items = await PostService.instance.fetchUserPosts(
           type: PostType.reels,
-          userId: userData.value?.id?.toInt(),
+          userId: userData.value?.id?.toInt() ?? SessionManager.instance.getUserID(),
           lastItemId: isEmpty ? null : reels.lastOrNull?.id?.toInt());
       if (isEmpty) reels.clear();
 

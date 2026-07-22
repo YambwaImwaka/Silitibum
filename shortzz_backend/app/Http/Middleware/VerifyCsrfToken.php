@@ -12,6 +12,9 @@ class VerifyCsrfToken extends Middleware
      * @var array<int, string>
      */
     protected $except = [
-        //
+        // External payment/subscription webhooks — providers can't send a
+        // Laravel CSRF token, they're authenticated by a shared secret
+        // instead (checked inside each webhook controller).
+        'webhooks/*',
     ];
 }

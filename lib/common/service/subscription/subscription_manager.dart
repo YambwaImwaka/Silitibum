@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
-import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/utilities/const_res.dart';
 
@@ -68,7 +67,14 @@ class SubscriptionManager {
         if (user?.isVerify == status) {
           return;
         }
-        UserService.instance.updateUserDetails(isVerify: status);
+        // Local cache only, for instant UI reactivity — the backend's
+        // is_verify is no longer writable by the client at all (closed as a
+        // trust gap: RevenueCat's server-to-server webhook is now the only
+        // thing that persists this field, see RevenueCatWebhookController
+        // on the backend). Calling updateUserDetails here would be a no-op
+        // network round trip since the server silently ignores that field.
+        user?.isVerify = status;
+        SessionManager.instance.setUser(user);
       });
     } on PlatformException catch (e) {
       // Error fetching purchaser info
