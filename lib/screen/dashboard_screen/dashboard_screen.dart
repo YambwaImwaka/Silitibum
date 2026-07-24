@@ -26,9 +26,6 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(DashboardScreenController());
-    // Messages & Profile assume a session: preloading them as a guest starts
-    // Firestore listeners on null ids and fires auth-only API calls.
-    final bool preloadUserTabs = !controller.isGuest;
     return Scaffold(
       backgroundColor: scaffoldBackgroundColor(context),
       resizeToAvoidBottomInset: true,
@@ -39,14 +36,26 @@ class DashboardScreen extends StatelessWidget {
               child: ProsteIndexedStack(
                 index: controller.selectedPageIndex.value,
                 children: [
-                  IndexedStackChild(child: const HomeScreen(), preload: true),
-                  IndexedStackChild(child: FeedScreen(myUser: myUser), preload: true),
-                  IndexedStackChild(child: const LiveStreamSearchScreen(), preload: true),
-                  IndexedStackChild(child: const ExploreScreen(), preload: true),
-                  IndexedStackChild(child: const MessageScreen(), preload: preloadUserTabs),
+                  // Home is index 0 — the initially active tab always builds
+                  // immediately regardless of its own preload flag (it's the
+                  // current index), so it doesn't need preload:true here.
+                  // The other tabs previously all preloaded eagerly, meaning
+                  // every heavy screen (video players, story lists, live
+                  // search, chat, profile) was built and kept resident from
+                  // the moment the dashboard opened, well before the user
+                  // ever visited them — a large chunk of the app's baseline
+                  // memory/CPU footprint for the whole session. Building
+                  // them lazily on first visit instead removes that upfront
+                  // cost with no behavior change: once visited, a tab still
+                  // stays alive for the rest of the session exactly as before.
+                  IndexedStackChild(child: const HomeScreen(), preload: false),
+                  IndexedStackChild(child: FeedScreen(myUser: myUser), preload: false),
+                  IndexedStackChild(child: const LiveStreamSearchScreen(), preload: false),
+                  IndexedStackChild(child: const ExploreScreen(), preload: false),
+                  IndexedStackChild(child: const MessageScreen(), preload: false),
                   IndexedStackChild(
                       child: ProfileScreen(isDashBoard: true, user: myUser, isTopBarVisible: false),
-                      preload: preloadUserTabs)
+                      preload: false)
                 ],
               ),
             ),

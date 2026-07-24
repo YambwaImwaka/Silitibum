@@ -390,7 +390,15 @@ class AuthScreenController extends BaseController {
       String? successMessage,
       bool remindVerifyEmail = false,
       bool isLoaderRunning = false}) async {
-    if (!isLoaderRunning) showLoader();
+    // Guards against double-submit (e.g. a fast double-tap on Create
+    // Account/Login): `isLoading` flips true synchronously inside
+    // showLoader() below, so a second call arriving before the first
+    // request completes is dropped here instead of firing a second,
+    // independent request.
+    if (!isLoaderRunning) {
+      if (isLoading.value) return;
+      showLoader();
+    }
 
     // FCM token is optional: devices without Play Services (or with
     // notifications denied) must still be able to sign in — push just
@@ -423,6 +431,12 @@ class AuthScreenController extends BaseController {
     if (password != null) {
       SessionManager.instance.setPassword(password);
     }
+    // User + auth token are already persisted synchronously by
+    // UserService._storeSession before `request` above returned. setLogin
+    // is the single remaining piece of session state, set here — the one
+    // place auth succeeds — so it's never out of step with the data the
+    // dashboard is about to read.
+    SessionManager.instance.setLogin(true);
     _postLoginSideEffects(data);
     _navigateScreen(data);
     if (successMessage != null) {
@@ -446,6 +460,9 @@ class AuthScreenController extends BaseController {
         return LKey.noRecoveryEmail.tr;
       case 'invalid_code':
         return LKey.invalidOtp.tr;
+      case 'registration_failed':
+      case 'login_failed':
+        return LKey.somethingWentWrong.tr;
       default:
         return message ?? LKey.somethingWentWrong.tr;
     }
@@ -509,9 +526,10 @@ class AuthScreenController extends BaseController {
   }
 
   void _navigateScreen(user.User? data) {
+    // Session (user, auth token, login flag) is already fully persisted by
+    // this point — see _authenticate above. This only debounces the actual
+    // route change.
     DebounceAction.shared.call(() async {
-      SessionManager.instance.setLogin(true);
-      SessionManager.instance.setUser(data);
       Get.offAll(() => DashboardScreen(myUser: data));
     }, milliseconds: 250);
   }

@@ -14,9 +14,12 @@ use App\Models\Users;
 use App\Models\VerificationCode;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
+use Throwable;
 
 class UserController extends Controller
 {
@@ -1080,25 +1083,65 @@ class UserController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
-        $user = Users::where('identity', $request->identity)->first();
-        if ($user != null && $user->password != null) {
+        // Serialize concurrent signups for the same identity. Without this,
+        // a double-tap (or any two racing requests) can both pass the
+        // "does this identity already exist" check below and both write —
+        // this is the double-submit bug: the first tap appears to fail while
+        // still persisting a real account, and the second tap then collides
+        // with it.
+        $lock = Cache::lock('register-lock:' . strtolower($request->identity), 10);
+        if (!$lock->get()) {
             return GlobalFunction::sendSimpleResponse(false, 'account_exists');
         }
 
-        $newRegister = ($user == null);
-        if ($user == null) {
-            $user = $this->createAppUser($request);
-        }
-        $user->password = Hash::make($request->password);
+        try {
+            $user = Users::where('identity', $request->identity)->first();
+            if ($user != null && $user->password != null) {
+                return GlobalFunction::sendSimpleResponse(false, 'account_exists');
+            }
 
-        if ($request->login_method == 'email') {
-            $user->user_email = $request->identity;
-            $user->save();
-            // Soft verification: mail failure must never fail the signup.
-            GlobalFunction::issueVerificationCode($user, $request->identity, VerificationCode::TYPE_VERIFY_EMAIL);
-        }
+            $newRegister = ($user == null);
+            if ($user == null) {
+                $user = $this->createAppUser($request);
+            }
+            $user->password = Hash::make($request->password);
 
-        return $this->respondWithUserData($user, $request, $newRegister);
+            if ($request->login_method == 'email') {
+                $user->user_email = $request->identity;
+            }
+
+            // Everything that persists the account (user row + auth token)
+            // must succeed or fail together. Previously the user row was
+            // saved before the auth-token/full-data steps ran, so a failure
+            // in those later steps still left a real, password-holding
+            // account behind while the client was shown a generic error —
+            // the account then looked "half created": retrying signup hit
+            // account_exists, yet nothing about it was actually broken, so
+            // it should just have been returned as a normal success. Wrapping
+            // the whole write in a transaction makes failure genuinely mean
+            // "nothing happened" so a retry is a clean, real second attempt.
+            try {
+                $response = DB::transaction(function () use ($user, $request, $newRegister) {
+                    return $this->respondWithUserData($user, $request, $newRegister);
+                });
+            } catch (Throwable $e) {
+                Log::error('registerUser failed for identity ' . $request->identity . ': ' . $e);
+                return GlobalFunction::sendSimpleResponse(false, 'registration_failed');
+            }
+
+            if ($request->login_method == 'email') {
+                // Soft verification: mail failure must never fail the signup.
+                try {
+                    GlobalFunction::issueVerificationCode($user, $request->identity, VerificationCode::TYPE_VERIFY_EMAIL);
+                } catch (Throwable $e) {
+                    Log::error('issueVerificationCode failed for identity ' . $request->identity . ': ' . $e);
+                }
+            }
+
+            return $response;
+        } finally {
+            $lock->release();
+        }
     }
 
     function logInUser(Request $request){
@@ -1131,7 +1174,14 @@ class UserController extends Controller
             } else if (!Hash::check($request->password, $user->password)) {
                 return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
             }
-            return $this->respondWithUserData($user, $request, false);
+            try {
+                return DB::transaction(function () use ($user, $request) {
+                    return $this->respondWithUserData($user, $request, false);
+                });
+            } catch (Throwable $e) {
+                Log::error('logInUser failed for identity ' . $request->identity . ': ' . $e);
+                return GlobalFunction::sendSimpleResponse(false, 'login_failed');
+            }
         }
 
         // Google Sign-In: the app sends the provider ID token; verify it

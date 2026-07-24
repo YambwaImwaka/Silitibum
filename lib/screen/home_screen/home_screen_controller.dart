@@ -33,7 +33,7 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
   late AnimationController controller;
   late Animation<double> animation;
   RxBool isAnimateTab = false.obs;
-  StreamSubscription<Map>? streamSubscription;
+  StreamSubscription<String>? streamSubscription;
   CancelToken token = CancelToken();
 
   Rx<User?> get myUser => Rx(SessionManager.instance.getUser());
@@ -86,7 +86,14 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
       }
     }
 
-    FirebaseNotificationManager.instance.notificationPayload.listen((p0) {
+    // Assigned to streamSubscription (cancelled in onClose) — previously the
+    // subscription was discarded here, so every HomeScreenController
+    // recreation (logout/login, language switch restart, etc.) permanently
+    // added another live listener on this app-lifetime singleton stream,
+    // leaking memory and duplicating notification handling over a long
+    // session.
+    streamSubscription =
+        FirebaseNotificationManager.instance.notificationPayload.listen((p0) {
       if (p0.isNotEmpty) {
         FirebaseNotificationManager.instance.handleNotification(p0);
       }

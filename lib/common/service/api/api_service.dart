@@ -86,8 +86,7 @@ class ApiService {
       }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final decodedResponse =
-            jsonDecode(response.body) as Map<String, dynamic>;
+        final decodedResponse = _decodeJsonBody(response.body, url);
 
         if (decodedResponse['message'] == 'this user is freezed!') {
           DebounceAction.shared.call(() {
@@ -149,6 +148,32 @@ class ApiService {
       throw Exception("Invalid JSON format: ${e.message}");
     } on Exception catch (e) {
       Loggers.error("Unexpected error : $e");
+      rethrow;
+    }
+  }
+
+  /// Some hosts echo a stray PHP warning/notice ahead of the JSON body on an
+  /// otherwise-successful (HTTP 200) response — the request fully succeeded
+  /// server-side (e.g. an account really was created), but a naive
+  /// `jsonDecode` still throws a FormatException here, and every caller then
+  /// shows a generic failure even though nothing actually went wrong. Fall
+  /// back to decoding from the first '{' so a leading warning doesn't hide a
+  /// real success; log the discarded prefix so the underlying PHP issue is
+  /// still visible for debugging.
+  Map<String, dynamic> _decodeJsonBody(String body, String url) {
+    try {
+      return jsonDecode(body) as Map<String, dynamic>;
+    } on FormatException {
+      final start = body.indexOf('{');
+      if (start > 0) {
+        Loggers.error(
+            'Non-JSON prefix before response body for $url: ${_shorten(body.substring(0, start))}');
+        try {
+          return jsonDecode(body.substring(start)) as Map<String, dynamic>;
+        } on FormatException {
+          // fall through to rethrow the original error below
+        }
+      }
       rethrow;
     }
   }

@@ -102,14 +102,19 @@ class RegistrationScreen extends StatelessWidget {
               ),
             )),
             Obx(
-              () => TextButtonCustom(
-                  onTap: controller.authMethodIndex.value == 0
-                      ? controller.onPhoneSignUp
-                      : controller.onEmailSignUp,
-                  title: LKey.createAccount.tr,
-                  backgroundColor: textDarkGrey(context),
-                  horizontalMargin: 20,
-                  titleColor: whitePure(context)),
+              () => Opacity(
+                opacity: controller.isLoading.value ? 0.6 : 1,
+                child: TextButtonCustom(
+                    onTap: controller.isLoading.value
+                        ? () {}
+                        : (controller.authMethodIndex.value == 0
+                            ? controller.onPhoneSignUp
+                            : controller.onEmailSignUp),
+                    title: LKey.createAccount.tr,
+                    backgroundColor: textDarkGrey(context),
+                    horizontalMargin: 20,
+                    titleColor: whitePure(context)),
+              ),
             ),
             SizedBox(height: AppBar().preferredSize.height / 1.2),
             const SafeArea(

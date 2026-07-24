@@ -141,13 +141,18 @@ class LoginScreen extends StatelessWidget {
                             ),
                           ),
                           Obx(
-                            () => TextButtonCustom(
-                                onTap: controller.authMethodIndex.value == 0
-                                    ? controller.onPhoneLogin
-                                    : controller.onEmailLogin,
-                                title: LKey.logIn.tr,
-                                btnHeight: 50,
-                                horizontalMargin: 0),
+                            () => Opacity(
+                              opacity: controller.isLoading.value ? 0.6 : 1,
+                              child: TextButtonCustom(
+                                  onTap: controller.isLoading.value
+                                      ? () {}
+                                      : (controller.authMethodIndex.value == 0
+                                          ? controller.onPhoneLogin
+                                          : controller.onEmailLogin),
+                                  title: LKey.logIn.tr,
+                                  btnHeight: 50,
+                                  horizontalMargin: 0),
+                            ),
                           )
                         ],
                       ),

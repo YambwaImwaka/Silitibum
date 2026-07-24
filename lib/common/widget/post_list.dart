@@ -12,6 +12,15 @@ class PostList extends StatelessWidget {
   final RxBool isLoading;
   final Future<void> Function()? onFetchMoreData;
   final bool shrinkWrap;
+  // Renders as slivers (SliverList) for use directly inside a
+  // CustomScrollView, instead of a boxed ListView.builder. Use this — not
+  // shrinkWrap — when this list sits alongside other scrolling content
+  // (e.g. a story rail) under one shared scroll: shrinkWrap forces the
+  // ListView to size itself to the full content height, which defeats its
+  // viewport culling and keeps every item built and resident as the list
+  // grows via pagination. A real sliver keeps only visible (+ cache extent)
+  // items alive no matter how long the list gets.
+  final bool asSliver;
   final bool shouldShowPinOption;
   final bool isMe;
   final bool showNoData;
@@ -22,6 +31,7 @@ class PostList extends StatelessWidget {
     required this.isLoading,
     this.onFetchMoreData,
     this.shrinkWrap = false,
+    this.asSliver = false,
     this.shouldShowPinOption = false,
     this.isMe = false,
     this.showNoData = true,
@@ -31,11 +41,24 @@ class PostList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       if (isLoading.value && posts.isEmpty) {
-        return const LoaderWidget();
+        return asSliver
+            ? const SliverToBoxAdapter(child: LoaderWidget())
+            : const LoaderWidget();
       }
 
       if (!isLoading.value && posts.isEmpty) {
-        return showNoData ? _buildNoDataView() : const SizedBox();
+        final empty = showNoData ? _buildNoDataView() : const SizedBox();
+        return asSliver ? SliverToBoxAdapter(child: empty) : empty;
+      }
+
+      if (asSliver) {
+        return SliverPadding(
+          padding: EdgeInsets.only(bottom: AppBar().preferredSize.height / 2),
+          sliver: SliverList.builder(
+            itemCount: posts.length,
+            itemBuilder: (context, index) => _buildPostCard(posts[index]),
+          ),
+        );
       }
 
       return LoadMoreWidget(

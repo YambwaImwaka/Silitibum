@@ -100,10 +100,16 @@ class UserService {
 
   void _storeSession(UserModel model) {
     if (model.status == true) {
-      Future.delayed(const Duration(milliseconds: 100), () {
-        SessionManager.instance.setUser(model.data);
-        SessionManager.instance.setAuthToken(model.data?.token);
-      });
+      // Must be synchronous: the caller navigates to the dashboard right
+      // after this returns, and the dashboard's first screens immediately
+      // fire authenticated API calls that read the auth token from
+      // SessionManager. A deferred write here used to race that navigation —
+      // usually winning, but not always, especially under load — and a
+      // request that went out before the token was persisted got a 401,
+      // bouncing an otherwise-successful login straight to the session
+      // expired screen.
+      SessionManager.instance.setUser(model.data);
+      SessionManager.instance.setAuthToken(model.data?.token);
     }
   }
 

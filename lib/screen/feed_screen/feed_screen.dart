@@ -49,21 +49,18 @@ class FeedScreen extends StatelessWidget {
                 }
                 return const SizedBox();
               }),
-              SingleChildScrollView(
+              CustomScrollView(
                 controller: controller.postScrollController,
                 physics: const AlwaysScrollableScrollPhysics(),
                 // Allows bouncing on edge
-
-                child: Column(
-                  children: [
-                    StoryView(controller: controller),
-                    PostList(
-                        posts: controller.posts,
-                        isLoading: false.obs,
-                        shrinkWrap: true,
-                        showNoData: false)
-                  ],
-                ),
+                slivers: [
+                  SliverToBoxAdapter(child: StoryView(controller: controller)),
+                  PostList(
+                      posts: controller.posts,
+                      isLoading: false.obs,
+                      asSliver: true,
+                      showNoData: false)
+                ],
               ),
             ],
           ),
