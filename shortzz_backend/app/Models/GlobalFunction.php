@@ -1180,7 +1180,10 @@ class GlobalFunction extends Model
         $code->save();
 
         try {
-            \Illuminate\Support\Facades\Mail::to($email)->send(new VerificationCodeMail($code->code, $type));
+            // Queued (not ->send()): delivery must never block the HTTP
+            // response. On the sync queue driver this still runs inline: the
+            // real fix is QUEUE_CONNECTION=database + a queue:work cron.
+            \Illuminate\Support\Facades\Mail::to($email)->queue(new VerificationCodeMail($code->code, $type));
         } catch (\Throwable $e) {
             Log::error('issueVerificationCode mail: ' . $e->getMessage());
             return [false, 'Could not send the email, please try again later'];

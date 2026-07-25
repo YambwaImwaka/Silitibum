@@ -14,9 +14,16 @@ class BaseController extends FullLifeCycleController {
       Get.back();
     }
     isLoading.value = true;
-    await Get.dialog(const LoaderWidget(),
-        barrierDismissible: barrierDismissible);
-    isLoading.value = false;
+    try {
+      await Get.dialog(const LoaderWidget(),
+          barrierDismissible: barrierDismissible);
+    } finally {
+      // Guarantees isLoading resets even if Get.dialog() throws (e.g. no
+      // Material context available) — without this, an exception here left
+      // isLoading stuck at true forever with no dialog to dismiss it, which
+      // reads to the user as the button being permanently frozen.
+      isLoading.value = false;
+    }
   }
 
   void stopLoader() {

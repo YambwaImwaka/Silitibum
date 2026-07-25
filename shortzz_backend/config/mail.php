@@ -17,6 +17,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Email verification / OTP delivery
+    |--------------------------------------------------------------------------
+    |
+    | Until a real mail provider is configured, no verification or password
+    | reset codes can be delivered. With this off: signups skip the OTP email
+    | entirely (email accounts are marked verified at creation so the app
+    | never nags for a code that cannot arrive) and forgotPassword returns a
+    | clear "unavailable" message instead of silently queueing doomed mail.
+    |
+    */
+
+    'verification_enabled' => env('EMAIL_VERIFICATION_ENABLED', true),
+
+    /*
+    |--------------------------------------------------------------------------
     | Mailer Configurations
     |--------------------------------------------------------------------------
     |
@@ -41,7 +56,7 @@ return [
             'encryption' => env('MAIL_ENCRYPTION', 'tls'),
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
-            'timeout' => null,
+            'timeout' => env('MAIL_TIMEOUT', 8),
             'auth_mode' => null,
         ],
 

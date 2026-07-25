@@ -1,4 +1,5 @@
 import 'package:shortzz/common/extensions/common_extension.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/post_story/story/story_model.dart';
@@ -209,60 +210,65 @@ class User {
         followingIds: followingIds ?? this.followingIds,
       );
 
+  // Every scalar goes through the tolerant coercers in json_parse.dart: the
+  // production host serves numeric MySQL columns as JSON strings ("0", "1"),
+  // and a raw dynamic assignment into a typed field throws a TypeError that
+  // failed the whole login/signup response parse.
   User.fromJson(dynamic json) {
-    id = json['id'];
-    identity = json['identity'];
-    isDummy = json['is_dummy'];
-    fullname = json['fullname'];
-    username = json['username'];
-    userEmail = json['user_email'];
-    emailVerifiedAt = json['email_verified_at'];
-    mobileCountryCode = json['mobile_country_code'];
-    userMobileNo = json['user_mobile_no'];
-    profilePhoto = json['profile_photo'];
-    loginMethod = json['login_method'];
-    device = json['device'];
-    deviceToken = json['device_token'];
-    notifyPostLike = json['notify_post_like'];
-    notifyPostComment = json['notify_post_comment'];
-    notifyFollow = json['notify_follow'];
-    notifyMention = json['notify_mention'];
-    notifyGiftReceived = json['notify_gift_received'];
-    notifyChat = json['notify_chat'];
-    isVerify = json['is_verify'];
-    whoCanViewPost = json['who_can_view_post'];
-    showMyFollowing = json['show_my_following'];
-    receiveMessage = json['receive_message'];
-    coinWallet = json['coin_wallet'];
-    coinCollectedLifetime = json['coin_collected_lifetime'];
-    coinGiftedLifetime = json['coin_gifted_lifetime'];
-    coinPurchasedLifetime = json['coin_purchased_lifetime'];
-    bio = json['bio'];
-    followerCount = json['follower_count'];
-    followingCount = json['following_count'];
-    totalPostLikesCount = json['total_post_likes_count'];
-    isFreez = json['is_freez'];
-    country = json['country'];
-    countryCode = json['countryCode'];
-    region = json['region'];
-    regionName = json['regionName'];
-    city = json['city'];
-    lat = json['lat'];
-    lon = json['lon'];
-    timezone = json['timezone'];
-    appLastUsedAt = json['app_last_used_at'];
-    savedMusicIds = json['saved_music_ids'];
-    isModerator = json['is_moderator'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
-    isFollowing = json['is_following'];
-    followStatus = json['follow_status'];
-    isBlock = json['is_block'];
-    appLanguage = json['app_language'];
-    newRegister = json['new_register'];
+    id = asIntOrNull(json['id']);
+    identity = asStringOrNull(json['identity']);
+    isDummy = asIntOrNull(json['is_dummy']);
+    fullname = asStringOrNull(json['fullname']);
+    username = asStringOrNull(json['username']);
+    userEmail = asStringOrNull(json['user_email']);
+    emailVerifiedAt = asStringOrNull(json['email_verified_at']);
+    mobileCountryCode = asIntOrNull(json['mobile_country_code']);
+    userMobileNo = asStringOrNull(json['user_mobile_no']);
+    profilePhoto = asStringOrNull(json['profile_photo']);
+    loginMethod = asStringOrNull(json['login_method']);
+    device = asIntOrNull(json['device']);
+    deviceToken = asStringOrNull(json['device_token']);
+    notifyPostLike = asNumOrNull(json['notify_post_like']);
+    notifyPostComment = asNumOrNull(json['notify_post_comment']);
+    notifyFollow = asNumOrNull(json['notify_follow']);
+    notifyMention = asNumOrNull(json['notify_mention']);
+    notifyGiftReceived = asNumOrNull(json['notify_gift_received']);
+    notifyChat = asNumOrNull(json['notify_chat']);
+    isVerify = asIntOrNull(json['is_verify']);
+    whoCanViewPost = asNumOrNull(json['who_can_view_post']);
+    showMyFollowing = asNumOrNull(json['show_my_following']);
+    receiveMessage = asNumOrNull(json['receive_message']);
+    coinWallet = asNumOrNull(json['coin_wallet']);
+    coinCollectedLifetime = asNumOrNull(json['coin_collected_lifetime']);
+    coinGiftedLifetime = asNumOrNull(json['coin_gifted_lifetime']);
+    coinPurchasedLifetime = asNumOrNull(json['coin_purchased_lifetime']);
+    bio = asStringOrNull(json['bio']);
+    followerCount = asNumOrNull(json['follower_count']);
+    followingCount = asNumOrNull(json['following_count']);
+    totalPostLikesCount = asIntOrNull(json['total_post_likes_count']);
+    isFreez = asNumOrNull(json['is_freez']);
+    country = asStringOrNull(json['country']);
+    countryCode = asStringOrNull(json['countryCode']);
+    region = asStringOrNull(json['region']);
+    regionName = asStringOrNull(json['regionName']);
+    city = asStringOrNull(json['city']);
+    lat = asNumOrNull(json['lat']);
+    lon = asNumOrNull(json['lon']);
+    timezone = asStringOrNull(json['timezone']);
+    appLastUsedAt = asStringOrNull(json['app_last_used_at']);
+    savedMusicIds = asStringOrNull(json['saved_music_ids']);
+    isModerator = asIntOrNull(json['is_moderator']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
+    isFollowing = asBoolOrNull(json['is_following']);
+    followStatus = asIntOrNull(json['follow_status']);
+    isBlock = asBoolOrNull(json['is_block']);
+    appLanguage = asStringOrNull(json['app_language']);
+    newRegister = asBoolOrNull(json['new_register']);
     token = json['token'] != null ? Token.fromJson(json['token']) : null;
     followingIds = json["following_ids"] != null
-        ? List<int>.from(json["following_ids"].map((x) => x))
+        ? List<int>.from(
+            (json["following_ids"] as List).map(asIntOrNull).whereType<int>())
         : null;
     if (json['links'] != null) {
       links = [];
@@ -441,12 +447,12 @@ class Link {
   });
 
   Link.fromJson(dynamic json) {
-    id = json['id'];
-    userId = json['user_id'];
-    title = json['title'];
-    url = json['url'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asNumOrNull(json['id']);
+    userId = asNumOrNull(json['user_id']);
+    title = asStringOrNull(json['title']);
+    url = asStringOrNull(json['url']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
   }
 
   num? id;
@@ -478,11 +484,11 @@ class Token {
   });
 
   Token.fromJson(dynamic json) {
-    userId = json['user_id'];
-    authToken = json['auth_token'];
-    updatedAt = json['updated_at'];
-    createdAt = json['created_at'];
-    id = json['id'];
+    userId = asNumOrNull(json['user_id']);
+    authToken = asStringOrNull(json['auth_token']);
+    updatedAt = asStringOrNull(json['updated_at']);
+    createdAt = asStringOrNull(json['created_at']);
+    id = asNumOrNull(json['id']);
   }
 
   num? userId;

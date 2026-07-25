@@ -1,3 +1,4 @@
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -227,14 +228,18 @@ class AuthScreenController extends BaseController {
   // ---------------------------------------------------------------------
 
   Future<void> startPasswordReset(String identity) async {
-    showLoader();
+    // Non-dismissible: this dialog gates a real in-flight network request
+    // (login/signup/reset). Letting the barrier dismiss it would desync
+    // isLoading from the request and allow a second, concurrent attempt.
+    showLoader(barrierDismissible: false);
     ForgotPasswordModel res;
     try {
       res = await UserService.instance.forgotPassword(identity: identity);
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('forgotPassword failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      return showSnackBar(LKey.somethingWentWrong.tr);
+      return showSnackBar(_messageForError(e));
     }
     stopLoader();
     if (res.status != true) {
@@ -252,17 +257,21 @@ class AuthScreenController extends BaseController {
   /// Resend from inside the code sheet — sends a fresh code without stacking
   /// another sheet.
   Future<void> resendPasswordResetCode(String identity) async {
-    showLoader();
+    // Non-dismissible: this dialog gates a real in-flight network request
+    // (login/signup/reset). Letting the barrier dismiss it would desync
+    // isLoading from the request and allow a second, concurrent attempt.
+    showLoader(barrierDismissible: false);
     try {
       final res = await UserService.instance.forgotPassword(identity: identity);
       stopLoader();
       showSnackBar(res.status == true
           ? LKey.verificationCodeSentTo.tr
           : _friendlyAuthMessage(res.message));
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('forgotPassword resend failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      showSnackBar(LKey.somethingWentWrong.tr);
+      showSnackBar(_messageForError(e));
     }
   }
 
@@ -274,15 +283,19 @@ class AuthScreenController extends BaseController {
     final String? newPassword = _validatedNewPassword();
     if (newPassword == null) return;
 
-    showLoader();
+    // Non-dismissible: this dialog gates a real in-flight network request
+    // (login/signup/reset). Letting the barrier dismiss it would desync
+    // isLoading from the request and allow a second, concurrent attempt.
+    showLoader(barrierDismissible: false);
     StatusModel res;
     try {
       res = await UserService.instance.resetPasswordWithCode(
           identity: identity, code: code, newPassword: newPassword);
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('resetPasswordWithCode failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      return showSnackBar(LKey.somethingWentWrong.tr);
+      return showSnackBar(_messageForError(e));
     }
     stopLoader();
     if (res.status != true) {
@@ -307,7 +320,10 @@ class AuthScreenController extends BaseController {
   // ---------------------------------------------------------------------
 
   void onGoogleTap() async {
-    showLoader();
+    // Non-dismissible: this dialog gates a real in-flight network request
+    // (login/signup/reset). Letting the barrier dismiss it would desync
+    // isLoading from the request and allow a second, concurrent attempt.
+    showLoader(barrierDismissible: false);
     GoogleSignInAccount? account;
     try {
       final GoogleSignIn googleSignIn = GoogleSignIn.instance;
@@ -336,7 +352,10 @@ class AuthScreenController extends BaseController {
   }
 
   void onAppleTap() async {
-    showLoader();
+    // Non-dismissible: this dialog gates a real in-flight network request
+    // (login/signup/reset). Letting the barrier dismiss it would desync
+    // isLoading from the request and allow a second, concurrent attempt.
+    showLoader(barrierDismissible: false);
     AuthorizationCredentialAppleID appleCredential;
     try {
       appleCredential = await SignInWithApple.getAppleIDCredential(
@@ -397,7 +416,10 @@ class AuthScreenController extends BaseController {
     // independent request.
     if (!isLoaderRunning) {
       if (isLoading.value) return;
-      showLoader();
+      // Non-dismissible: this dialog gates a real in-flight network request
+      // (login/signup/reset). Letting the barrier dismiss it would desync
+      // isLoading from the request and allow a second, concurrent attempt.
+      showLoader(barrierDismissible: false);
     }
 
     // FCM token is optional: devices without Play Services (or with
@@ -414,10 +436,15 @@ class AuthScreenController extends BaseController {
     UserModel model;
     try {
       model = await request(deviceToken);
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('auth request failed: $e');
+      // Loggers.error is compiled out of release builds entirely (kDebugMode
+      // gate) — without this, the real cause of a production auth failure
+      // is invisible everywhere, which is why this bug has been so hard to
+      // pin down across repeated fix attempts.
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      showSnackBar(LKey.somethingWentWrong.tr);
+      showSnackBar(_messageForError(e));
       return;
     }
     stopLoader();
@@ -444,6 +471,16 @@ class AuthScreenController extends BaseController {
     } else if (remindVerifyEmail && data.emailVerifiedAt == null) {
       _showVerifyEmailReminder();
     }
+  }
+
+  /// Message shown for a thrown exception from the network layer — gives
+  /// the tight per-IP `auth` rate limiter (api_service.dart's 429 handling)
+  /// a distinct, honest message instead of collapsing into the generic one.
+  String _messageForError(Object e) {
+    if (e.toString().contains('RateLimited')) {
+      return LKey.tooManyAttempts.tr;
+    }
+    return LKey.somethingWentWrong.tr;
   }
 
   /// Maps the backend's stable failure tokens to localized messages; any

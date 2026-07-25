@@ -129,6 +129,12 @@ class ApiService {
       } else if (response.statusCode == 404) {
         Loggers.error('Please check baseURL in const.dart file');
         throw Exception("URL Error: ${response.statusCode} - $url");
+      } else if (response.statusCode == 429) {
+        Loggers.error('Rate limited (429): $url');
+        // Distinct message: the `auth` route limiter is a tight 10
+        // requests/minute per IP, and a retry-tapping user (or a shared/NAT'd
+        // IP) hitting it should see why, not the generic failure message.
+        throw Exception("RateLimited: Too many attempts, please wait a minute and try again.");
       } else {
         final errorBody = response.body;
         final errorMessage = _extractErrorMessage(errorBody);

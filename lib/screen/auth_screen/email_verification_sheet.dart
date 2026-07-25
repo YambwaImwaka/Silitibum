@@ -1,4 +1,5 @@
 import 'package:figma_squircle_updated/figma_squircle.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
@@ -85,16 +86,26 @@ class EmailVerificationSheet extends StatelessWidget {
 class EmailVerificationSheetController extends BaseController {
   TextEditingController codeController = TextEditingController();
 
+  /// Gives the tight per-IP `auth` rate limiter (api_service.dart's 429
+  /// handling) a distinct, honest message instead of the generic one.
+  String _messageForError(Object e) {
+    if (e.toString().contains('RateLimited')) {
+      return LKey.tooManyAttempts.tr;
+    }
+    return LKey.somethingWentWrong.tr;
+  }
+
   Future<void> resendCode() async {
-    showLoader();
+    showLoader(barrierDismissible: false);
     try {
       final res = await UserService.instance.sendEmailVerificationCode();
       stopLoader();
       showSnackBar(res.status == true ? LKey.verificationCodeSentTo.tr : res.message);
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('sendEmailVerificationCode failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      showSnackBar(LKey.somethingWentWrong.tr);
+      showSnackBar(_messageForError(e));
     }
   }
 
@@ -103,14 +114,15 @@ class EmailVerificationSheetController extends BaseController {
     if (code.isEmpty) {
       return showSnackBar(LKey.enterOtpCode.tr);
     }
-    showLoader();
+    showLoader(barrierDismissible: false);
     UserModel model;
     try {
       model = await UserService.instance.verifyEmailCode(code: code);
-    } catch (e) {
+    } catch (e, st) {
       Loggers.error('verifyEmailCode failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
       stopLoader();
-      return showSnackBar(LKey.somethingWentWrong.tr);
+      return showSnackBar(_messageForError(e));
     }
     stopLoader();
     if (model.status != true) {

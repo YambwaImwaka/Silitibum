@@ -1039,7 +1039,7 @@ class UserController extends Controller
         }
 
         $settings = GlobalSettings::first();
-        if ($settings->registration_bonus_status == 1) {
+        if ($settings != null && $settings->registration_bonus_status == 1) {
             $user->coin_wallet = $settings->registration_bonus_amount;
             $user->coin_collected_lifetime = $settings->registration_bonus_amount;
         }
@@ -1108,6 +1108,12 @@ class UserController extends Controller
 
             if ($request->login_method == 'email') {
                 $user->user_email = $request->identity;
+                // No mail provider configured: no OTP can ever arrive, so mark
+                // the address verified at creation — otherwise the app nags
+                // for a code that cannot be delivered.
+                if (!config('mail.verification_enabled')) {
+                    $user->email_verified_at = $user->email_verified_at ?: Carbon::now();
+                }
             }
 
             // Everything that persists the account (user row + auth token)
@@ -1129,7 +1135,7 @@ class UserController extends Controller
                 return GlobalFunction::sendSimpleResponse(false, 'registration_failed');
             }
 
-            if ($request->login_method == 'email') {
+            if ($request->login_method == 'email' && config('mail.verification_enabled')) {
                 // Soft verification: mail failure must never fail the signup.
                 try {
                     GlobalFunction::issueVerificationCode($user, $request->identity, VerificationCode::TYPE_VERIFY_EMAIL);
@@ -1203,7 +1209,14 @@ class UserController extends Controller
             // Google accounts arrive with a verified address.
             $user->user_email = $user->user_email ?: $request->identity;
             $user->email_verified_at = $user->email_verified_at ?: Carbon::now();
-            return $this->respondWithUserData($user, $request, $newRegister);
+            try {
+                return DB::transaction(function () use ($user, $request, $newRegister) {
+                    return $this->respondWithUserData($user, $request, $newRegister);
+                });
+            } catch (Throwable $e) {
+                Log::error('googleLogin failed for identity ' . $request->identity . ': ' . $e);
+                return GlobalFunction::sendSimpleResponse(false, 'login_failed');
+            }
         }
 
         // Sign in with Apple: verify the identityToken against Apple's JWKS.
@@ -1227,7 +1240,14 @@ class UserController extends Controller
                 $user->user_email = $user->user_email ?: $claims->email;
                 $user->email_verified_at = $user->email_verified_at ?: Carbon::now();
             }
-            return $this->respondWithUserData($user, $request, $newRegister);
+            try {
+                return DB::transaction(function () use ($user, $request, $newRegister) {
+                    return $this->respondWithUserData($user, $request, $newRegister);
+                });
+            } catch (Throwable $e) {
+                Log::error('appleLogin failed for identity ' . $request->identity . ': ' . $e);
+                return GlobalFunction::sendSimpleResponse(false, 'login_failed');
+            }
         }
 
         // No recognized credential: every login method requires proof
@@ -1238,6 +1258,9 @@ class UserController extends Controller
     // Re-sends the email verification code to the logged-in user.
     function sendEmailVerificationCode(Request $request)
     {
+        if (!config('mail.verification_enabled')) {
+            return GlobalFunction::sendSimpleResponse(false, 'Email verification is temporarily unavailable.');
+        }
         $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
         if (!$user) {
             return GlobalFunction::sendSimpleResponse(false, 'User not found!');
@@ -1273,6 +1296,11 @@ class UserController extends Controller
     // is no SMS channel (an SMS gateway can slot in here later).
     function forgotPassword(Request $request)
     {
+        if (!config('mail.verification_enabled')) {
+            // No mail provider: a reset code can never arrive. Fail honestly
+            // instead of queueing doomed mail and leaving the user waiting.
+            return GlobalFunction::sendSimpleResponse(false, 'Password reset is temporarily unavailable. Please contact support.');
+        }
         $validator = Validator::make($request->all(), ['identity' => 'required']);
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);

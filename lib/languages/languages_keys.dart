@@ -566,6 +566,8 @@ class LKey {
   static const String downloadingFailed = "Download failed.";
   static const String from = "From";
   static const String somethingWentWrong = "Something went wrong.";
+  static const String tooManyAttempts =
+      "Too many attempts. Please wait a minute and try again.";
   static const String registrationBonusTitle =
       "🎉 Welcome Bonus Credited to Your Wallet!";
   static const String registrationBonusDescription =

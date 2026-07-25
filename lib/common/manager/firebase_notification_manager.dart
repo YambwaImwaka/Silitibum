@@ -265,7 +265,13 @@ class FirebaseNotificationManager {
 
   Future<String?> getNotificationToken() async {
     try {
-      String? token = await FirebaseMessaging.instance.getToken();
+      // getToken() has no internal bound and is a known hang point (stalled
+      // APNs/Play-Services registration) — without this timeout a stuck call
+      // here freezes the login/signup spinner forever, since push is optional
+      // and the caller must always get an answer.
+      String? token = await FirebaseMessaging.instance
+          .getToken()
+          .timeout(const Duration(seconds: 5), onTimeout: () => null);
       Loggers.info('DeviceToken $token');
       return token;
     } catch (e) {

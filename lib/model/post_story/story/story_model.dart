@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/manager/story_view/story_view.dart';
 import 'package:shortzz/model/post_story/music/music_model.dart';
@@ -56,32 +57,36 @@ class Story {
     this.music,
   });
 
+  // Tolerant scalar coercion (json_parse.dart): the production backend can
+  // serve numeric columns as JSON strings, and stories ride along inside the
+  // login/register user payload — a raw typed assignment here failed the
+  // whole auth response parse for any user with an active story.
   Story.fromJson(dynamic json) {
-    id = json['id'];
-    userId = json['user_id'];
-    type = json['type'];
-    content = json['content'];
-    thumbnail = json['thumbnail'];
-    soundId = json['sound_id'];
-    duration = json['duration'];
-    viewByUserIds = json['view_by_user_ids'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    userId = asIntOrNull(json['user_id']);
+    type = asIntOrNull(json['type']);
+    content = asStringOrNull(json['content']);
+    thumbnail = asStringOrNull(json['thumbnail']);
+    soundId = asNumOrNull(json['sound_id']);
+    duration = asStringOrNull(json['duration']);
+    viewByUserIds = asStringOrNull(json['view_by_user_ids']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     // user = json['user'] != null ? User.fromJson(json['user']) : null;
     music = json['music'] != null ? Music.fromJson(json['music']) : null;
   }
 
   Story.fromJsonWithUser(dynamic json) {
-    id = json['id'];
-    userId = json['user_id'];
-    type = json['type'];
-    content = json['content'];
-    thumbnail = json['thumbnail'];
-    soundId = json['sound_id'];
-    duration = json['duration'];
-    viewByUserIds = json['view_by_user_ids'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    userId = asIntOrNull(json['user_id']);
+    type = asIntOrNull(json['type']);
+    content = asStringOrNull(json['content']);
+    thumbnail = asStringOrNull(json['thumbnail']);
+    soundId = asNumOrNull(json['sound_id']);
+    duration = asStringOrNull(json['duration']);
+    viewByUserIds = asStringOrNull(json['view_by_user_ids']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     user = json['user'] != null ? User.fromJson(json['user']) : null;
     music = json['music'] != null ? Music.fromJson(json['music']) : null;
   }

@@ -52,9 +52,14 @@ Future<void> main() async {
 
     await GetStorage.init('shortzz');
 
-    // Init RevenueCat (handle errors gracefully)
+    // Init RevenueCat (handle errors gracefully). Timeout guards against a
+    // stalled Purchases.configure()/getOfferings() network call blocking
+    // runApp() indefinitely — a cold-launch freeze before the user even
+    // sees a splash screen.
     try {
-      await SubscriptionManager.shared.initPlatformState();
+      await SubscriptionManager.shared
+          .initPlatformState()
+          .timeout(const Duration(seconds: 10));
     } catch (e, st) {
       Loggers.error('SubscriptionManager init error: $e\n$st');
     }

@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
@@ -47,20 +48,23 @@ class Music {
     this.user,
   });
 
+  // Tolerant scalar coercion (json_parse.dart) — music rides inside the
+  // stories block of the login/register user payload, so a raw typed
+  // assignment here could fail the whole auth response parse.
   Music.fromJson(dynamic json) {
-    id = json['id'];
-    categoryId = json['category_id'];
-    postCount = json['post_count'];
-    addedBy = json['added_by'];
-    userId = json['user_id'];
-    title = json['title'];
-    sound = json['sound'];
-    duration = json['duration'];
-    artist = json['artist'];
-    image = json['image'];
-    isDeleted = json['is_deleted'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    categoryId = asIntOrNull(json['category_id']);
+    postCount = asIntOrNull(json['post_count']);
+    addedBy = asIntOrNull(json['added_by']);
+    userId = asIntOrNull(json['user_id']);
+    title = asStringOrNull(json['title']);
+    sound = asStringOrNull(json['sound']);
+    duration = asStringOrNull(json['duration']);
+    artist = asStringOrNull(json['artist']);
+    image = asStringOrNull(json['image']);
+    isDeleted = asNumOrNull(json['is_deleted']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     user = json['user'] != null ? User.fromJson(json['user'])
         : null;
   }
