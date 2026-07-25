@@ -254,17 +254,12 @@ class _BuildBottomView extends StatelessWidget {
       if (isBattleView) {
         return const SizedBox();
       }
-      bool isDummyLive = data.isDummyLive == 1;
       return Container(
         width: 40,
         alignment: Alignment.center,
         child: MuteUnMuteButton(
-            isMute: isDummyLive
-                ? controller.isPlayerMute
-                : (hostView?.isMuted ?? false).obs,
-            onTap: () => isDummyLive
-                ? controller.togglePlayerAudioToggle()
-                : controller.toggleStreamAudio(data.hostId)),
+            isMute: (hostView?.isMuted ?? false).obs,
+            onTap: () => controller.toggleStreamAudio(data.hostId)),
       );
     });
   }

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -32,7 +31,6 @@ import 'package:shortzz/screen/live_stream/livestream_screen/host/widget/live_st
 import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 import 'package:shortzz/utilities/app_res.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:zego_express_engine/zego_express_engine.dart';
 
@@ -57,7 +55,6 @@ class LivestreamScreenController extends BaseController {
 
   int get myUserId => SessionManager.instance.getUserID();
 
-  RxBool isPlayerMute = false.obs;
   RxBool isMinViewerTimeout = false.obs;
   RxBool isTextEmpty = true.obs;
   bool isJoinSheetOpen = false;
@@ -88,7 +85,6 @@ class LivestreamScreenController extends BaseController {
   RxList<LivestreamUserState> liveUsersStates = <LivestreamUserState>[].obs;
 
   Rx<AppUser?> selectedGiftUser = Rx(null);
-  Rx<VideoPlayerController?> videoPlayerController = Rx(null);
 
   Rx<User?> get myUser => SessionManager.instance.getUser().obs;
   Rx<Livestream> liveData;
@@ -113,21 +109,17 @@ class LivestreamScreenController extends BaseController {
   void onInit() {
     super.onInit();
 
-    if (liveData.value.isDummyLive == 1) {
-      initVideoPlayer();
-    } else {
-      totalBattleSecond =
-          Duration(minutes: liveData.value.battleDuration).inSeconds;
-      remainingBattleSeconds.value = totalBattleSecond;
-      _knownLikeCount = liveData.value.likeCount ?? 0;
-      zegoEngine.setAudioDeviceMode(ZegoAudioDeviceMode.General);
-      loginRoom();
-      startListenEvent();
-      initAudioPlayer();
-      _startRealtime();
-      if (isHost) {
-        _fetchFullState();
-      }
+    totalBattleSecond =
+        Duration(minutes: liveData.value.battleDuration).inSeconds;
+    remainingBattleSeconds.value = totalBattleSecond;
+    _knownLikeCount = liveData.value.likeCount ?? 0;
+    zegoEngine.setAudioDeviceMode(ZegoAudioDeviceMode.General);
+    loginRoom();
+    startListenEvent();
+    initAudioPlayer();
+    _startRealtime();
+    if (isHost) {
+      _fetchFullState();
     }
 
     WakelockPlus.enable();
@@ -141,7 +133,6 @@ class LivestreamScreenController extends BaseController {
     WakelockPlus.disable();
     timer?.cancel();
     minViewerTimeoutTimer?.cancel();
-    videoPlayerController.value?.dispose();
     _realtimeSub?.cancel();
     _pollTimer?.cancel();
     _likeFlushTimer?.cancel();
@@ -153,30 +144,6 @@ class LivestreamScreenController extends BaseController {
     winAudioPlayer.dispose();
     stopListenEvent();
     logoutRoom();
-  }
-
-  Future<void> initVideoPlayer() async {
-    final url = liveData.value.dummyUserLink ?? '';
-    if (url.isEmpty) return;
-
-    // Dispose old controller if exists to avoid memory leak
-    await videoPlayerController.value?.dispose();
-
-    final controller = VideoPlayerController.networkUrl(Uri.parse(url));
-    isPlayerMute.value = false;
-
-    try {
-      await controller.initialize();
-      controller
-        ..setLooping(true)
-        ..play();
-
-      videoPlayerController.value = controller;
-      videoPlayerController.value?.setLooping(true);
-    } on PlatformException catch (e) {
-      showSnackBar(e.message);
-      Loggers.error(e);
-    }
   }
 
   void initAudioPlayer() {
@@ -1138,11 +1105,6 @@ class LivestreamScreenController extends BaseController {
         });
       }
     }
-  }
-
-  togglePlayerAudioToggle() {
-    videoPlayerController.value?.setVolume(isPlayerMute.value ? 1 : 0);
-    isPlayerMute.value = !isPlayerMute.value;
   }
 
   void toggleView() {

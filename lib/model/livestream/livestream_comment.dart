@@ -1,5 +1,6 @@
 ﻿import 'package:get/get.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 
@@ -22,12 +23,12 @@ class LivestreamComment {
       this.gift});
 
   LivestreamComment.fromJson(Map<String, dynamic> json) {
-    senderId = json['sender_id'];
-    receiverId = json['receiver_id'];
-    comment = json['comment'];
+    senderId = asIntOrNull(json['sender_id']);
+    receiverId = asIntOrNull(json['receiver_id']);
+    comment = asStringOrNull(json['comment']);
     commentType = LivestreamCommentType.fromString(json['comment_type']);
-    giftId = json['gift_id'];
-    id = json['id'];
+    giftId = asIntOrNull(json['gift_id']);
+    id = asIntOrNull(json['id']);
     gift = json['gift'] != null ? Gift.fromJson(json['gift']) : null;
   }
 
@@ -111,7 +112,7 @@ enum LivestreamCommentType {
 
   const LivestreamCommentType(this.value);
 
-  static LivestreamCommentType fromString(String value) {
+  static LivestreamCommentType fromString(dynamic value) {
     return LivestreamCommentType.values
             .firstWhereOrNull((e) => e.value == value) ??
         LivestreamCommentType.text;

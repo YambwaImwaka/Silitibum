@@ -1,8 +1,10 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class ForgotPasswordModel {
   ForgotPasswordModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
-    maskedEmail = json['data']?['masked_email'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
+    maskedEmail = asStringOrNull(json['data']?['masked_email']);
   }
 
   bool? status;

@@ -1,5 +1,6 @@
 import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/service/api/api_service.dart';
 import 'package:shortzz/common/service/utils/params.dart';
@@ -48,10 +49,14 @@ enum PostType {
 
   static String get reels => '${PostType.reel.type}';
 
-  static PostType fromString(int value) {
+  // Accepts the raw JSON value: production serves numeric columns as
+  // strings, and an unknown value must degrade to none, not throw — a
+  // throwing fromJson can kill whatever Obx build is parsing the feed.
+  static PostType fromString(dynamic value) {
+    final int? type = asIntOrNull(value);
     return PostType.values.firstWhere(
-      (e) => e.type == value,
-      orElse: () => throw ArgumentError('Invalid MessageType: $value'),
+      (e) => e.type == type,
+      orElse: () => PostType.none,
     );
   }
 }

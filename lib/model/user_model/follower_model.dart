@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
 class FollowerModel {
@@ -8,8 +9,8 @@ class FollowerModel {
   }
 
   FollowerModel.fromJson(dynamic json) {
-    _status = json['status'];
-    _message = json['message'];
+    _status = asBoolOrNull(json['status']);
+    _message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       _data = [];
       json['data'].forEach((v) {
@@ -59,12 +60,12 @@ class Follower {
   }
 
   Follower.fromJson(dynamic json) {
-    _id = json['id'];
-    _fromUserId = json['from_user_id'];
-    _toUserId = json['to_user_id'];
-    _status = json['status'];
-    _createdAt = json['created_at'];
-    _updatedAt = json['updated_at'];
+    _id = asIntOrNull(json['id']);
+    _fromUserId = asIntOrNull(json['from_user_id']);
+    _toUserId = asIntOrNull(json['to_user_id']);
+    _status = asNumOrNull(json['status']);
+    _createdAt = asStringOrNull(json['created_at']);
+    _updatedAt = asStringOrNull(json['updated_at']);
     _fromUser =
         json['from_user'] != null ? User.fromJson(json['from_user']) : null;
   }

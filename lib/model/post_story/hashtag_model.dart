@@ -1,3 +1,5 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class HashtagModel {
   HashtagModel({
     bool? status,
@@ -10,8 +12,8 @@ class HashtagModel {
   }
 
   HashtagModel.fromJson(dynamic json) {
-    _status = json['status'];
-    _message = json['message'];
+    _status = asBoolOrNull(json['status']);
+    _message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       _data = [];
       json['data'].forEach((v) {
@@ -59,12 +61,12 @@ class Hashtag {
   }
 
   Hashtag.fromJson(dynamic json) {
-    _id = json['id'];
-    _hashtag = json['hashtag'];
-    _postCount = json['post_count'];
-    _onExplore = json['on_explore'];
-    _createdAt = json['created_at'];
-    _updatedAt = json['updated_at'];
+    _id = asIntOrNull(json['id']);
+    _hashtag = asStringOrNull(json['hashtag']);
+    _postCount = asNumOrNull(json['post_count']);
+    _onExplore = asNumOrNull(json['on_explore']);
+    _createdAt = asStringOrNull(json['created_at']);
+    _updatedAt = asStringOrNull(json['updated_at']);
   }
 
   int? _id;

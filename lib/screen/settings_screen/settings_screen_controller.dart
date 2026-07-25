@@ -72,13 +72,12 @@ class SettingsScreenController extends BaseController {
   void onDeleteAccount() {
     Get.bottomSheet(ConfirmationSheet(
         onTap: () async {
-          showLoader(barrierDismissible: true);
           // Password accounts must confirm with their password (stored at
           // login); the backend verifies it before deleting. Social accounts
           // send none.
-          StatusModel model = await UserService.instance
-              .deleteMyAccount(password: SessionManager.instance.getPassword());
-          stopLoader();
+          final StatusModel? model = await withLoader(() => UserService.instance
+              .deleteMyAccount(password: SessionManager.instance.getPassword()));
+          if (model == null) return;
           if (model.status == true) {
             AppUserCacheController.instance.deleteUser(myUser.value?.id);
             RealtimeService.instance.disconnect();

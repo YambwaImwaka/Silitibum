@@ -704,7 +704,7 @@
                                                 class="form-label">{{ __('API Secret') }}</label>
                                             <input type="text" class="form-control" id="sight_engine_api_secret"
                                                 name="sight_engine_api_secret"
-                                                value="{{ $userType == 0 ? '---------' : $setting->sight_engine_api_secret }} ">
+                                                value="{{ $userType == 0 ? '---------' : $setting->sight_engine_api_secret }}">
                                         </div>
                                     </div>
 

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 
 /// A chat message (MySQL-backed). [id] is the server auto-increment id;
@@ -38,19 +39,19 @@ class MessageData {
       this.waveData});
 
   MessageData.fromServerJson(Map<String, dynamic> json) {
-    id = json['id'];
-    threadId = json['thread_id'];
-    userId = json['sender_id'];
+    id = asIntOrNull(json['id']);
+    threadId = asIntOrNull(json['thread_id']);
+    userId = asIntOrNull(json['sender_id']);
     messageType = MessageType.fromString(json['message_type'] ?? 'text');
-    textMessage = json['text_message'];
-    imageMessage = json['image_message'];
-    videoMessage = json['video_message'];
-    audioMessage = json['audio_message'];
-    postMessage = json['post_message'];
-    storyReplyMessage = json['story_reply_message'];
-    waveData = json['wave_data'];
-    isUnsent = json['is_unsent'] == 1 || json['is_unsent'] == true;
-    createdAt = json['created_at'];
+    textMessage = asStringOrNull(json['text_message']);
+    imageMessage = asStringOrNull(json['image_message']);
+    videoMessage = asStringOrNull(json['video_message']);
+    audioMessage = asStringOrNull(json['audio_message']);
+    postMessage = asStringOrNull(json['post_message']);
+    storyReplyMessage = asStringOrNull(json['story_reply_message']);
+    waveData = asStringOrNull(json['wave_data']);
+    isUnsent = asBoolOrNull(json['is_unsent']) ?? false;
+    createdAt = asIntOrNull(json['created_at']);
   }
 
   Map<String, dynamic> toJson() {
@@ -93,7 +94,7 @@ enum MessageType {
 
   const MessageType(this.value);
 
-  static MessageType fromString(String value) {
+  static MessageType fromString(dynamic value) {
     return MessageType.values.firstWhereOrNull(
           (e) => e.value == value,
         ) ??

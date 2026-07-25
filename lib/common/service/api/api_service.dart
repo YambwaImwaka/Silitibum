@@ -237,17 +237,18 @@ class ApiService {
     // worked because call() used to leak the token into a shared header map.
     request.headers.addAll(_buildHeaders());
 
-    filesMap.forEach((keyName, files) {
-      for (var xFile in files) {
+    for (final entry in filesMap.entries) {
+      for (var xFile in entry.value) {
         if (xFile != null && xFile.path.isNotEmpty) {
-          final file = File(xFile.path);
-          final multipartFile = http.MultipartFile(
-              keyName, file.readAsBytes().asStream(), file.lengthSync(),
-              filename: xFile.name);
-          request.files.add(multipartFile);
+          // fromPath streams the file from disk in chunks — readAsBytes()
+          // materialized the entire video in memory before sending, which
+          // stalls the UI (and can OOM) on large uploads.
+          request.files.add(await http.MultipartFile.fromPath(
+              entry.key, xFile.path,
+              filename: xFile.name));
         }
       }
-    });
+    }
     Loggers.info("URL : $url");
     Loggers.info("HEADERS : ${request.headers}");
     Loggers.info("FIELDS : ${request.fields}");

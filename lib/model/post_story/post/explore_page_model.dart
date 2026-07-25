@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/post_story/hashtag_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 
@@ -9,8 +10,8 @@ class ExplorePageModel {
   });
 
   ExplorePageModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     data = json['data'] != null ? ExplorePageData.fromJson(json['data']) : null;
   }
 
@@ -77,12 +78,12 @@ class HighPostHashtags {
   });
 
   HighPostHashtags.fromJson(dynamic json) {
-    id = json['id'];
-    hashtag = json['hashtag'];
-    postCount = json['post_count'];
-    onExplore = json['on_explore'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asNumOrNull(json['id']);
+    hashtag = asStringOrNull(json['hashtag']);
+    postCount = asNumOrNull(json['post_count']);
+    onExplore = asNumOrNull(json['on_explore']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     if (json['postList'] != null) {
       postList = [];
       json['postList'].forEach((v) {

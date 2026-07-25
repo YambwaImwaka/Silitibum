@@ -83,13 +83,13 @@ class _AddEditLinksSheetState extends State<AddEditLinksSheet> {
       return baseController.showSnackBar(LKey.validUrl.tr);
     }
 
-    baseController.showLoader();
-    var response = await UserService.instance.addEditDeleteUserLink(
-        title: titleController.text.trim(),
-        linkId: widget.link?.id?.toInt(),
-        urlLink: linkController.text.trim(),
-        linkType: widget.type);
-    baseController.stopLoader();
+    final response = await baseController.withLoader(() =>
+        UserService.instance.addEditDeleteUserLink(
+            title: titleController.text.trim(),
+            linkId: widget.link?.id?.toInt(),
+            urlLink: linkController.text.trim(),
+            linkType: widget.type));
+    if (response == null) return;
     Get.back();
 
     switch (widget.type) {

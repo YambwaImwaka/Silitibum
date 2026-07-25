@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
@@ -12,8 +13,8 @@ class ActivityNotificationModel {
   });
 
   ActivityNotificationModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       data = [];
       json['data'].forEach((v) {
@@ -51,15 +52,15 @@ class ActivityNotification {
   });
 
   ActivityNotification.fromJson(dynamic json) {
-    id = json['id'];
-    fromUserId = json['from_user_id'];
-    toUserId = json['to_user_id'];
+    id = asIntOrNull(json['id']);
+    fromUserId = asNumOrNull(json['from_user_id']);
+    toUserId = asNumOrNull(json['to_user_id']);
     type = json['type'] != null
         ? ActivityNotifyType.fromString(json['type'])
         : ActivityNotifyType.none;
-    dataId = json['data_id'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    dataId = asNumOrNull(json['data_id']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     data = json['data'] != null
         ? ActivityNotificationData.fromJson(json['data'])
         : null;

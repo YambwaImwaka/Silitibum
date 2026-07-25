@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
 class LinksModel {
@@ -12,8 +13,8 @@ class LinksModel {
   }
 
   LinksModel.fromJson(dynamic json) {
-    _status = json['status'];
-    _message = json['message'];
+    _status = asBoolOrNull(json['status']);
+    _message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       _data = [];
       json['data'].forEach((v) {

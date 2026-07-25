@@ -77,7 +77,6 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     super.onReady();
     // Session-independent setup (Live tab content works for guests too)
     _createZegoEngine();
-    updateDummyUsers();
 
     // Everything below needs a logged-in user: realtime channels keyed on
     // the user id, auth-only APIs, FCM topic subscriptions.
@@ -204,15 +203,6 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     }
   }
 
-  void updateDummyUsers() {
-    List<DummyLive> dummyLives = SessionManager.instance.getSettings()?.dummyLives ?? [];
-    if (dummyLives.isNotEmpty) {
-      final controller = Get.find<AppUserCacheController>();
-      for (var element in dummyLives) {
-        controller.updateUser(element.user);
-      }
-    }
-  }
 }
 
 class PostUploadingProgress {

@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
 class BlockUserModel {
@@ -8,8 +9,8 @@ class BlockUserModel {
   });
 
   BlockUserModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       data = [];
       json['data'].forEach((v) {
@@ -44,11 +45,11 @@ class BlockUsers {
   });
 
   BlockUsers.fromJson(dynamic json) {
-    id = json['id'];
-    fromUserId = json['from_user_id'];
-    toUserId = json['to_user_id'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asNumOrNull(json['id']);
+    fromUserId = asNumOrNull(json['from_user_id']);
+    toUserId = asNumOrNull(json['to_user_id']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
     toUser = json['to_user'] != null ? User.fromJson(json['to_user']) : null;
   }
 

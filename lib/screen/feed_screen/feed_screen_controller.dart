@@ -120,11 +120,35 @@ class FeedScreenController extends BaseController {
     }
   }
 
+  // The discover endpoint returns random pages with no cursor, so the list
+  // must be kept sane client-side: drop duplicates by id, stop fetching once
+  // pages bring nothing new, and cap the list so long scroll sessions can't
+  // balloon memory until the UI freezes.
+  static const int _maxFeedPosts = 300;
+  static const int _maxStaleFetches = 2;
+  int _staleFetchCount = 0;
+  bool _endReached = false;
+
   _addDataInPostList(List<Post> newList, bool isEmpty) async {
     if (isEmpty) {
       posts.clear();
+      _staleFetchCount = 0;
+      _endReached = false;
     }
-    posts.addAll(newList);
+    final existingIds = posts.map((p) => p.id).toSet();
+    final fresh =
+        newList.where((p) => p.id != null && existingIds.add(p.id)).toList();
+    posts.addAll(fresh);
+
+    if (!isEmpty) {
+      if (fresh.isEmpty) {
+        _staleFetchCount++;
+        if (_staleFetchCount >= _maxStaleFetches) _endReached = true;
+      } else {
+        _staleFetchCount = 0;
+      }
+      if (posts.length >= _maxFeedPosts) _endReached = true;
+    }
 
     await Future.delayed(const Duration(milliseconds: 200));
     isLoading.value = false;
@@ -222,6 +246,7 @@ class FeedScreenController extends BaseController {
   }
 
   Future<void> _loadMoreData() async {
+    if (_endReached) return;
     if (postScrollController.position.pixels >=
             (postScrollController.position.maxScrollExtent - 300) &&
         !isLoading.value) {

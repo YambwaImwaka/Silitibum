@@ -89,11 +89,11 @@ class AudioDetailsScreenController extends BaseController {
 
   void onMakeReel() async {
     if (downloadMusicUrl.isEmpty) {
-      showLoader();
-      downloadMusicUrl = (await DefaultCacheManager()
+      final path = await withLoader(() async => (await DefaultCacheManager()
               .getSingleFile(music.value?.sound?.addBaseURL() ?? ''))
-          .path;
-      stopLoader();
+          .path);
+      if (path == null) return;
+      downloadMusicUrl = path;
     }
     audioPlayerController.pausePlayer();
     SelectedMusic selectedMusic = SelectedMusic(

@@ -65,17 +65,10 @@ class CameraScreen extends StatelessWidget {
                 () {
                   DeepArControllerPlus deepArControllerPlus =
                       controller.deepArControllerPlus.value;
+                  // DeepArPreviewPlus already fits itself to exactly 9:16
+                  // inside this box; any extra scale factor crops the frame.
                   return controller.isDeepARInitialized.value
-                      ? Transform.scale(
-                          // Manually-tuned fill factor for the preview box
-                          // above; it was calibrated against the old 0.52
-                          // box ratio, so re-check this visually on a device
-                          // now that the box is a true 9:16 — it may need
-                          // adjusting to avoid over/under-filling the frame.
-                          scale: deepArControllerPlus.aspectRatio *
-                              0.62, //change value as needed
-                          child: DeepArPreviewPlus(deepArControllerPlus),
-                        )
+                      ? DeepArPreviewPlus(deepArControllerPlus)
                       : const LoaderWidget();
                 },
               )

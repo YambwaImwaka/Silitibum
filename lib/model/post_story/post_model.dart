@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/url_extractor/parsers/base_parser.dart';
 import 'package:shortzz/model/post_story/music/music_model.dart';
@@ -18,8 +19,8 @@ class PostModel {
   }
 
   PostModel.fromJson(dynamic json) {
-    _status = json['status'];
-    _message = json['message'];
+    _status = asBoolOrNull(json['status']);
+    _message = asStringOrNull(json['message']);
     _data = json['data'] != null ? Post.fromJson(json['data']) : null;
   }
 
@@ -81,36 +82,34 @@ class Post {
   });
 
   Post.fromJson(dynamic json) {
-    id = json['id'];
-    postSaveId = json['post_save_id'];
-    postType = json['post_type'] != null
-        ? PostType.fromString(json['post_type'])
-        : PostType.none;
-    userId = json['user_id'];
-    metadata = json['metadata'];
-    soundId = json['sound_id'];
-    description = json['description'];
-    hashtags = json['hashtags'];
-    video = json['video'];
-    thumbnail = json['thumbnail'];
-    views = json['views'];
-    likes = json['likes'];
-    comments = json['comments'];
-    saves = json['saves'];
-    shares = json['shares'];
-    mentionedUserIds = json['mentioned_user_ids'];
-    isTrending = json['is_trending'];
-    canComment = json['can_comment'];
-    placeTitle = json['place_title'];
-    placeLat = json['place_lat'];
-    placeLon = json['place_lon'];
-    state = json['state'];
-    country = json['country'];
-    isPinned = json['is_pinned'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
-    isLiked = json['is_liked'];
-    isSaved = json['is_saved'];
+    id = asIntOrNull(json['id']);
+    postSaveId = asIntOrNull(json['post_save_id']);
+    postType = PostType.fromString(json['post_type']);
+    userId = asIntOrNull(json['user_id']);
+    metadata = asStringOrNull(json['metadata']);
+    soundId = asIntOrNull(json['sound_id']);
+    description = asStringOrNull(json['description']);
+    hashtags = asStringOrNull(json['hashtags']);
+    video = asStringOrNull(json['video']);
+    thumbnail = asStringOrNull(json['thumbnail']);
+    views = asNumOrNull(json['views']);
+    likes = asNumOrNull(json['likes']);
+    comments = asNumOrNull(json['comments']);
+    saves = asNumOrNull(json['saves']);
+    shares = asNumOrNull(json['shares']);
+    mentionedUserIds = asStringOrNull(json['mentioned_user_ids']);
+    isTrending = asNumOrNull(json['is_trending']);
+    canComment = asNumOrNull(json['can_comment']);
+    placeTitle = asStringOrNull(json['place_title']);
+    placeLat = asNumOrNull(json['place_lat']);
+    placeLon = asNumOrNull(json['place_lon']);
+    state = asStringOrNull(json['state']);
+    country = asStringOrNull(json['country']);
+    isPinned = asIntOrNull(json['is_pinned']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
+    isLiked = asBoolOrNull(json['is_liked']);
+    isSaved = asBoolOrNull(json['is_saved']);
     if (json['mentioned_users'] != null) {
       mentionedUsers = [];
       json['mentioned_users'].forEach((v) {
@@ -329,11 +328,11 @@ class Images {
   }
 
   Images.fromJson(dynamic json) {
-    _id = json['id'];
-    _postId = json['post_id'];
-    _image = json['image'];
-    _createdAt = json['created_at'];
-    _updatedAt = json['updated_at'];
+    _id = asNumOrNull(json['id']);
+    _postId = asNumOrNull(json['post_id']);
+    _image = asStringOrNull(json['image']);
+    _createdAt = asStringOrNull(json['created_at']);
+    _updatedAt = asStringOrNull(json['updated_at']);
   }
 
   num? _id;

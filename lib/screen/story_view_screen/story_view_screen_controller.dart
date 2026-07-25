@@ -63,16 +63,11 @@ class StoryViewScreenController extends BaseController {
         title: LKey.deleteStoryTitle.tr,
         description: LKey.deleteStoryMessage.tr,
         onTap: () async {
-          showLoader();
-          StatusModel status;
-          if (isModerator) {
-            status = await ModeratorService.instance
-                .moderatorDeleteStory(storyId: story?.id ?? -1);
-          } else {
-            status = await PostService.instance
-                .deleteStory(storyId: story?.id ?? -1);
-          }
-          stopLoader();
+          final StatusModel? status = await withLoader(() => isModerator
+              ? ModeratorService.instance
+                  .moderatorDeleteStory(storyId: story?.id ?? -1)
+              : PostService.instance.deleteStory(storyId: story?.id ?? -1));
+          if (status == null) return;
           if (status.status == true) {
             onUpdateStoryDelete.call(story);
             Get.back();

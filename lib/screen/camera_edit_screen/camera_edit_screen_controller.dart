@@ -536,25 +536,26 @@ class CameraEditScreenController extends BaseController {
   Future<void> _processImageOrTextStory(int storyDuration) async {
     final story = content.value;
     final controller = Get.find<StoryTextViewController>();
-    showLoader();
-    final screenshot =
-        await ScreenshotManager.captureScreenshot(controller.previewContainer);
-    await Future.delayed(const Duration(seconds: 2));
+    XFile? screenshot;
+    final XFile? compressed = await withLoader<XFile?>(() async {
+      screenshot = await ScreenshotManager.captureScreenshot(
+          controller.previewContainer);
+      await Future.delayed(const Duration(seconds: 2));
+      if (screenshot == null) return null;
+      return MediaPickerHelper.shared
+          .compressImage(screenshot!.path, '${localPath}compress_images.jpg');
+    });
     if (screenshot == null) {
-      stopLoader();
       return Loggers.error('❌ Failed to capture screenshot');
     }
+    if (compressed == null) {
+      return Loggers.error('❌ Failed to compress image');
+    }
 
-    final imagePath = screenshot.path;
-    MediaPickerHelper.shared
-        .compressImage(screenshot.path, '${localPath}compress_images.jpg')
-        .then((value) async {
-      stopLoader();
-      if (value == null) {
-        return Loggers.error('❌ Failed to compress image');
-      }
+    final imagePath = screenshot!.path;
+    {
       await SightEngineService.shared.checkImagesInSightEngine(
-        xFiles: [value],
+        xFiles: [compressed],
         completion: () async {
           Get.back();
           Get.back();
@@ -599,7 +600,7 @@ class CameraEditScreenController extends BaseController {
           }
         },
       );
-    });
+    }
   }
 
   void updateUploadingProgress({required double progress}) {

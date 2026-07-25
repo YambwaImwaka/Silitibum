@@ -4,7 +4,7 @@
 
 import 'dart:convert';
 
-import 'package:shortzz/model/user_model/user_model.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 
 SettingModel settingModelFromJson(String str) =>
     SettingModel.fromJson(json.decode(str));
@@ -23,8 +23,8 @@ class SettingModel {
   });
 
   factory SettingModel.fromJson(Map<String, dynamic> json) => SettingModel(
-        status: json["status"],
-        message: json["message"],
+        status: asBoolOrNull(json["status"]),
+        message: asStringOrNull(json["message"]),
         data: json["data"] == null ? null : Setting.fromJson(json["data"]),
       );
 
@@ -61,7 +61,6 @@ class Setting {
   int? liveMinViewers;
   int? liveTimeout;
   int? liveBattle;
-  int? liveDummyShow;
   String? zegoAppId;
   String? zegoAppSign;
   int? isCompress;
@@ -92,7 +91,6 @@ class Setting {
   List<Gift>? gifts;
   List<MusicCategory>? musicCategories;
   List<UserLevel>? userLevels;
-  List<DummyLive>? dummyLives;
   List<ReportReason>? reportReason;
   List<DeepARFilters>? deepARFilters;
 
@@ -122,7 +120,6 @@ class Setting {
     this.liveMinViewers,
     this.liveTimeout,
     this.liveBattle,
-    this.liveDummyShow,
     this.zegoAppId,
     this.zegoAppSign,
     this.isCompress,
@@ -153,59 +150,59 @@ class Setting {
     this.gifts,
     this.musicCategories,
     this.userLevels,
-    this.dummyLives,
     this.reportReason,
     this.deepARFilters,
   });
 
   factory Setting.fromJson(Map<String, dynamic> json) => Setting(
-        id: json["id"],
-        appName: json["app_name"],
-        currency: json["currency"],
-        registrationBonusStatus: json["registration_bonus_status"],
-        registrationBonusAmount: json["registration_bonus_amount"],
-        coinValue: json["coin_value"]?.toDouble(),
-        minRedeemCoins: json["min_redeem_coins"],
-        minFollowersForLive: json["min_followers_for_live"],
-        admobBanner: json["admob_banner"],
-        admobInt: json["admob_int"],
-        admobBannerIos: json["admob_banner_ios"],
-        admobIntIos: json["admob_int_ios"],
-        admobAndroidStatus: json["admob_android_status"],
-        admobIosStatus: json["admob_ios_status"],
-        maxUploadDaily: json["max_upload_daily"],
-        maxStoryDaily: json["max_story_daily"],
-        maxCommentDaily: json["max_comment_daily"],
-        maxCommentReplyDaily: json["max_comment_reply_daily"],
-        maxPostPins: json["max_post_pins"],
-        maxCommentPins: json["max_comment_pins"],
-        maxImagesPerPost: json["max_images_per_post"],
-        maxUserLinks: json["max_user_links"],
-        liveMinViewers: json["live_min_viewers"],
-        liveTimeout: json["live_timeout"],
-        liveBattle: json["live_battle"],
-        liveDummyShow: json["live_dummy_show"],
-        zegoAppId: json["zego_app_id"],
-        zegoAppSign: json["zego_app_sign"],
-        isCompress: json["is_compress"],
-        isDeepAr: json["is_deepAR"],
-        isWithdrawalOn: json["is_withdrawal_on"],
-        helpMail: json["help_mail"],
-        isContentModeration: json["is_content_moderation"],
-        sightEngineApiUser: json["sight_engine_api_user"],
-        sightEngineApiSecret: json["sight_engine_api_secret"],
-        sightEngineImageWorkflowId: json["sight_engine_image_workflow_id"],
-        sightEngineVideoWorkflowId: json["sight_engine_video_workflow_id"],
-        gifSupport: json["gif_support"],
-        giphyKey: json["giphy_key"],
-        watermarkStatus: json["watermark_status"],
-        watermarkImage: json["watermark_image"],
-        privacyPolicy: json["privacy_policy"],
-        termsOfUses: json["terms_of_uses"],
-        placeApiAccessToken: json["place_api_access_token"],
-        itemBaseUrl: json["itemBaseUrl"],
-        deeparAndroidKey: json["deepar_android_key"],
-        deeparIOSKey: json["deepar_iOS_key"],
+        id: asIntOrNull(json["id"]),
+        appName: asStringOrNull(json["app_name"]),
+        currency: asStringOrNull(json["currency"]),
+        registrationBonusStatus: asIntOrNull(json["registration_bonus_status"]),
+        registrationBonusAmount: asIntOrNull(json["registration_bonus_amount"]),
+        coinValue: asDoubleOrNull(json["coin_value"]),
+        minRedeemCoins: asIntOrNull(json["min_redeem_coins"]),
+        minFollowersForLive: asIntOrNull(json["min_followers_for_live"]),
+        admobBanner: asStringOrNull(json["admob_banner"]),
+        admobInt: asStringOrNull(json["admob_int"]),
+        admobBannerIos: asStringOrNull(json["admob_banner_ios"]),
+        admobIntIos: asStringOrNull(json["admob_int_ios"]),
+        admobAndroidStatus: asIntOrNull(json["admob_android_status"]),
+        admobIosStatus: asIntOrNull(json["admob_ios_status"]),
+        maxUploadDaily: asIntOrNull(json["max_upload_daily"]),
+        maxStoryDaily: asIntOrNull(json["max_story_daily"]),
+        maxCommentDaily: asIntOrNull(json["max_comment_daily"]),
+        maxCommentReplyDaily: asIntOrNull(json["max_comment_reply_daily"]),
+        maxPostPins: asIntOrNull(json["max_post_pins"]),
+        maxCommentPins: asIntOrNull(json["max_comment_pins"]),
+        maxImagesPerPost: asIntOrNull(json["max_images_per_post"]),
+        maxUserLinks: asIntOrNull(json["max_user_links"]),
+        liveMinViewers: asIntOrNull(json["live_min_viewers"]),
+        liveTimeout: asIntOrNull(json["live_timeout"]),
+        liveBattle: asIntOrNull(json["live_battle"]),
+        zegoAppId: asStringOrNull(json["zego_app_id"]),
+        zegoAppSign: asStringOrNull(json["zego_app_sign"]),
+        isCompress: asIntOrNull(json["is_compress"]),
+        isDeepAr: asIntOrNull(json["is_deepAR"]),
+        isWithdrawalOn: asIntOrNull(json["is_withdrawal_on"]),
+        helpMail: asStringOrNull(json["help_mail"]),
+        isContentModeration: asIntOrNull(json["is_content_moderation"]),
+        sightEngineApiUser: asStringOrNull(json["sight_engine_api_user"]),
+        sightEngineApiSecret: asStringOrNull(json["sight_engine_api_secret"]),
+        sightEngineImageWorkflowId:
+            asStringOrNull(json["sight_engine_image_workflow_id"]),
+        sightEngineVideoWorkflowId:
+            asStringOrNull(json["sight_engine_video_workflow_id"]),
+        gifSupport: asIntOrNull(json["gif_support"]),
+        giphyKey: asStringOrNull(json["giphy_key"]),
+        watermarkStatus: asIntOrNull(json["watermark_status"]),
+        watermarkImage: asStringOrNull(json["watermark_image"]),
+        privacyPolicy: asStringOrNull(json["privacy_policy"]),
+        termsOfUses: asStringOrNull(json["terms_of_uses"]),
+        placeApiAccessToken: asStringOrNull(json["place_api_access_token"]),
+        itemBaseUrl: asStringOrNull(json["itemBaseUrl"]),
+        deeparAndroidKey: asStringOrNull(json["deepar_android_key"]),
+        deeparIOSKey: asStringOrNull(json["deepar_iOS_key"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -239,10 +236,6 @@ class Setting {
             ? []
             : List<UserLevel>.from(
                 json["userLevels"]?.map((x) => UserLevel.fromJson(x))),
-        dummyLives: json["dummyLives"] == null
-            ? []
-            : List<DummyLive>.from(
-                json["dummyLives"]?.map((x) => DummyLive.fromJson(x))),
         reportReason: json["reportReasons"] == null
             ? []
             : List<ReportReason>.from(
@@ -279,7 +272,6 @@ class Setting {
         "live_min_viewers": liveMinViewers,
         "live_timeout": liveTimeout,
         "live_battle": liveBattle,
-        "live_dummy_show": liveDummyShow,
         "zego_app_id": zegoAppId,
         "zego_app_sign": zegoAppSign,
         "is_compress": isCompress,
@@ -324,9 +316,6 @@ class Setting {
         "userLevels": userLevels == null
             ? []
             : List<dynamic>.from(userLevels!.map((x) => x.toJson())),
-        "dummyLives": dummyLives == null
-            ? []
-            : List<dynamic>.from(dummyLives!.map((x) => x.toJson())),
         "reportReasons": reportReason == null
             ? []
             : List<dynamic>.from(reportReason!.map((x) => x.toJson())),
@@ -360,13 +349,13 @@ class CoinPackage {
   });
 
   factory CoinPackage.fromJson(Map<String, dynamic> json) => CoinPackage(
-        id: json["id"],
-        image: json["image"],
-        status: json["status"],
-        coinAmount: json["coin_amount"],
-        coinPlanPrice: json["coin_plan_price"],
-        playStoreProductId: json["playstore_product_id"],
-        appstoreProductId: json["appstore_product_id"],
+        id: asIntOrNull(json["id"]),
+        image: asStringOrNull(json["image"]),
+        status: asIntOrNull(json["status"]),
+        coinAmount: asIntOrNull(json["coin_amount"]),
+        coinPlanPrice: asIntOrNull(json["coin_plan_price"]),
+        playStoreProductId: asStringOrNull(json["playstore_product_id"]),
+        appstoreProductId: asStringOrNull(json["appstore_product_id"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -388,54 +377,6 @@ class CoinPackage {
       };
 }
 
-class DummyLive {
-  int? id;
-  int? status;
-  String? title;
-  int? userId;
-  String? link;
-  DateTime? createdAt;
-  DateTime? updatedAt;
-  User? user;
-
-  DummyLive({
-    this.id,
-    this.status,
-    this.title,
-    this.userId,
-    this.link,
-    this.createdAt,
-    this.updatedAt,
-    this.user,
-  });
-
-  factory DummyLive.fromJson(Map<String, dynamic> json) => DummyLive(
-        id: json["id"],
-        status: json["status"],
-        title: json["title"],
-        userId: json["user_id"],
-        link: json["link"],
-        createdAt: json["created_at"] == null
-            ? null
-            : DateTime.parse(json["created_at"]),
-        updatedAt: json["updated_at"] == null
-            ? null
-            : DateTime.parse(json["updated_at"]),
-        user: json["user"] == null ? null : User.fromJson(json["user"]),
-      );
-
-  Map<String, dynamic> toJson() => {
-        "id": id,
-        "status": status,
-        "title": title,
-        "user_id": userId,
-        "link": link,
-        "created_at": createdAt?.toIso8601String(),
-        "updated_at": updatedAt?.toIso8601String(),
-        "user": user?.toJson(),
-      };
-}
-
 class Gift {
   int? id;
   int? coinPrice;
@@ -452,9 +393,9 @@ class Gift {
   });
 
   factory Gift.fromJson(Map<String, dynamic> json) => Gift(
-        id: json["id"],
-        coinPrice: json["coin_price"],
-        image: json["image"],
+        id: asIntOrNull(json["id"]),
+        coinPrice: asIntOrNull(json["coin_price"]),
+        image: asStringOrNull(json["image"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -496,13 +437,13 @@ class Language {
   });
 
   factory Language.fromJson(Map<String, dynamic> json) => Language(
-        id: json["id"],
-        code: json["code"],
-        title: json["title"],
-        localizedTitle: json["localized_title"],
-        csvFile: json["csv_file"],
-        status: json["status"],
-        isDefault: json["is_default"],
+        id: asIntOrNull(json["id"]),
+        code: asStringOrNull(json["code"]),
+        title: asStringOrNull(json["title"]),
+        localizedTitle: asStringOrNull(json["localized_title"]),
+        csvFile: asStringOrNull(json["csv_file"]),
+        status: asIntOrNull(json["status"]),
+        isDefault: asIntOrNull(json["is_default"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -544,17 +485,17 @@ class MusicCategory {
   });
 
   factory MusicCategory.fromJson(Map<String, dynamic> json) => MusicCategory(
-        id: json["id"],
-        name: json["name"],
-        image: json["image"],
-        isDeleted: json["is_deleted"],
+        id: asIntOrNull(json["id"]),
+        name: asStringOrNull(json["name"]),
+        image: asStringOrNull(json["image"]),
+        isDeleted: asIntOrNull(json["is_deleted"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
         updatedAt: json["updated_at"] == null
             ? null
             : DateTime.parse(json["updated_at"]),
-        musicsCount: json["musics_count"],
+        musicsCount: asIntOrNull(json["musics_count"]),
       );
 
   Map<String, dynamic> toJson() => {
@@ -588,11 +529,11 @@ class OnBoarding {
   });
 
   factory OnBoarding.fromJson(Map<String, dynamic> json) => OnBoarding(
-        id: json["id"],
-        position: json["position"],
-        image: json["image"],
-        title: json["title"],
-        description: json["description"],
+        id: asIntOrNull(json["id"]),
+        position: asIntOrNull(json["position"]),
+        image: asStringOrNull(json["image"]),
+        title: asStringOrNull(json["title"]),
+        description: asStringOrNull(json["description"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -626,8 +567,8 @@ class RedeemGateway {
   });
 
   factory RedeemGateway.fromJson(Map<String, dynamic> json) => RedeemGateway(
-        id: json["id"],
-        title: json["title"],
+        id: asIntOrNull(json["id"]),
+        title: asStringOrNull(json["title"]),
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -660,9 +601,9 @@ class UserLevel {
   });
 
   factory UserLevel.fromJson(Map<String, dynamic> json) => UserLevel(
-        id: json["id"],
-        level: json["level"],
-        coinsCollection: json["coins_collection"],
+        id: asIntOrNull(json["id"]),
+        level: asIntOrNull(json["level"]),
+        coinsCollection: asIntOrNull(json["coins_collection"]) ?? 0,
         createdAt: json["created_at"] == null
             ? null
             : DateTime.parse(json["created_at"]),
@@ -689,10 +630,10 @@ class ReportReason {
   ReportReason({this.id, this.title, this.createdAt, this.updatedAt});
 
   ReportReason.fromJson(Map<String, dynamic> json) {
-    id = json['id'];
-    title = json['title'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    title = asStringOrNull(json['title']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
   }
 
   Map<String, dynamic> toJson() {
@@ -716,12 +657,12 @@ class DeepARFilters {
   });
 
   DeepARFilters.fromJson(dynamic json) {
-    id = json['id'];
-    title = json['title'];
-    image = json['image'];
-    filterFile = json['filter_file'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    title = asStringOrNull(json['title']);
+    image = asStringOrNull(json['image']);
+    filterFile = asStringOrNull(json['filter_file']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
   }
 
   int? id;

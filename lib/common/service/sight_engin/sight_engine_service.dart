@@ -17,189 +17,221 @@ import 'package:shortzz/utilities/app_res.dart';
 class SightEngineService {
   static var shared = SightEngineService();
 
+  static const Duration _requestTimeout = Duration(seconds: 60);
+
+  bool get _isModerationOff =>
+      SessionManager.instance.getSettings()?.isContentModeration == 0;
+
+  String get _apiUser =>
+      (SessionManager.instance.getSettings()?.sightEngineApiUser ?? '').trim();
+
+  String get _apiSecret =>
+      (SessionManager.instance.getSettings()?.sightEngineApiSecret ?? '')
+          .trim();
+
+  /// Fail closed: moderation is intentionally ON, so when the SightEngine
+  /// credentials are missing from the admin panel we block the post with a
+  /// clear message instead of sending the request with empty keys (whose raw
+  /// "invalid api_user or api_secret" error used to surface to users) or
+  /// silently skipping the check.
+  bool _ensureConfigured({String? workflowId}) {
+    final missing = _apiUser.isEmpty ||
+        _apiSecret.isEmpty ||
+        (workflowId != null && workflowId.isEmpty);
+    if (missing) {
+      Loggers.error(
+          'SightEngine credentials/workflow missing — fill them in admin settings or disable content moderation');
+      BaseController.share.showSnackBar(LKey.moderationNotConfigured.tr);
+      return false;
+    }
+    return true;
+  }
+
   Future<void> checkImagesInSightEngine({
     required List<XFile> xFiles,
     required Function() completion,
   }) async {
-    if (SessionManager.instance.getSettings()?.isContentModeration == 0) {
+    if (_isModerationOff) {
       completion();
       return;
     }
-    BaseController.share.showLoader();
-    var request = http.MultipartRequest('POST',
-        Uri.parse('https://api.sightengine.com/1.0/check-workflow.json'));
+    final workflow =
+        (SessionManager.instance.getSettings()?.sightEngineImageWorkflowId ??
+                '')
+            .trim();
+    if (!_ensureConfigured(workflowId: workflow)) return;
 
-    request.fields['workflow'] =
-        SessionManager.instance.getSettings()?.sightEngineImageWorkflowId ?? '';
-    request.fields['api_user'] =
-        SessionManager.instance.getSettings()?.sightEngineApiUser ?? '';
-    request.fields['api_secret'] =
-        SessionManager.instance.getSettings()?.sightEngineApiSecret ?? '';
+    final String? action =
+        await BaseController.share.withLoader<String?>(() async {
+      var request = http.MultipartRequest('POST',
+          Uri.parse('https://api.sightengine.com/1.0/check-workflow.json'));
 
-    for (XFile xFile in xFiles) {
-      File file = File(xFile.path);
-      request.files.add(
-        http.MultipartFile(
-          'media',
-          file.readAsBytes().asStream(),
-          file.lengthSync(),
-          filename: file.path.split("/").last,
-        ),
-      );
-    }
+      request.fields['workflow'] = workflow;
+      request.fields['api_user'] = _apiUser;
+      request.fields['api_secret'] = _apiSecret;
 
-    var response = await request.send();
-    var respStr = await response.stream.bytesToString();
-    SightEngineMediaModel sightEngineMediaModel =
-        SightEngineMediaModel.fromJson(jsonDecode(respStr));
+      for (XFile xFile in xFiles) {
+        request.files.add(await http.MultipartFile.fromPath(
+            'media', xFile.path,
+            filename: xFile.path.split("/").last));
+      }
 
-    if (sightEngineMediaModel.error != null) {
-      BaseController.share.stopLoader();
-      Loggers.error(sightEngineMediaModel.error?.message);
-      BaseController.share
-          .showSnackBar(sightEngineMediaModel.error?.message ?? '');
-      return;
-    }
+      var response = await request.send().timeout(_requestTimeout);
+      var respStr = await response.stream.bytesToString();
+      SightEngineMediaModel sightEngineMediaModel =
+          SightEngineMediaModel.fromJson(jsonDecode(respStr));
 
-    var result = sightEngineMediaModel.summary?.action ?? '';
+      if (sightEngineMediaModel.error != null) {
+        Loggers.error(sightEngineMediaModel.error?.message);
+        BaseController.share
+            .showSnackBar(sightEngineMediaModel.error?.message ?? '');
+        return null;
+      }
 
-    BaseController.share.stopLoader();
-    if (result == 'accept') {
+      var result = sightEngineMediaModel.summary?.action ?? '';
+      if (result == 'reject') {
+        var summaryDescription = sightEngineMediaModel.summary?.rejectReason
+                ?.map((e) => e.text ?? '')
+                .join(', ') ??
+            '';
+        BaseController.share.showSnackBar(
+            '${LKey.mediaRejectedAndContainsSuchThings.tr} $summaryDescription');
+      }
+      return result;
+    });
+
+    if (action == 'accept') {
       completion(); // All images accepted
-    } else if (result == 'reject') {
-      var summaryDescription = sightEngineMediaModel.summary?.rejectReason
-              ?.map((e) => e.text ?? '')
-              .join(', ') ??
-          '';
-      BaseController.share.showSnackBar(
-          '${LKey.mediaRejectedAndContainsSuchThings.tr} $summaryDescription');
     }
   }
 
-  Future<void> checkVideoInSightEngine({required XFile xFile,
-    required int duration,
-    required Function() completion}) async {
-    if (SessionManager.instance.getSettings()?.isContentModeration == 0) {
+  Future<void> checkVideoInSightEngine(
+      {required XFile xFile,
+      required int duration,
+      required Function() completion}) async {
+    if (_isModerationOff) {
       completion();
       return;
     }
+    final workflow =
+        (SessionManager.instance.getSettings()?.sightEngineVideoWorkflowId ??
+                '')
+            .trim();
+    if (!_ensureConfigured(workflowId: workflow)) return;
 
-    File file = File(xFile.path);
-    BaseController.share.showLoader();
-    if (duration > AppRes.sightEngineCropSec) {
-      final videoTrimmer = VideoTrimmer();
-      try {
+    final String? action =
+        await BaseController.share.withLoader<String?>(() async {
+      File file = File(xFile.path);
+      if (duration > AppRes.sightEngineCropSec) {
+        final videoTrimmer = VideoTrimmer();
         await videoTrimmer.loadVideo(file.path);
-      } catch (e) {
-        Loggers.error(e);
+        final trimmedPath = await videoTrimmer.trimVideo(
+          startTimeMs: 0,
+          endTimeMs: AppRes.sightEngineCropSec * 1000,
+          includeAudio: false,
+        );
+        file = File(trimmedPath ?? '');
       }
-      final trimmedPath = await videoTrimmer.trimVideo(
-        startTimeMs: 0,
-        endTimeMs: AppRes.sightEngineCropSec * 1000,
-        includeAudio: false,
+
+      var request = http.MultipartRequest(
+        'POST',
+        Uri.parse(
+            'https://api.sightengine.com/1.0/video/check-workflow-sync.json'),
       );
-      file = File(trimmedPath ?? '');
-    }
+      request.fields['workflow'] = workflow;
+      request.fields['api_user'] = _apiUser;
+      request.fields['api_secret'] = _apiSecret;
 
-    var request = http.MultipartRequest(
-      'POST',
-      Uri.parse(
-          'https://api.sightengine.com/1.0/video/check-workflow-sync.json'),
-    );
-    request.fields['workflow'] =
-        SessionManager.instance.getSettings()?.sightEngineVideoWorkflowId ?? '';
-    request.fields['api_user'] =
-        SessionManager.instance.getSettings()?.sightEngineApiUser ?? '';
-    request.fields['api_secret'] =
-        SessionManager.instance.getSettings()?.sightEngineApiSecret ?? '';
+      request.files.add(await http.MultipartFile.fromPath('media', file.path,
+          filename: file.path.split("/").last));
 
-    request.files.add(
-      http.MultipartFile(
-          'media', file.readAsBytes().asStream(), file.lengthSync(),
-          filename: file.path.split("/").last),
-    );
+      var response = await request.send().timeout(_requestTimeout);
+      var respStr = await response.stream.bytesToString();
+      SightEngineMediaModel sightEngineMediaModel =
+          SightEngineMediaModel.fromJson(jsonDecode(respStr));
 
-    var response = await request.send();
-    var respStr = await response.stream.bytesToString();
-    SightEngineMediaModel sightEngineMediaModel =
-        SightEngineMediaModel.fromJson(jsonDecode(respStr));
-    print(jsonDecode(respStr));
-    if (sightEngineMediaModel.error != null) {
-      BaseController.share.stopLoader();
-      BaseController.share
-          .showSnackBar(sightEngineMediaModel.error?.message ?? '');
-      return;
-    }
-    var result = sightEngineMediaModel.summary?.action ?? '';
-    BaseController.share.stopLoader();
-    if (result == 'accept') {
+      if (sightEngineMediaModel.error != null) {
+        Loggers.error(sightEngineMediaModel.error?.message);
+        BaseController.share
+            .showSnackBar(sightEngineMediaModel.error?.message ?? '');
+        return null;
+      }
+
+      var result = sightEngineMediaModel.summary?.action ?? '';
+      if (result == 'reject') {
+        var summaryDescription = sightEngineMediaModel.summary?.rejectReason
+                ?.map((e) => e.text ?? '')
+                .join(', ') ??
+            '';
+        BaseController.share.showSnackBar(
+            '${LKey.mediaRejectedAndContainsSuchThings.tr} $summaryDescription');
+      }
+      return result;
+    });
+
+    if (action == 'accept') {
       completion();
-    } else if (result == 'reject') {
-      var summaryDescription = sightEngineMediaModel.summary?.rejectReason
-              ?.map((e) => e.text ?? '')
-              .join(', ') ??
-          '';
-      BaseController.share.showSnackBar(
-          '${LKey.mediaRejectedAndContainsSuchThings.tr} $summaryDescription');
     }
   }
 
   Future<void> chooseTextModeration(
       {required String text, required Function() completion}) async {
-    if (SessionManager.instance.getSettings()?.isContentModeration == 0) {
+    if (_isModerationOff || text.isEmpty) {
       completion();
       return;
     }
-    if (text.isEmpty) {
-      completion();
-      return;
-    }
-    BaseController.share.showLoader();
-    var request = http.MultipartRequest(
-        'POST', Uri.parse('https://api.sightengine.com/1.0/text/check.json'));
-    request.fields.addAll({
-      'text': text,
-      'lang': 'en,zh,da,nl,fi,fr,de,it,no,pl,pt,es,sv,tl,tr',
-      'categories': 'profanity',
-      'mode': 'rules',
-      'api_user':
-          SessionManager.instance.getSettings()?.sightEngineApiUser ?? '',
-      'api_secret':
-          SessionManager.instance.getSettings()?.sightEngineApiSecret ?? '',
-    });
+    if (!_ensureConfigured()) return;
 
-    http.StreamedResponse response = await request.send();
+    final bool? isClean = await BaseController.share.withLoader<bool?>(() async {
+      var request = http.MultipartRequest(
+          'POST', Uri.parse('https://api.sightengine.com/1.0/text/check.json'));
+      request.fields.addAll({
+        'text': text,
+        'lang': 'en,zh,da,nl,fi,fr,de,it,no,pl,pt,es,sv,tl,tr',
+        'categories': 'profanity',
+        'mode': 'rules',
+        'api_user': _apiUser,
+        'api_secret': _apiSecret,
+      });
 
-    if (response.statusCode == 200) {
+      http.StreamedResponse response =
+          await request.send().timeout(_requestTimeout);
+
+      if (response.statusCode != 200) {
+        Loggers.error(
+            'SightEngine text check failed: ${response.statusCode} ${response.reasonPhrase}');
+        BaseController.share.showSnackBar(LKey.somethingWentWrong.tr);
+        return null;
+      }
+
       var respStr = await response.stream.bytesToString();
       TextModerationModel textModerationModel =
           TextModerationModel.fromJson(jsonDecode(respStr));
-      List<Matches> matches = textModerationModel.profanity?.matches ?? [];
-      print(jsonDecode(respStr));
       if (textModerationModel.error != null) {
-        BaseController.share.stopLoader();
         BaseController.share
             .showSnackBar(textModerationModel.error?.message ?? '');
-        return;
+        return null;
       }
-      List<String> words = [];
 
+      List<Matches> matches = textModerationModel.profanity?.matches ?? [];
+      List<String> words = [];
       for (var element in matches) {
         if (element.intensity == 'high' || element.intensity == 'medium') {
           words.add(element.match ?? '');
         }
       }
 
-      BaseController.share.stopLoader();
-      if (words.isEmpty) {
-        completion();
-      } else {
+      if (words.isNotEmpty) {
         log('${LKey.textRejectedAndContainsSuchThings.tr} ${words.join(', ')}');
         BaseController.share.showSnackBar(
             '${LKey.textRejectedAndContainsSuchThings.tr} ${words.join(', ')}');
+        return false;
       }
-    } else {
-      log(response.reasonPhrase ?? '');
+      return true;
+    });
+
+    if (isClean == true) {
+      completion();
     }
   }
 }

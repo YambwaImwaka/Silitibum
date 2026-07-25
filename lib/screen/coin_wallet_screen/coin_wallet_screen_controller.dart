@@ -6,6 +6,7 @@ import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/gift_wallet_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
+import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
@@ -48,28 +49,27 @@ class CoinWalletScreenController extends BaseController {
     }
   }
 
-  void onPurchase(CoinPlan offer) {
-    showLoader(barrierDismissible: false);
-    Package package = offerings
-        .firstWhere((element) => element.storeProduct.identifier == offer.id);
-    SubscriptionManager.shared.makePurchaseCustom(package).then((value) async {
-      if (value != null) {
-        String isoTime = value.nonSubscriptionTransactions.last.purchaseDate;
-        DateTime dt = DateTime.parse(isoTime);
-        int millis = dt.millisecondsSinceEpoch;
-        User? user = await GiftWalletService.instance
-            .buyCoins(id: offer.coinPackageId, purchasedAt: millis.toString());
-        stopLoader();
-        if (user != null) {
-          User? user = await UserService.instance
-              .fetchUserDetails(userId: myUser.value?.id);
-          if (user != null) {
-            myUser.value = user;
-            SessionManager.instance.setUser(myUser.value);
-          }
+  Future<void> onPurchase(CoinPlan offer) async {
+    final Package? package = offerings.firstWhereOrNull(
+        (element) => element.storeProduct.identifier == offer.id);
+    if (package == null) {
+      return showSnackBar(LKey.somethingWentWrong.tr);
+    }
+    await withLoader(() async {
+      final value = await SubscriptionManager.shared.makePurchaseCustom(package);
+      if (value == null) return;
+      String isoTime = value.nonSubscriptionTransactions.last.purchaseDate;
+      DateTime dt = DateTime.parse(isoTime);
+      int millis = dt.millisecondsSinceEpoch;
+      User? user = await GiftWalletService.instance
+          .buyCoins(id: offer.coinPackageId, purchasedAt: millis.toString());
+      if (user != null) {
+        User? updated = await UserService.instance
+            .fetchUserDetails(userId: myUser.value?.id);
+        if (updated != null) {
+          myUser.value = updated;
+          SessionManager.instance.setUser(myUser.value);
         }
-      } else {
-        stopLoader();
       }
     });
   }

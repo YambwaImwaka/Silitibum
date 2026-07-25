@@ -14,5 +14,9 @@ const String realtimeAppKey = '';
 const String realtimeCluster = 'mt1';
 const String realtimeHost = ''; // empty = Pusher cloud cluster hosts
 
-String revenueCatAndroidApiKey = "______"; // revenueCat android api
-String revenueCatAppleApiKey = "________"; // revenueCat apple api
+// RevenueCat Test Store key (test_...) — works for sandbox testing without
+// Play/App Store credentials. Before a store release, replace with the real
+// platform keys (goog_... for Android, appl_... for iOS) from the RevenueCat
+// dashboard → Project settings → API keys.
+String revenueCatAndroidApiKey = "test_bbuAgHoIIjxANexPgXtxYwapofF";
+String revenueCatAppleApiKey = "________"; // placeholder — safely ignored

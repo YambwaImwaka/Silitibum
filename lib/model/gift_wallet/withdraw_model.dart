@@ -1,3 +1,5 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class WithdrawModel {
   WithdrawModel({
     this.status,
@@ -6,8 +8,8 @@ class WithdrawModel {
   });
 
   WithdrawModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       data = [];
       json['data'].forEach((v) {
@@ -47,17 +49,17 @@ class Withdraw {
   });
 
   Withdraw.fromJson(dynamic json) {
-    id = json['id'];
-    userId = json['user_id'];
-    requestNumber = json['request_number'];
-    gateway = json['gateway'];
-    account = json['account'];
-    amount = json['amount'];
-    coins = json['coins'];
-    coinValue = json['coin_value'];
-    status = json['status'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asNumOrNull(json['id']);
+    userId = asNumOrNull(json['user_id']);
+    requestNumber = asStringOrNull(json['request_number']);
+    gateway = asStringOrNull(json['gateway']);
+    account = asStringOrNull(json['account']);
+    amount = asStringOrNull(json['amount']);
+    coins = asNumOrNull(json['coins']);
+    coinValue = asNumOrNull(json['coin_value']);
+    status = asNumOrNull(json['status']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
   }
 
   num? id;

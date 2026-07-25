@@ -65,15 +65,12 @@ class RequestWithdrawalScreenController extends BaseController {
       return showSnackBar(LKey.redeemMinCoinDescription.tr);
     }
 
-    showLoader();
-
-    StatusModel model = await GiftWalletService.instance
-        .submitWithdrawalRequest(
+    final StatusModel? model = await withLoader(() =>
+        GiftWalletService.instance.submitWithdrawalRequest(
             coins: amountController.text.trim(),
             gateway: selectedGateway.value,
-            account: accountDetailsController.text.trim());
-
-    stopLoader();
+            account: accountDetailsController.text.trim()));
+    if (model == null) return;
     if (model.status == true) {
       // Only decrement on actual success — a failed automated payout
       // already refunds server-side (see WalletController::

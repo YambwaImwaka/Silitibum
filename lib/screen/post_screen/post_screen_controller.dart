@@ -163,15 +163,10 @@ class PostScreenController extends BaseController {
   }
 
   void _deletePost(Post post, {required bool isModerator}) async {
-    showLoader();
-    StatusModel model;
-    if (isModerator) {
-      model = await ModeratorService.instance.moderatorDeletePost(postId: post.id);
-    } else {
-      model = await PostService.instance.deletePost(postId: post.id);
-    }
-    stopLoader();
-    if (model.status == true) {
+    final StatusModel? model = await withLoader(() => isModerator
+        ? ModeratorService.instance.moderatorDeletePost(postId: post.id)
+        : PostService.instance.deletePost(postId: post.id));
+    if (model?.status == true) {
       if (Get.isRegistered<ProfileScreenController>(tag: ProfileScreenController.tag)) {
         final controller = Get.find<ProfileScreenController>(tag: ProfileScreenController.tag);
         controller.posts.removeWhere((element) => element.id == post.id);

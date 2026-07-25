@@ -42,12 +42,12 @@ class ReportSheetController extends BaseController {
   }
 
   void _reportPost() async {
-    showLoader();
-    StatusModel model = await PostService.instance.reportPost(
-        postId: reportId,
-        reason: selectedValue.value?.title ?? '',
-        description: descriptionController.text.trim());
-    stopLoader();
+    final StatusModel? model = await withLoader(() =>
+        PostService.instance.reportPost(
+            postId: reportId,
+            reason: selectedValue.value?.title ?? '',
+            description: descriptionController.text.trim()));
+    if (model == null) return;
 
     Get.back();
     if (model.status == true) {
@@ -58,12 +58,12 @@ class ReportSheetController extends BaseController {
   }
 
   void _reportUser() async {
-    showLoader();
-    StatusModel model = await UserService.instance.reportPost(
-        userId: reportId,
-        reason: selectedValue.value?.title ?? '',
-        description: descriptionController.text.trim());
-    stopLoader();
+    final StatusModel? model = await withLoader(() =>
+        UserService.instance.reportPost(
+            userId: reportId,
+            reason: selectedValue.value?.title ?? '',
+            description: descriptionController.text.trim()));
+    if (model == null) return;
 
     Get.back();
     if (model.status == true) {

@@ -1,9 +1,11 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class AdminNotificationModel {
   AdminNotificationModel({this.status, this.message, this.data});
 
   AdminNotificationModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       data = [];
       json['data'].forEach((v) {
@@ -38,12 +40,12 @@ class AdminNotificationData {
   });
 
   AdminNotificationData.fromJson(dynamic json) {
-    id = json['id'];
-    title = json['title'];
-    description = json['description'];
-    image = json['image'];
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
+    id = asIntOrNull(json['id']);
+    title = asStringOrNull(json['title']);
+    description = asStringOrNull(json['description']);
+    image = asStringOrNull(json['image']);
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
   }
 
   int? id;

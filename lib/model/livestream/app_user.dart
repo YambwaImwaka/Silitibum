@@ -1,3 +1,5 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class AppUser {
   int? userId;
   String? username;
@@ -15,12 +17,12 @@ class AppUser {
       this.identity});
 
   AppUser.fromJson(Map<String, dynamic> json) {
-    userId = json['user_id'];
-    identity = json['identity'];
-    username = json['username'];
-    fullname = json['fullname'];
-    profile = json['profile'];
-    isVerify = json['is_verify'];
+    userId = asIntOrNull(json['user_id']);
+    identity = asStringOrNull(json['identity']);
+    username = asStringOrNull(json['username']);
+    fullname = asStringOrNull(json['fullname']);
+    profile = asStringOrNull(json['profile']);
+    isVerify = asIntOrNull(json['is_verify']);
   }
 
   Map<String, dynamic> toJson() {

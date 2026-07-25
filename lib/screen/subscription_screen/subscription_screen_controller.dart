@@ -23,9 +23,8 @@ class SubscriptionScreenController extends BaseController {
 
   void onMakePurchase() async {
     if (selectedPackage.value != null) {
-      showLoader();
-      bool? status = await SubscriptionManager.shared.makePurchase(selectedPackage.value!);
-      stopLoader();
+      final bool? status = await withLoader<bool?>(
+          () => SubscriptionManager.shared.makePurchase(selectedPackage.value!));
       if (status == true) {
         User? user = SessionManager.instance.getUser();
         user?.isVerify = 1;
@@ -37,9 +36,8 @@ class SubscriptionScreenController extends BaseController {
   }
 
   void onRestoreSubscription() async {
-    showLoader();
-    bool? status = await SubscriptionManager.shared.restorePurchase();
-    stopLoader();
+    final bool? status = await withLoader<bool?>(
+        () => SubscriptionManager.shared.restorePurchase());
     if (status == true) {
       Get.back(result: true);
     }

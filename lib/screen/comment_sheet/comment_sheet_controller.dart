@@ -334,10 +334,9 @@ class CommentSheetController extends BaseController {
     if (commentId == -1) {
       return Loggers.error('Invalid Comment Id : $commentId');
     }
-    showLoader();
-    StatusModel model = await PostService.instance.deleteComment(commentId: commentId);
-    stopLoader();
-    if (model.status == true) {
+    final StatusModel? model = await withLoader(
+        () => PostService.instance.deleteComment(commentId: commentId));
+    if (model?.status == true) {
       commentsList.removeWhere((element) => element.id == commentId);
       post.update((val) => val?.updateCommentCount(-1));
     }
@@ -349,10 +348,9 @@ class CommentSheetController extends BaseController {
     if (replyId == -1) {
       return Loggers.error('Invalid Reply Comment Id : $replyId');
     }
-    showLoader();
-    StatusModel model = await PostService.instance.deleteCommentReply(replyId: replyId);
-    stopLoader();
-    if (model.status == true) {
+    final StatusModel? model = await withLoader(
+        () => PostService.instance.deleteCommentReply(replyId: replyId));
+    if (model?.status == true) {
       (getReplyCommentsList[commentId] ?? []).remove(comment);
       updateCommentList(commentId, -1);
     }

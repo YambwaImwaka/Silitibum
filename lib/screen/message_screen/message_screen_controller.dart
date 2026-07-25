@@ -121,8 +121,7 @@ class MessageScreenController extends BaseController {
       description: LKey.deleteChatUserDescription.tr,
       onTap: () async {
         if (chatConversation.threadId == null) return;
-        showLoader();
-        try {
+        await withLoader(() async {
           await ChatService.instance
               .deleteThread(threadId: chatConversation.threadId!);
           chatsUsers.removeWhere(
@@ -130,11 +129,7 @@ class MessageScreenController extends BaseController {
           requestsUsers.removeWhere(
               (element) => element.threadId == chatConversation.threadId);
           dashboardController.refreshUnreadCounts();
-        } catch (e) {
-          Loggers.error('deleteThread failed: $e');
-        } finally {
-          stopLoader();
-        }
+        });
       },
     ));
   }

@@ -1,5 +1,6 @@
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/utilities/app_res.dart';
 
@@ -19,8 +20,6 @@ class Livestream {
   List<AppUser>? coHostUsers;
   int? createdAt;
   int? battleCreatedAt;
-  int? isDummyLive;
-  String? dummyUserLink;
 
   Livestream(
       {this.watchingCount,
@@ -35,26 +34,27 @@ class Livestream {
       this.coHostIds,
       this.createdAt,
       this.battleCreatedAt,
-      this.isDummyLive,
-      this.dummyUserLink,
       this.battleDuration = AppRes.battleDurationInMinutes});
 
   Livestream.fromJson(Map<String, dynamic> json) {
     type = LivestreamType.fromString(json['type']);
     battleType = BattleType.fromString(json['battle_type']);
-    watchingCount = json['watching_count'];
-    description = json['description'];
-    isRestrictToJoin = json['is_restrict_to_join'];
-    hostViewID = json['host_view_id'];
-    roomID = json['room_id'];
-    likeCount = json['like_count'];
-    hostId = json['host_id'];
-    coHostIds = json['co-host_ids'].cast<int>();
-    createdAt = json['created_at'];
-    battleCreatedAt = json['battle_created_at'];
-    isDummyLive = json['is_dummy_live'];
-    dummyUserLink = json['dummy_user_link'];
-    battleDuration = json['battle_duration'];
+    watchingCount = asIntOrNull(json['watching_count']);
+    description = asStringOrNull(json['description']);
+    isRestrictToJoin = asIntOrNull(json['is_restrict_to_join']);
+    hostViewID = asIntOrNull(json['host_view_id']);
+    roomID = asStringOrNull(json['room_id']);
+    likeCount = asIntOrNull(json['like_count']);
+    hostId = asIntOrNull(json['host_id']);
+    coHostIds = (json['co-host_ids'] as List?)
+            ?.map(asIntOrNull)
+            .whereType<int>()
+            .toList() ??
+        [];
+    createdAt = asIntOrNull(json['created_at']);
+    battleCreatedAt = asIntOrNull(json['battle_created_at']);
+    battleDuration =
+        asIntOrNull(json['battle_duration']) ?? AppRes.battleDurationInMinutes;
   }
 
   Map<String, dynamic> toJson() {
@@ -71,8 +71,6 @@ class Livestream {
     data['co-host_ids'] = coHostIds;
     data['created_at'] = createdAt;
     data['battle_created_at'] = battleCreatedAt;
-    data['is_dummy_live'] = isDummyLive;
-    data['dummy_user_link'] = dummyUserLink;
     data['battle_duration'] = battleDuration;
     return data;
   }
@@ -109,14 +107,13 @@ class Livestream {
 
 enum LivestreamType {
   livestream('LIVESTREAM'),
-  battle('BATTLE'),
-  dummy('DUMMY');
+  battle('BATTLE');
 
   final String value;
 
   const LivestreamType(this.value);
 
-  static LivestreamType fromString(String value) {
+  static LivestreamType fromString(dynamic value) {
     return LivestreamType.values.firstWhereOrNull((e) => e.value == value) ??
         LivestreamType.livestream;
   }

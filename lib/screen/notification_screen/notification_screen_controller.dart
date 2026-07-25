@@ -71,12 +71,12 @@ class NotificationScreenController extends BaseController {
     int? commentId = data?.data?.comment?.id;
     int? replyCommentId = data?.data?.reply?.id;
 
-    if (post?.id == null) return;
+    if (post == null || post.id == null) return;
 
-    showLoader();
-    final PostByIdModel result = await PostService.instance.fetchPostById(
-        postId: post!.id!, commentId: commentId, replyId: replyCommentId);
-    stopLoader();
+    final PostByIdModel? result = await withLoader(() =>
+        PostService.instance.fetchPostById(
+            postId: post.id!, commentId: commentId, replyId: replyCommentId));
+    if (result == null) return;
 
     if (result.status != true || result.data == null) {
       showSnackBar(result.message);

@@ -16,22 +16,29 @@ class SubscriptionManager {
   List<Package> packages = [];
   List<Package> offering = [];
 
+  /// Placeholder keys ship as "______"; configuring RevenueCat with them
+  /// only produces a garbage session whose getOfferings() fails silently —
+  /// treat them the same as empty.
+  static bool _isRealKey(String key) =>
+      key.isNotEmpty && !RegExp(r'^_+$').hasMatch(key);
+
   Future<void> initPlatformState() async {
     PurchasesConfiguration configuration;
     if (Platform.isAndroid) {
-      if (revenueCatAndroidApiKey.isNotEmpty) {
+      if (_isRealKey(revenueCatAndroidApiKey)) {
         configuration = PurchasesConfiguration(revenueCatAndroidApiKey);
         Purchases.setLogLevel(LogLevel.debug);
         await Purchases.configure(configuration);
       }
     } else if (Platform.isIOS) {
-      if (revenueCatAppleApiKey.isNotEmpty) {
+      if (_isRealKey(revenueCatAppleApiKey)) {
         configuration = PurchasesConfiguration(revenueCatAppleApiKey);
         Purchases.setLogLevel(LogLevel.debug);
         await Purchases.configure(configuration);
       }
     }
     await checkIsConfigured();
+    if (!isPurchaseConfig) return;
     await fetchOfferings();
   }
 
@@ -60,6 +67,7 @@ class SubscriptionManager {
   }
 
   Future<void> subscriptionListener() async {
+    if (!isPurchaseConfig) return;
     try {
       Purchases.addCustomerInfoUpdateListener((customerInfo) async {
         int status = checkSubscription(customerInfo) ? 1 : 0;
@@ -87,11 +95,13 @@ class SubscriptionManager {
     log('isPurchaseConfig  :$isPurchaseConfig');
   }
 
-  Future<LogInResult> login(String appUserID) async {
+  Future<LogInResult?> login(String appUserID) async {
+    if (!isPurchaseConfig) return null;
     return await Purchases.logIn(appUserID);
   }
 
   Future<(Offering?, String?)> fetchOfferings() async {
+    if (!isPurchaseConfig) return (null, null);
     try {
       Offerings offerings = await Purchases.getOfferings();
       // Display current offering with offerings.current
@@ -114,6 +124,7 @@ class SubscriptionManager {
   }
 
   Future<bool?> checkSubscriptionStatus() async {
+    if (!isPurchaseConfig) return null;
     try {
       CustomerInfo customerInfo = await Purchases.getCustomerInfo();
       return checkSubscription(customerInfo);

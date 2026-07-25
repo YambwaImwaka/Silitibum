@@ -106,8 +106,7 @@ class _ScanQrCodeScreenState extends State<ScanQrCodeScreen> {
     );
   }
 
-  void fetchDetailFromUrl(String url) async {
-    BaseController.share.showLoader();
+  void fetchDetailFromUrl(String url) {
     ShareManager.shared.getValuesFromURL(
         url: url,
         completion: (key, value) {
@@ -116,8 +115,8 @@ class _ScanQrCodeScreenState extends State<ScanQrCodeScreen> {
   }
 
   Future<void> _navigateToProfileScreen(int userId) async {
-    User? user = await UserService.instance.fetchUserDetails(userId: userId);
-    BaseController.share.stopLoader();
+    User? user = await BaseController.share.withLoader<User?>(
+        () => UserService.instance.fetchUserDetails(userId: userId));
     if (user != null) {
       await NavigationService.shared.openProfileScreen(user);
       controller.start();

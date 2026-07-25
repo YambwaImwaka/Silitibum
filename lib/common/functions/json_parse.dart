@@ -20,6 +20,8 @@ num? asNumOrNull(dynamic v) {
   return num.tryParse(v.toString());
 }
 
+double? asDoubleOrNull(dynamic v) => asNumOrNull(v)?.toDouble();
+
 bool? asBoolOrNull(dynamic v) {
   if (v == null) return null;
   if (v is bool) return v;

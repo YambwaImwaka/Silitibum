@@ -1,6 +1,7 @@
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/extensions/list_extension.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
@@ -58,24 +59,26 @@ class ChatThread {
   /// user's perspective, and seeds the user cache with the embedded summary.
   factory ChatThread.fromServerJson(Map<String, dynamic> json) {
     final int myId = SessionManager.instance.getUserID();
-    final bool amUser1 = json['user1_id'] == myId;
-    final int? otherId = amUser1 ? json['user2_id'] : json['user1_id'];
+    final bool amUser1 = asIntOrNull(json['user1_id']) == myId;
+    final int? otherId =
+        asIntOrNull(amUser1 ? json['user2_id'] : json['user1_id']);
     final Map<String, dynamic>? otherSummary =
         (amUser1 ? json['user2'] : json['user1'])?.cast<String, dynamic>();
 
-    final String status = json['status'] ?? 'approved';
-    final bool iAmInitiator = json['initiator_id'] == myId;
+    final String status = asStringOrNull(json['status']) ?? 'approved';
+    final bool iAmInitiator = asIntOrNull(json['initiator_id']) == myId;
 
-    String? lastMsg = json['last_msg'];
-    if (lastMsg != null && json['last_msg_user_id'] == myId) {
+    String? lastMsg = asStringOrNull(json['last_msg']);
+    if (lastMsg != null && asIntOrNull(json['last_msg_user_id']) == myId) {
       lastMsg = 'You: $lastMsg';
     }
 
     final thread = ChatThread(
-      threadId: json['id'],
-      id: '${json['last_msg_at'] ?? json['id'] ?? 0}',
+      threadId: asIntOrNull(json['id']),
+      id: '${asIntOrNull(json['last_msg_at']) ?? asIntOrNull(json['id']) ?? 0}',
       userId: otherId,
-      msgCount: amUser1 ? json['user1_unread_count'] : json['user2_unread_count'],
+      msgCount: asIntOrNull(
+          amUser1 ? json['user1_unread_count'] : json['user2_unread_count']),
       // The receiver of a pending request sees it in the requests tab; the
       // initiator keeps a normal chat view.
       chatType: status == 'approved'
@@ -83,25 +86,25 @@ class ChatThread {
           : (iAmInitiator ? ChatType.approved : ChatType.request),
       requestType: status == 'approved' ? 'accept' : null,
       lastMsg: lastMsg,
-      lastMsgUserId: json['last_msg_user_id'],
-      lastMsgAt: json['last_msg_at'],
-      peerLastReadMessageId: amUser1
+      lastMsgUserId: asIntOrNull(json['last_msg_user_id']),
+      lastMsgAt: asIntOrNull(json['last_msg_at']),
+      peerLastReadMessageId: asIntOrNull(amUser1
           ? json['user2_last_read_message_id']
-          : json['user1_last_read_message_id'],
+          : json['user1_last_read_message_id']),
       conversationId: [myId, otherId].conversationId,
       isDeleted: false,
       deletedId: 0,
-      iBlocked: json['i_blocked'],
-      iAmBlocked: json['i_am_blocked'],
+      iBlocked: asBoolOrNull(json['i_blocked']),
+      iAmBlocked: asBoolOrNull(json['i_am_blocked']),
     );
 
     if (otherSummary != null) {
       final appUser = AppUser(
-          userId: otherSummary['id'],
-          fullname: otherSummary['fullname'],
-          username: otherSummary['username'],
-          profile: otherSummary['profile_photo'],
-          isVerify: otherSummary['is_verify']);
+          userId: asIntOrNull(otherSummary['id']),
+          fullname: asStringOrNull(otherSummary['fullname']),
+          username: asStringOrNull(otherSummary['username']),
+          profile: asStringOrNull(otherSummary['profile_photo']),
+          isVerify: asIntOrNull(otherSummary['is_verify']));
       if (Get.isRegistered<AppUserCacheController>()) {
         Get.find<AppUserCacheController>().addAppUser(appUser);
       }

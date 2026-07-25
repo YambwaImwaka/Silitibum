@@ -20,8 +20,6 @@ extension UserExtension on User {
     String? description,
     int? restrictToJoin = 1,
     int? hostViewId = -1,
-    int? isDummyLive = 0,
-    String? dummyUserLink = '',
   }) {
     return Livestream(
         description: (description ?? '').trim(),
@@ -34,9 +32,7 @@ extension UserExtension on User {
         coHostIds: [],
         hostId: id,
         createdAt: time,
-        battleType: BattleType.initiate,
-        isDummyLive: isDummyLive,
-        dummyUserLink: dummyUserLink);
+        battleType: BattleType.initiate);
   }
 
   LivestreamUserState streamState(

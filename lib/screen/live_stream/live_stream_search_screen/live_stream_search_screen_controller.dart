@@ -5,7 +5,6 @@ import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/extensions/list_extension.dart';
-import 'package:shortzz/common/extensions/user_extension.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/livestream_service.dart';
@@ -18,8 +17,7 @@ import 'package:shortzz/screen/live_stream/create_live_stream_screen/create_live
 import 'package:shortzz/screen/live_stream/livestream_screen/audience/live_stream_audience_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/livestream_host_screen.dart';
 
-/// Live tab: real streams from the backend, dummy lives merged locally from
-/// settings (they are just prerecorded links — no server rooms needed).
+/// Live tab: real streams from the backend.
 class LiveStreamSearchScreenController extends BaseController {
   RxList<Livestream> livestreamList = <Livestream>[].obs;
   RxList<Livestream> livestreamFilterList = <Livestream>[].obs;
@@ -27,8 +25,6 @@ class LiveStreamSearchScreenController extends BaseController {
   final appUserCacheController = Get.find<AppUserCacheController>();
 
   Setting? get setting => SessionManager.instance.getSettings();
-
-  RxList<DummyLive> get dummyLives => (setting?.dummyLives ?? []).obs;
 
   Timer? _refreshTimer;
 
@@ -52,7 +48,7 @@ class LiveStreamSearchScreenController extends BaseController {
     if (!silent) isLoading.value = true;
     try {
       final streams = await LivestreamService.instance.fetchLivestreams();
-      final all = [...streams, ..._dummyStreams()];
+      final all = [...streams];
       all.sort((a, b) => (b.createdAt ?? 0).compareTo(a.createdAt ?? 0));
       livestreamList.value = all;
       _assignHostUsersToStreams();
@@ -62,24 +58,6 @@ class LiveStreamSearchScreenController extends BaseController {
     } finally {
       isLoading.value = false;
     }
-  }
-
-  /// Admin-managed fake lives (prerecorded links) shown alongside real ones.
-  List<Livestream> _dummyStreams() {
-    if (setting?.liveDummyShow == 0) return [];
-    final List<Livestream> streams = [];
-    for (final dummy in dummyLives) {
-      final User? dummyUser = dummy.user;
-      if (dummyUser == null || dummy.status != 1) continue;
-      appUserCacheController.addUser(dummyUser);
-      streams.add(dummyUser.livestream(
-          type: LivestreamType.dummy,
-          time: DateTime.now().millisecondsSinceEpoch,
-          dummyUserLink: dummy.link,
-          isDummyLive: 1,
-          description: dummy.title));
-    }
-    return streams;
   }
 
   void _assignHostUsersToStreams() {
@@ -104,7 +82,7 @@ class LiveStreamSearchScreenController extends BaseController {
     // comment/gift paths that all assume a user — one gate at the door.
     if (!AuthGate.check()) return;
     User? myUser = SessionManager.instance.getUser();
-    if (stream.hostId == myUser?.id && stream.isDummyLive != 1) {
+    if (stream.hostId == myUser?.id) {
       Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
     } else {
       Get.to(() => LiveStreamAudienceScreen(isHost: false, livestream: stream));

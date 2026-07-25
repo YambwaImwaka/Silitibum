@@ -244,20 +244,16 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
       ConfirmationSheet(
           title: LKey.deletePostTitle.tr,
           onTap: () async {
-            showLoader();
-            StatusModel model;
-            if (isModerator) {
-              model = await ModeratorService.instance
-                  .moderatorDeletePost(postId: post.id?.toInt() ?? -1);
-            } else {
-              model = await PostService.instance.deletePost(postId: post.id?.toInt() ?? -1);
-            }
-            if (model.status == true) {
+            final StatusModel? model = await withLoader(() => isModerator
+                ? ModeratorService.instance
+                    .moderatorDeletePost(postId: post.id?.toInt() ?? -1)
+                : PostService.instance
+                    .deletePost(postId: post.id?.toInt() ?? -1));
+            if (model?.status == true) {
               Get.delete<ReelController>(tag: '${post.id}');
               reels.removeWhere((element) => element.id == post.id);
               post = Post();
             }
-            stopLoader();
           },
           description: LKey.deletePostMessage.tr),
     );
@@ -386,16 +382,13 @@ class ProfileScreenController extends BlockUserController with GetTickerProvider
   }
 
   void freezeUnfreezeUser(bool isFreeze) async {
-    StatusModel result;
-    showLoader();
-    if (isFreeze) {
-      result = await ModeratorService.instance.moderatorUnFreezeUser(userId: userData.value?.id);
-    } else {
-      result = await ModeratorService.instance.moderatorFreezeUser(userId: userData.value?.id);
-    }
-    stopLoader();
+    final StatusModel? result = await withLoader(() => isFreeze
+        ? ModeratorService.instance
+            .moderatorUnFreezeUser(userId: userData.value?.id)
+        : ModeratorService.instance
+            .moderatorFreezeUser(userId: userData.value?.id));
 
-    if (result.status == true) {
+    if (result?.status == true) {
       userData.update((val) => val?.isFreez = isFreeze ? 0 : 1);
     }
   }

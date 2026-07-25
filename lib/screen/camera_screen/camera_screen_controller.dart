@@ -328,32 +328,31 @@ class CameraScreenController extends BaseController
     if (!isStartingRecording.value) return;
 
     try {
-      XFile file;
-
       _stopAudioPlayback();
       _progressTimer?.cancel();
       isRecording.value = false;
       isStartingRecording.value = false;
       progress.value = 0;
 
-      showLoader();
-      if (isDeepAr) {
-        final File _file =
-            await deepArControllerPlus.value.stopVideoRecording();
-        file = XFile(_file.path);
-      } else {
-        final String? videoPath = await RetrytechPlugin.shared.stopRecording;
-        if (videoPath == null) {
-          return showSnackBar('Capture File not found');
+      final MediaFile? mediaFile = await withLoader<MediaFile?>(() async {
+        XFile file;
+        if (isDeepAr) {
+          final File _file =
+              await deepArControllerPlus.value.stopVideoRecording();
+          file = XFile(_file.path);
+        } else {
+          final String? videoPath = await RetrytechPlugin.shared.stopRecording;
+          if (videoPath == null) return null;
+          file = XFile(videoPath);
         }
-        file = XFile(videoPath);
+        final XFile thumbnailPath = await MediaPickerHelper.shared
+            .extractThumbnail(videoPath: file.path);
+        return MediaFile(
+            file: file, type: MediaType.video, thumbNail: thumbnailPath);
+      });
+      if (mediaFile == null) {
+        return showSnackBar('Capture File not found');
       }
-      final XFile thumbnailPath =
-          await MediaPickerHelper.shared.extractThumbnail(videoPath: file.path);
-      MediaFile mediaFile = MediaFile(
-          file: file, type: MediaType.video, thumbNail: thumbnailPath);
-
-      stopLoader();
 
       switch (cameraType) {
         case CameraScreenType.post:
@@ -462,19 +461,13 @@ class CameraScreenController extends BaseController
   }
 
   Future<void> _handleReel(MediaFile file, {bool isCameraFile = false}) async {
-    showLoader();
-    try {
-      final content = PostStoryContent(
-          type: PostStoryContentType.reel,
-          content: file.file.path,
-          thumbNail: file.thumbNail.path,
-          sound: selectedMusic.value);
-      stopLoader();
-      navigateCameraEditScreen(content);
-    } catch (e) {
-      Loggers.error('Reel handling error: $e');
-      stopLoader();
-    }
+    final content = await withLoader(() async => PostStoryContent(
+        type: PostStoryContentType.reel,
+        content: file.file.path,
+        thumbNail: file.thumbNail.path,
+        sound: selectedMusic.value));
+    if (content == null) return;
+    navigateCameraEditScreen(content);
   }
 
   Future<void> onMusicTap() async {
@@ -566,21 +559,15 @@ class CameraScreenController extends BaseController
 
     try {
       if (effect.id != -1) {
-        showLoader();
-
-        // Download the AR effect file
-        final fileInfo = await DefaultCacheManager()
-            .getSingleFile(effect.filterFile?.addBaseURL() ?? '');
-
-        // Stop loading indicator and apply the effect
-        stopLoader();
+        final fileInfo = await withLoader(() => DefaultCacheManager()
+            .getSingleFile(effect.filterFile?.addBaseURL() ?? ''));
+        if (fileInfo == null) return;
         deepArControllerPlus.value.switchEffect(fileInfo.path);
       } else {
         // Clear the effect if ID is -1
         deepArControllerPlus.value.switchEffect('');
       }
     } catch (e, stackTrace) {
-      stopLoader();
       Loggers.error('Failed to apply AR filter: $e\n$stackTrace');
     }
   }

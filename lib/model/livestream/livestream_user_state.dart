@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 
 class LivestreamUserState {
@@ -30,12 +31,16 @@ class LivestreamUserState {
         audioStatus: VideoAudioStatus.fromString(json['audio_status']),
         videoStatus: VideoAudioStatus.fromString(json['video_status']),
         type: LivestreamUserType.fromString(json['type'] ?? ''),
-        userId: json['user_id'] ?? 0,
-        liveCoin: json['live_coin'] ?? 0,
-        currentBattleCoin: json['current_battle_coin'] ?? 0,
-        totalBattleCoin: json['total_battle_coin'] ?? 0,
-        followersGained: json['followers_gained'].cast<int>() ?? [],
-        joinStreamTime: json['join_stream_time'] ?? 0,
+        userId: asIntOrNull(json['user_id']) ?? 0,
+        liveCoin: asIntOrNull(json['live_coin']) ?? 0,
+        currentBattleCoin: asIntOrNull(json['current_battle_coin']) ?? 0,
+        totalBattleCoin: asIntOrNull(json['total_battle_coin']) ?? 0,
+        followersGained: (json['followers_gained'] as List?)
+                ?.map(asIntOrNull)
+                .whereType<int>()
+                .toList() ??
+            [],
+        joinStreamTime: asIntOrNull(json['join_stream_time']) ?? 0,
         user: json['user'] != null ? AppUser.fromJson(json['user']) : null);
   }
 
@@ -75,7 +80,7 @@ enum LivestreamUserType {
 
   const LivestreamUserType(this.value);
 
-  static LivestreamUserType fromString(String value) {
+  static LivestreamUserType fromString(dynamic value) {
     return LivestreamUserType.values.firstWhereOrNull(
           (e) => e.value == value,
         ) ??
@@ -92,7 +97,7 @@ enum VideoAudioStatus {
 
   const VideoAudioStatus(this.value);
 
-  static VideoAudioStatus fromString(String value) {
+  static VideoAudioStatus fromString(dynamic value) {
     return VideoAudioStatus.values.firstWhereOrNull((e) => e.value == value) ??
         VideoAudioStatus.on;
   }

@@ -73,9 +73,9 @@ class MediaPickerHelper {
         if (mimeType.contains('image')) {
           return MediaFile(type: MediaType.image, file: file, thumbNail: file);
         } else if (mimeType.contains('video')) {
-          BaseController.share.showLoader();
-          XFile thumbNail = await extractThumbnail(videoPath: file.path);
-          BaseController.share.stopLoader();
+          XFile thumbNail = await BaseController.share.withLoader(
+                  () => extractThumbnail(videoPath: file.path)) ??
+              XFile('');
           return MediaFile(
               type: MediaType.video, file: file, thumbNail: thumbNail);
         }

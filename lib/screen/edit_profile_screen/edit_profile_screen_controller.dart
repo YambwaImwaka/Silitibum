@@ -96,19 +96,19 @@ class EditProfileScreenController extends BaseController {
     if (!isValidUserName.value) {
       return showSnackBar(LKey.validUsernameEmpty.tr);
     }
-    showLoader();
-    User? userData = await UserService.instance.updateUserDetails(
-        fullname: fullNameController.text.trim(),
-        userName: usernameController.text.trim(),
-        bio: bioController.text.trim(),
-        email: emailController.text.trim(),
-        profilePhoto: fileProfileImage.value,
-        phoneNumber: phoneNumberController.text.trim(),
-        mobileCountryCode: int.parse(
-            phoneController.selectedCode.value!.phoneCode.replaceAll('+', '')),
-        country: phoneController.selectedCode.value?.countryName,
-        countryCode: phoneController.selectedCode.value?.countryCode);
-    stopLoader();
+    final User? userData = await withLoader<User?>(() =>
+        UserService.instance.updateUserDetails(
+            fullname: fullNameController.text.trim(),
+            userName: usernameController.text.trim(),
+            bio: bioController.text.trim(),
+            email: emailController.text.trim(),
+            profilePhoto: fileProfileImage.value,
+            phoneNumber: phoneNumberController.text.trim(),
+            mobileCountryCode: int.parse(phoneController
+                .selectedCode.value!.phoneCode
+                .replaceAll('+', '')),
+            country: phoneController.selectedCode.value?.countryName,
+            countryCode: phoneController.selectedCode.value?.countryCode));
     if (userData == null) return;
     onUpdateUser?.call(userData);
     if (Get.isRegistered<FeedScreenController>()) {
@@ -190,15 +190,12 @@ class EditProfileScreenController extends BaseController {
               title: LKey.deleteLinkTitle.tr,
               description: LKey.deleteLinkDescription.tr,
               onTap: () async {
-                showLoader();
-                LinksModel value = await UserService.instance
-                    .addEditDeleteUserLink(
-                        linkType: LinkType.delete, linkId: link.id?.toInt());
-                stopLoader();
-                if (value.status ?? false) {
+                final LinksModel? value = await withLoader(() =>
+                    UserService.instance.addEditDeleteUserLink(
+                        linkType: LinkType.delete, linkId: link.id?.toInt()));
+                if (value?.status ?? false) {
                   onLinkAddEditDelete(link, LinkType.delete);
                 }
-                // ApiService
               },
             ),
             isScrollControlled: true);

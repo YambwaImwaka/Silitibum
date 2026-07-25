@@ -4,6 +4,7 @@
 
 import 'dart:convert';
 
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 
 import 'comment/fetch_comment_model.dart';
@@ -25,8 +26,8 @@ class PostByIdModel {
   });
 
   factory PostByIdModel.fromJson(Map<String, dynamic> json) => PostByIdModel(
-        status: json["status"],
-        message: json["message"],
+        status: asBoolOrNull(json["status"]),
+        message: asStringOrNull(json["message"]),
         data: json["data"] == null ? null : PostByIdData.fromJson(json["data"]),
       );
 

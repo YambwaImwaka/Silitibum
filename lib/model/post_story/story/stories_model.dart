@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
 class StoriesModel {
@@ -8,8 +9,8 @@ class StoriesModel {
   });
 
   StoriesModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     if (json['data'] != null) {
       data = [];
       json['data'].forEach((v) {

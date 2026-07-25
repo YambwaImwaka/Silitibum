@@ -566,6 +566,13 @@ class LKey {
   static const String downloadingFailed = "Download failed.";
   static const String from = "From";
   static const String somethingWentWrong = "Something went wrong.";
+  static const String moderationNotConfigured =
+      "Content moderation is not set up yet. Please try again later.";
+  static const String coinPurchasesUnavailable =
+      "Store coin purchases are unavailable right now.";
+  static const String topUpWithMobileMoney = "Top up with Mobile Money";
+  static const String insufficientFundGetCoins =
+      "Not enough coins. Get more coins to send this gift.";
   static const String tooManyAttempts =
       "Too many attempts. Please wait a minute and try again.";
   static const String registrationBonusTitle =

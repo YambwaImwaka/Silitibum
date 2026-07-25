@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 
 class AddCommentModel {
@@ -8,8 +9,8 @@ class AddCommentModel {
   });
 
   AddCommentModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     data = json['data'] != null ? Comment.fromJson(json['data']) : null;
   }
 

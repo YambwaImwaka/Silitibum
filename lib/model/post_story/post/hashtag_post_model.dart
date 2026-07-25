@@ -1,3 +1,4 @@
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/post_story/hashtag_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 
@@ -9,8 +10,8 @@ class HashtagPostModel {
   });
 
   HashtagPostModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     data = json['data'] != null ? HashtagPostData.fromJson(json['data']) : null;
   }
 

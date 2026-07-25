@@ -1,3 +1,5 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class StatusModel {
   StatusModel({
     bool? status,
@@ -8,8 +10,8 @@ class StatusModel {
   }
 
   StatusModel.fromJson(dynamic json) {
-    _status = json['status'];
-    _message = json['message'];
+    _status = asBoolOrNull(json['status']);
+    _message = asStringOrNull(json['message']);
   }
 
   bool? _status;

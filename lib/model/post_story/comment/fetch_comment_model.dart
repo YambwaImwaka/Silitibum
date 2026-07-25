@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/comment_sheet/helper/comment_helper.dart';
 
@@ -10,8 +11,8 @@ class FetchCommentModel {
   });
 
   FetchCommentModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
     data = json['data'] != null ? CommentData.fromJson(json['data']) : null;
   }
 
@@ -87,23 +88,22 @@ class Comment {
   });
 
   Comment.fromJson(dynamic json) {
-    id = json['id'];
-    commentId = json['comment_id'];
-    postId = json['post_id'];
-    userId = json['user_id'];
-    comment = json['comment'];
-    reply = json['reply'];
-    mentionedUserIds = json['mentioned_user_ids'];
-    likes = json['likes'];
-    repliesCount = json['replies_count'];
-    isPinned = json['is_pinned'];
-    type = json['type'] == null
-        ? CommentType.text
-        : CommentType.values
-            .firstWhere((element) => element.value == json['type']);
-    createdAt = json['created_at'];
-    updatedAt = json['updated_at'];
-    isLiked = json['is_liked'];
+    id = asIntOrNull(json['id']);
+    commentId = asIntOrNull(json['comment_id']);
+    postId = asIntOrNull(json['post_id']);
+    userId = asNumOrNull(json['user_id']);
+    comment = asStringOrNull(json['comment']);
+    reply = asStringOrNull(json['reply']);
+    mentionedUserIds = asStringOrNull(json['mentioned_user_ids']);
+    likes = asNumOrNull(json['likes']);
+    repliesCount = asNumOrNull(json['replies_count']);
+    isPinned = asNumOrNull(json['is_pinned']);
+    type = CommentType.values.firstWhereOrNull(
+            (element) => element.value == json['type']) ??
+        CommentType.text;
+    createdAt = asStringOrNull(json['created_at']);
+    updatedAt = asStringOrNull(json['updated_at']);
+    isLiked = asBoolOrNull(json['is_liked']);
     if (json['mentionedUsers'] != null) {
       mentionedUsers = [];
       json['mentionedUsers'].forEach((v) {

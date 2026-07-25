@@ -12,6 +12,7 @@ import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
+import 'package:shortzz/screen/coin_wallet_screen/coin_wallet_screen.dart';
 import 'package:shortzz/screen/gift_sheet/send_gift_dialog.dart';
 import 'package:shortzz/screen/gift_sheet/send_gift_sheet.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
@@ -58,8 +59,12 @@ class SendGiftSheetController extends BaseController {
       return showSnackBar('Gift Not Found');
     }
 
-    if ((gift.coinPrice ?? 0) >= (myUser.value?.coinWallet ?? 0)) {
-      return showSnackBar('Insufficient fund');
+    if ((gift.coinPrice ?? 0) > (myUser.value?.coinWallet ?? 0)) {
+      showSnackBar(LKey.insufficientFundGetCoins.tr);
+      // Route the user straight to the coins hub (IAP + mobile-money top-up)
+      // instead of dead-ending here.
+      Get.to(() => const CoinWalletScreen());
+      return;
     }
 
     sendGift(gift, context);
@@ -89,10 +94,9 @@ class SendGiftSheetController extends BaseController {
       return;
     }
 
-    showLoader();
-    final response = await GiftWalletService.instance
-        .sendGift(giftId: giftId, userId: userId);
-    stopLoader();
+    final response = await withLoader(() =>
+        GiftWalletService.instance.sendGift(giftId: giftId, userId: userId));
+    if (response == null) return;
     if (response.status == true) {
       // Deduct gift coins from user wallet
       myUser.update((val) {

@@ -1,3 +1,5 @@
+import 'package:shortzz/common/functions/json_parse.dart';
+
 class FilePathModel {
   FilePathModel({
     this.status,
@@ -6,9 +8,9 @@ class FilePathModel {
   });
 
   FilePathModel.fromJson(dynamic json) {
-    status = json['status'];
-    message = json['message'];
-    data = json['data'];
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
+    data = asStringOrNull(json['data']);
   }
 
   bool? status;

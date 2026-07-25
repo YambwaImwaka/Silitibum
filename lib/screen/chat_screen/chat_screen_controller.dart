@@ -487,13 +487,16 @@ class ChatScreenController extends BlockUserController with GetTickerProviderSta
   }
 
   Future<void> _uploadAndSendMessage(MediaFile mediaFile) async {
-    showLoader();
-
-    String filePath = await _uploadFile(mediaFile.file);
-
-    String thumbnailPath =
-        mediaFile.type == MediaType.video ? await _uploadFile(mediaFile.thumbNail) : '';
-    stopLoader();
+    final List<String>? paths = await withLoader(() async {
+      String filePath = await _uploadFile(mediaFile.file);
+      String thumbnailPath = mediaFile.type == MediaType.video
+          ? await _uploadFile(mediaFile.thumbNail)
+          : '';
+      return [filePath, thumbnailPath];
+    });
+    if (paths == null) return;
+    final String filePath = paths[0];
+    final String thumbnailPath = paths[1];
     bool isImageMessage = mediaFile.type == MediaType.image;
     if (filePath == '') {
       return Loggers.error('Filepath Not Found Please try Again');

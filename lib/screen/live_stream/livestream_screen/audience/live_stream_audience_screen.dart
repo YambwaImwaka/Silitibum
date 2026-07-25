@@ -6,7 +6,6 @@ import 'package:shortzz/screen/live_stream/livestream_screen/audience/widget/liv
 import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/view/battle_view.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/view/live_stream_bottom_view.dart';
-import 'package:shortzz/screen/live_stream/livestream_screen/view/live_video_player.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/view/livestream_view.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/widget/battle_start_countdown_overlay.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/widget/live_stream_background_blur_image.dart';
@@ -48,9 +47,6 @@ class LiveStreamAudienceScreen extends StatelessWidget {
                     controller: controller,
                     margin: const EdgeInsets.only(top: 100),
                   );
-                case LivestreamType.dummy:
-                  return LivestreamVideoPlayer(
-                      controller: controller.videoPlayerController);
               }
             }),
 
