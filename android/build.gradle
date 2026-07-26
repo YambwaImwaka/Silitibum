@@ -25,6 +25,10 @@ subprojects {
         if (project.hasProperty("android")) {
             project.android {
                 compileSdkVersion 36
+                // Pin every native subproject (e.g. DeepAR's :jni) to the one
+                // NDK that is actually installed intact; without this AGP picks
+                // its own default version and triggers a multi-GB download.
+                ndkVersion "27.0.12077973"
                 if (project.android.hasProperty("namespace") == false) {
                     namespace project.group.toString()
                 }

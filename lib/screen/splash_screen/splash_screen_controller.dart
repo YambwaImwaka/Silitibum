@@ -11,6 +11,7 @@ import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/common_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/network_helper/network_helper.dart';
+import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/common/widget/no_internet_sheet.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
@@ -99,6 +100,19 @@ class SplashScreenController extends BaseController {
     RestartWidget.restartApp(Get.context!);
 
     if (SessionManager.instance.isLogin()) {
+      // RevenueCat identity has to be re-established on EVERY launch, not just
+      // at login. Purchases.configure() in main() always starts an anonymous
+      // customer, and a restored session used to reach the dashboard without
+      // ever calling logIn() — so every returning user stayed
+      // $RCAnonymousID:... Purchases made in that state are invisible to both
+      // consumers of the id: WalletController::buyCoins looks the customer up
+      // by numeric id and finds no purchase (store charges, coins never
+      // credited), and RevenueCatWebhookController's ctype_digit() guard
+      // no-ops, so the verified badge never lands.
+      final rcUserId = SessionManager.instance.getUserID();
+      if (rcUserId != 0) {
+        SubscriptionManager.shared.login('$rcUserId');
+      }
       UserService.instance.fetchUserDetails(userId: SessionManager.instance.getUserID()).then((value) {
         // The session stays logged in either way; on a failed refetch we
         // still pass the last-known cached user (rather than null) so the
