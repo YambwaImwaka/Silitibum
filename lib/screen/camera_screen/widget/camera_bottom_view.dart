@@ -85,10 +85,15 @@ class _EffectList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    List<DeepARFilters> deepARFilters =
-        controller.appSetting?.deepARFilters ?? [];
-    deepARFilters.insert(
-        0, DeepARFilters(id: -1, title: 'None', image: AssetRes.icNoFilter));
+    // FIX: this used to insert() straight into controller.appSetting's own
+    // list, which is the cached Setting object shared app-wide — so every
+    // rebuild of this widget appended another "None" to the real settings
+    // data and the strip grew without bound. Build a fresh list instead and
+    // leave the cached settings untouched.
+    final List<DeepARFilters> deepARFilters = [
+      DeepARFilters(id: -1, title: 'None', image: AssetRes.icNoFilter),
+      ...?controller.appSetting?.deepARFilters,
+    ];
     return SizedBox(
       height: 89,
       child: ListView.builder(

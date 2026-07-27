@@ -41,7 +41,14 @@ class ApiService {
 
   // Fail fast instead of letting a request hang forever on a dead connection;
   // callers already treat exceptions as network failures.
-  static const Duration _requestTimeout = Duration(seconds: 30);
+  //
+  // 30s was too tight for the production host: a cold LSPHP start on the
+  // shared hosting was measured at 18.8s to return even a 401, against ~0.5s
+  // once warm. Add the flaky link to that box and first-hit calls were
+  // crossing the old budget and surfacing as timeouts. Not retried
+  // automatically — every endpoint here is POST, including addPost/buyCoins,
+  // so a blanket retry risks double-submitting.
+  static const Duration _requestTimeout = Duration(seconds: 45);
 
   // Headers are built per call: a shared mutable map leaks the AUTHTOKEN of a
   // previous call into `cancelAuthToken` requests and races across concurrent

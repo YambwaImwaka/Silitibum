@@ -451,7 +451,7 @@ class UnblockButton extends StatelessWidget {
       onTap: onTap,
       title: LKey.unBlock.tr,
       fontSize: 16,
-      backgroundColor: blueFollow(context),
+      backgroundColor: themeAccentSolid(context),
       titleColor: whitePure(context),
       horizontalMargin: 0,
       btnHeight: 45,
@@ -493,7 +493,7 @@ class RowButton extends StatelessWidget {
                 title: isMe ? LKey.settings.tr : (user?.isFollowing == true ? LKey.unFollow.tr : LKey.follow.tr),
                 fontSize: 16,
                 backgroundColor:
-                    isMe ? bgGrey(context) : (user?.isFollowing == true ? bgGrey(context) : blueFollow(context)),
+                    isMe ? bgGrey(context) : (user?.isFollowing == true ? bgGrey(context) : themeAccentSolid(context)),
                 titleColor: isMe ? textLightGrey(context) : textColor,
                 horizontalMargin: 0,
                 btnHeight: 45,

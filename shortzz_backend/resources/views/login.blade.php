@@ -20,6 +20,8 @@
     <link href="{{ asset('assets/css/app-saas.min.css') }}" rel="stylesheet" type="text/css" id="app-style" />
     <!-- Icons css -->
     <link href="{{ asset('assets/css/icons.min.css') }}" rel="stylesheet" type="text/css" />
+    <!-- Brand theme — must stay AFTER app-saas.min.css to override its tokens -->
+    <link href="{{ asset('assets/css/brand.css') }}" rel="stylesheet" type="text/css" />
 </head>
 
 <body class="authentication-bg position-relative">

@@ -41,7 +41,16 @@ Future<void> main() async {
     // development noise doesn't pollute the dashboard.
     await FirebaseCrashlytics.instance
         .setCrashlyticsCollectionEnabled(!kDebugMode);
-    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    // Assigning onError replaces the framework's default handler outright, so
+    // without presentError() nothing reaches the console. Combined with the
+    // kDebugMode guard above that meant framework errors vanished entirely in
+    // debug builds — a red ErrorWidget on screen and no stack trace in logcat
+    // or Crashlytics. presentError() restores the console dump; Crashlytics
+    // still receives the error in release exactly as before.
+    FlutterError.onError = (details) {
+      FlutterError.presentError(details);
+      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+    };
     PlatformDispatcher.instance.onError = (error, stack) {
       FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
       return true;

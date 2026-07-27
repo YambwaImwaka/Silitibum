@@ -10,7 +10,7 @@ use App\Models\GlobalFunction;
 
 <style>
  a {
-        color: #B754F9
+        color: #C2410C
     }
 </style>
 <input type="hidden" name="user_id" id="user_id" value="{{$user->id}}">

@@ -114,7 +114,7 @@ class _PostTextViewState extends State<PostTextView> {
             isCollapsed: isCollapsed,
             trimMode: TrimMode.Line,
             trimLines: AppRes.trimLine,
-            colorClickableText: Colors.pink,
+            colorClickableText: themeAccentSolid(context),
             trimCollapsedText: LKey.more.tr,
             trimExpandedText: ' ${LKey.less.tr}',
             lessStyle: collapsedStyle,
@@ -162,7 +162,7 @@ class _PostTextViewState extends State<PostTextView> {
                   return TextSpan(
                     text: text,
                     style: textStyle?.copyWith(
-                      color: widget.mentionTextColor ?? blueFollow(context),
+                      color: widget.mentionTextColor ?? themeAccentSolid(context),
                       fontFamily: FontRes.outFitMedium500,
                       fontSize: 15,
                     ),

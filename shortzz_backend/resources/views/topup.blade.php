@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="{{ asset('assets/vendor/jquery-toast-plugin/jquery.toast.min.css') }}">
     <link href="{{ asset('assets/css/app-saas.min.css') }}" rel="stylesheet" type="text/css" id="app-style" />
     <link href="{{ asset('assets/css/icons.min.css') }}" rel="stylesheet" type="text/css" />
+    <!-- Brand theme — must stay AFTER app-saas.min.css to override its tokens -->
+    <link href="{{ asset('assets/css/brand.css') }}" rel="stylesheet" type="text/css" />
 </head>
 
 <body class="authentication-bg position-relative">
@@ -48,7 +50,8 @@
 
                                     <div class="mb-3">
                                         <label for="phone" class="form-label">{{ __('Mobile Money Phone Number') }}</label>
-                                        <input class="form-control" type="text" id="phone" placeholder="e.g. 260971234567">
+                                        <input class="form-control" type="text" id="phone" placeholder="{{ __('e.g. 0971234567') }}">
+                                        <div class="form-text">{{ __('With or without the country code.') }}</div>
                                     </div>
                                     <div class="mb-0 text-center">
                                         <button class="btn btn-primary w-100" id="buyBtn" disabled>{{ __('Buy Coins') }}</button>

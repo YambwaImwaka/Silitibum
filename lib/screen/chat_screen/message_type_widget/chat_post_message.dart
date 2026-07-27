@@ -259,7 +259,7 @@ class ChatPostText extends StatelessWidget {
               return TextSpan(
                 text: text,
                 style: textStyle?.copyWith(
-                  color: blueFollow(context),
+                  color: themeAccentSolid(context),
                   fontFamily: FontRes.outFitMedium500,
                   fontSize: 15,
                 ),

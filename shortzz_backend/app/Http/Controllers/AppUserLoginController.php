@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\GlobalFunction;
 use App\Models\Users;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -32,8 +33,31 @@ class AppUserLoginController extends Controller
             'password' => 'required',
         ]);
 
-        $user = Users::where('identity', $request->identity)->first();
-        if ($user == null || $user->password == null || !Hash::check($request->password, $user->password)) {
+        $candidates = $this->candidateIdentities($request->identity);
+        $matches = Users::where(function ($query) use ($candidates) {
+            $query->whereIn('identity', $candidates)->orWhereIn('user_email', $candidates);
+        })->get();
+
+        $user = null;
+        $passwordless = false;
+        foreach ($matches as $match) {
+            if ($match->password == null) {
+                $passwordless = true;
+            } else if (Hash::check($request->password, $match->password)) {
+                $user = $match;
+                break;
+            }
+        }
+
+        if ($user == null) {
+            // Rows created by googleLogin/appleLogin never get a password hash
+            // written, so no password typed here can ever match one. Say that
+            // outright rather than leave the user retrying a password that
+            // cannot work — same disclosure the app's own logInUser already
+            // makes with account_not_found/incorrect_password.
+            if ($passwordless) {
+                return response()->json(['status' => false, 'message' => 'This account signs in with Google or Apple, so it has no password to use here.']);
+            }
             return response()->json(['status' => false, 'message' => 'Wrong credentials!']);
         }
         if ($user->is_freez == 1) {
@@ -43,6 +67,36 @@ class AppUserLoginController extends Controller
         Session::put('app_user_id', $user->id);
 
         return response()->json(['status' => true, 'message' => 'Login successful', 'data' => ['id' => $user->id]]);
+    }
+
+    // Accounts are keyed by the canonical identity the app's signup builds:
+    // '+<countryCode><national digits, leading zeros stripped>' (see
+    // AuthScreenController._normalizedPhone). This page has no country picker
+    // and most users type their number the local way ('0977…') or don't know
+    // their country code at all, so rather than demand the canonical form we
+    // rebuild every identity the typed input could plausibly be and let the
+    // password decide which row is really theirs. A wrong guess can't log
+    // anyone in: Hash::check still has to pass against that specific row.
+    private function candidateIdentities(string $input): array
+    {
+        $input = trim($input);
+        $candidates = [$input];
+
+        // An email is already the identity as stored — no rebuilding to do.
+        if (!filter_var($input, FILTER_VALIDATE_EMAIL)) {
+            $digits = preg_replace('/[^0-9]/', '', $input);
+            if ($digits !== '') {
+                // Already carries the country code, '+' present or not.
+                $candidates[] = '+' . $digits;
+            }
+            // The local form the app's picker would have canonicalised for them.
+            $canonical = GlobalFunction::canonicalMsisdn($input);
+            if ($canonical !== null) {
+                $candidates[] = '+' . $canonical;
+            }
+        }
+
+        return array_values(array_unique($candidates));
     }
 
     public function logout()

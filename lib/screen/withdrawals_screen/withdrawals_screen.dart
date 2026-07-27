@@ -46,7 +46,7 @@ class WithdrawalsScreen extends StatelessWidget {
                           Color statusColor = switch (withdraw.status) {
                             0 => ColorRes.orange,
                             1 => ColorRes.green,
-                            3 => ColorRes.blueFollow,
+                            3 => ColorRes.infoBlue,
                             _ => ColorRes.likeRed,
                           };
                           return Container(

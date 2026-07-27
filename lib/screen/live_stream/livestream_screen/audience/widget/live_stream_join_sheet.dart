@@ -118,7 +118,7 @@ class LiveStreamJoinSheet extends StatelessWidget {
                         },
                         title: LKey.join.tr,
                         titleColor: whitePure(context),
-                        backgroundColor: blueFollow(context),
+                        backgroundColor: themeAccentSolid(context),
                         horizontalMargin: 0,
                       ),
                     ),

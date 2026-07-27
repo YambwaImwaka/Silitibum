@@ -1,3 +1,4 @@
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:get/get.dart';
@@ -85,16 +86,37 @@ class MusicSheetController extends BaseController {
     musicCategoryList.value = setting?.musicCategories ?? [];
   }
 
+  /// FIX: every fetch below used to clear [isLoading] only on its success
+  /// path. When the awaited call threw — a 30s `Request timed out` against a
+  /// cold-starting server was enough — the trailing `isLoading.value = false`
+  /// never ran, so `MusicList` rendered its LoaderWidget forever with no
+  /// error and no way to retry. The methods are `async void`, so the
+  /// exception escaped into nothing and (with Crashlytics off in debug) left
+  /// no trace at all. Clearing the flag in a `finally` guarantees the sheet
+  /// always settles into either content or an empty state.
+  void _onFetchFailed(String action, Object e, StackTrace st) {
+    Loggers.error('$action failed: $e');
+    FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
+    // showSnackBar() no-ops while one is already open, so the three fetches
+    // initData() kicks off concurrently surface a single message, not three.
+    showSnackBar(LKey.somethingWentWrong.tr);
+  }
+
   void fetchMusicExplore({bool isEmpty = false}) async {
     isLoading.value = true;
-    int? lastItemId = isEmpty || exploreMusicList.isEmpty ? null : exploreMusicList.last.id;
-    List<Music> items =
-        await PostService.instance.fetchMusicExplore(lastItemId: lastItemId);
-    if (isEmpty) {
-      exploreMusicList.clear();
+    try {
+      int? lastItemId = isEmpty || exploreMusicList.isEmpty ? null : exploreMusicList.last.id;
+      List<Music> items =
+          await PostService.instance.fetchMusicExplore(lastItemId: lastItemId);
+      if (isEmpty) {
+        exploreMusicList.clear();
+      }
+      exploreMusicList.addAll(items);
+    } catch (e, st) {
+      _onFetchFailed('fetchMusicExplore', e, st);
+    } finally {
+      isLoading.value = false;
     }
-    exploreMusicList.addAll(items);
-    isLoading.value = false;
   }
 
   void fetchMusicByCategories(int? categoryId, {bool isEmpty = false}) async {
@@ -103,37 +125,54 @@ class MusicSheetController extends BaseController {
       return Loggers.error('Invalid Id : $id');
     }
     isLoading.value = true;
-    int? lastItemId = isEmpty || categoryMusicList.isEmpty ? null : categoryMusicList.last.id;
-    List<Music> items = await PostService.instance
-        .fetchMusicByCategories(lastItemId: lastItemId, categoryId: id);
-    if (isEmpty) {
-      categoryMusicList.clear();
+    try {
+      int? lastItemId = isEmpty || categoryMusicList.isEmpty ? null : categoryMusicList.last.id;
+      List<Music> items = await PostService.instance
+          .fetchMusicByCategories(lastItemId: lastItemId, categoryId: id);
+      if (isEmpty) {
+        categoryMusicList.clear();
+      }
+      categoryMusicList.addAll(items);
+    } catch (e, st) {
+      _onFetchFailed('fetchMusicByCategories', e, st);
+    } finally {
+      isLoading.value = false;
     }
-    categoryMusicList.addAll(items);
-    isLoading.value = false;
   }
 
   void fetchSavedMusics({bool isEmpty = false}) async {
     isLoading.value = true;
-    List<Music> items = await PostService.instance.fetchSavedMusics();
-    if (isEmpty) {
-      savedMusicList.clear();
+    try {
+      List<Music> items = await PostService.instance.fetchSavedMusics();
+      if (isEmpty) {
+        savedMusicList.clear();
+      }
+      savedMusicList.addAll(items);
+    } catch (e, st) {
+      _onFetchFailed('fetchSavedMusics', e, st);
+    } finally {
+      isLoading.value = false;
     }
-    savedMusicList.addAll(items);
-    isLoading.value = false;
   }
 
   void searchMusic(String keyword, {bool isEmpty = false}) async {
-    List<Music> items = await PostService.instance.searchMusic(
-      keyword: keyword,
-      lastItemId: searchMusicList.isEmpty || isEmpty ? null : searchMusicList.last.id,
-    );
+    // Callers (onChanged/onSearchTap) own setting isLoading here; this method
+    // only guarantees it comes back down.
+    try {
+      List<Music> items = await PostService.instance.searchMusic(
+        keyword: keyword,
+        lastItemId: searchMusicList.isEmpty || isEmpty ? null : searchMusicList.last.id,
+      );
 
-    if (isEmpty) {
-      searchMusicList.clear();
+      if (isEmpty) {
+        searchMusicList.clear();
+      }
+      searchMusicList.addAll(items);
+    } catch (e, st) {
+      _onFetchFailed('searchMusic', e, st);
+    } finally {
+      isLoading.value = false;
     }
-    searchMusicList.addAll(items);
-    isLoading.value = false;
   }
 
   void onSearchTap() {

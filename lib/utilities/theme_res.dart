@@ -26,9 +26,22 @@ class ThemeRes {
         labelSmall: TextStyle(color: ColorRes.themeAccentSolid),
         labelLarge: TextStyle(color: ColorRes.disabledGrey),
       ),
-      textSelectionTheme:
-          const TextSelectionThemeData(selectionColor: ColorRes.disabledGrey),
-      cardTheme: const CardThemeData(color: ColorRes.blueFollow),
+      textSelectionTheme: TextSelectionThemeData(
+        selectionColor: ColorRes.themeAccentSolid.withValues(alpha: .2),
+        cursorColor: ColorRes.themeAccentSolid,
+        selectionHandleColor: ColorRes.themeAccentSolid,
+      ),
+      progressIndicatorTheme:
+          const ProgressIndicatorThemeData(color: ColorRes.themeAccentSolid),
+      // Material's own widgets (ripples, switches, indicators) fall back to a
+      // stock blue swatch without this, which is what leaks non-brand colour
+      // into corners the palette above never touches.
+      colorScheme: const ColorScheme.light(
+        primary: ColorRes.themeAccentSolid,
+        secondary: ColorRes.themeGradient1,
+        surface: ColorRes.whitePure,
+        error: ColorRes.likeRed,
+      ),
       splashColor: Colors.transparent,
       highlightColor: Colors.transparent,
       primaryColor: ColorRes.themeAccentSolid,
@@ -76,10 +89,6 @@ Color disableGrey(BuildContext context) {
 
 Color scaffoldBackgroundColor(BuildContext context) {
   return Theme.of(context).scaffoldBackgroundColor;
-}
-
-Color blueFollow(BuildContext context) {
-  return Theme.of(context).cardTheme.color ?? blueFollow(context);
 }
 
 Color bgMediumGrey(BuildContext context) {

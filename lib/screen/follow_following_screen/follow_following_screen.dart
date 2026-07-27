@@ -275,7 +275,7 @@ class _UserProfileTileState extends State<UserProfileTile> {
                       radius: 8,
                       backgroundColor: widget.isFollowOrIsBlock
                           ? whitePure(context)
-                          : blueFollow(context),
+                          : themeAccentSolid(context),
                       borderSide: widget.isFollowOrIsBlock
                           ? BorderSide(color: bgGrey(context))
                           : BorderSide.none,

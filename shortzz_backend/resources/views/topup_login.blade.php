@@ -12,6 +12,8 @@
     <link rel="stylesheet" href="{{ asset('assets/vendor/jquery-toast-plugin/jquery.toast.min.css') }}">
     <link href="{{ asset('assets/css/app-saas.min.css') }}" rel="stylesheet" type="text/css" id="app-style" />
     <link href="{{ asset('assets/css/icons.min.css') }}" rel="stylesheet" type="text/css" />
+    <!-- Brand theme — must stay AFTER app-saas.min.css to override its tokens -->
+    <link href="{{ asset('assets/css/brand.css') }}" rel="stylesheet" type="text/css" />
 </head>
 
 <body class="authentication-bg position-relative">
@@ -33,7 +35,8 @@
                                 <div class="mb-3">
                                     <label for="identity" class="form-label">{{ __('Phone or Email') }}</label>
                                     <input class="form-control" type="text" id="identity" name="identity" required
-                                        placeholder="Enter your phone or email">
+                                        placeholder="{{ __('Phone number or email address') }}">
+                                    <div class="form-text">{{ __('Your number works with or without the country code.') }}</div>
                                 </div>
                                 <div class="mb-3">
                                     <label for="password" class="form-label">{{ __('Password') }}</label>

@@ -13,9 +13,12 @@ class LiveStreamBlurBackgroundImage extends StatelessWidget {
     return Container(
       width: Get.width,
       height: Get.height,
+      // Blurred to sigma 160, so this asset is only ever an ambient colour
+      // wash — which made the old purple stock photo an off-brand tint on
+      // every live screen. Shares the splash background instead.
       decoration: const BoxDecoration(
           image: DecorationImage(
-              image: AssetImage(AssetRes.icBattleView), fit: BoxFit.cover)),
+              image: AssetImage(AssetRes.icBackground), fit: BoxFit.cover)),
       child: ClipSmoothRect(
         child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 160, sigmaY: 160),

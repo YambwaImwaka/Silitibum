@@ -1,6 +1,7 @@
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
@@ -11,6 +12,12 @@ import 'package:shortzz/utilities/const_res.dart';
 bool isPurchaseConfig = false;
 RxBool isSubscribe = false.obs;
 
+/// Opt-in for RevenueCat Test Store keys outside debug builds, set at build
+/// time with `--dart-define=ALLOW_TEST_IAP=true`. Only the QA artifact should
+/// pass it; a plain `flutter build apk --release` leaves it false so a test
+/// key can never reach a store build.
+const bool _allowTestStoreKey = bool.fromEnvironment('ALLOW_TEST_IAP');
+
 class SubscriptionManager {
   static var shared = SubscriptionManager();
   List<Package> packages = [];
@@ -19,8 +26,25 @@ class SubscriptionManager {
   /// Placeholder keys ship as "______"; configuring RevenueCat with them
   /// only produces a garbage session whose getOfferings() fails silently —
   /// treat them the same as empty.
-  static bool _isRealKey(String key) =>
-      key.isNotEmpty && !RegExp(r'^_+$').hasMatch(key);
+  ///
+  /// Test Store keys (`test_…`) are rejected outright by the native SDK in a
+  /// non-debuggable build: it puts up a "Wrong API Key" dialog and kills the
+  /// process before any UI appears. That happens down in `Purchases.configure`
+  /// on the platform side, so the try/catch around `initPlatformState()` in
+  /// main.dart never sees it — the app just closes. Refusing the key here and
+  /// never calling configure() is the only thing that actually prevents it,
+  /// leaving `isPurchaseConfig` false so every method below no-ops and the app
+  /// runs normally, just without IAP.
+  static bool _isRealKey(String key) {
+    if (key.isEmpty || RegExp(r'^_+$').hasMatch(key)) return false;
+    if (key.startsWith('test_') && !kDebugMode && !_allowTestStoreKey) {
+      log('⚠️ RevenueCat: Test Store key ignored in a non-debug build — IAP is '
+          'disabled. Ship a goog_/appl_ key for release, or build the QA '
+          'artifact with --dart-define=ALLOW_TEST_IAP=true.');
+      return false;
+    }
+    return true;
+  }
 
   Future<void> initPlatformState() async {
     PurchasesConfiguration configuration;

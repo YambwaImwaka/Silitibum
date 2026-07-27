@@ -1265,6 +1265,33 @@ class GlobalFunction extends Model
             . substr($parts[0], -1) . '@' . $parts[1];
     }
 
+    // Turns however a user typed their number ('0977 123 456', '977123456',
+    // '+260977123456', '00260977123456') into digits-only international form
+    // ('260977123456'). The web top-up pages have no country picker like the
+    // app's signup does, and most users here type the local form or don't
+    // know their country code at all.
+    //
+    // Assumes a national number never itself begins with the country code —
+    // true wherever national numbers carry a trunk '0' (Zambia's 09…), which
+    // is the case for app.default_country_code's intended markets.
+    public static function canonicalMsisdn($input): ?string
+    {
+        $digits = preg_replace('/[^0-9]/', '', (string) $input);
+        if ($digits === '') {
+            return null;
+        }
+        // Dialled internationally as '00<code>…'.
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+        $code = (string) config('app.default_country_code');
+        if ($code !== '' && str_starts_with($digits, $code)) {
+            return $digits;
+        }
+        $national = ltrim($digits, '0');
+        return $national === '' ? null : $code . $national;
+    }
+
     public static function generateRandomString($length)
     {
         $characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';

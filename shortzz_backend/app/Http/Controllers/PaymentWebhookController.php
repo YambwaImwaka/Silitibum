@@ -53,7 +53,12 @@ class PaymentWebhookController extends Controller
             return response()->json(['status' => false], 401);
         }
 
-        $reference = $request->input('data.transactionReference') ?? $request->input('data.clientReference');
+        // v2 collection.* payloads carry 'reference' (the one WE sent, i.e.
+        // "topup_{id}") and 'lencoReference' (theirs). Prefer ours — it's what
+        // resolvePaymentReference matches on, and verify() looks up by our
+        // reference too. The v1 names this used to read (transactionReference/
+        // clientReference) are not present in v2 payloads at all.
+        $reference = $request->input('data.reference') ?? $request->input('data.lencoReference');
         return $this->resolvePaymentReference($reference, 'lenco', $settings);
     }
 

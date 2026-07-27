@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CoinPackages;
 use App\Models\CoinTopUpRequests;
+use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
 use App\Services\Payments\PaymentGatewayFactory;
 use Illuminate\Http\Request;
@@ -42,6 +43,15 @@ class TopUpController extends Controller
             'phone' => 'required|regex:/^\+?[0-9]{8,15}$/',
         ]);
 
+        // Same country-code problem the login half has: the regex above happily
+        // accepts a local '0977123456', but every gateway wants the full
+        // international MSISDN, so normalize before it reaches one — and store
+        // the normalized value, since that's what the webhook reconciles against.
+        $phone = GlobalFunction::canonicalMsisdn($request->phone);
+        if ($phone === null) {
+            return response()->json(['status' => false, 'message' => 'Please enter a valid mobile money number.']);
+        }
+
         $package = CoinPackages::find($request->coin_package_id);
         $settings = GlobalSettings::first();
         $provider = $settings->active_collection_provider;
@@ -55,13 +65,13 @@ class TopUpController extends Controller
         $topup->coin_package_id = $package->id;
         $topup->coins = $package->coin_amount;
         $topup->amount = $package->coin_plan_price;
-        $topup->phone = $request->phone;
+        $topup->phone = $phone;
         $topup->provider = $provider;
         $topup->status = 'pending';
         $topup->save();
 
         try {
-            $result = $gateway->charge($request->phone, (float) $package->coin_plan_price, $settings->currency ?? 'USD', 'topup_' . $topup->id);
+            $result = $gateway->charge($phone, (float) $package->coin_plan_price, $settings->currency ?? 'USD', 'topup_' . $topup->id);
         } catch (\Throwable $e) {
             Log::error('TopUpController::initiateCharge threw: ' . $e->getMessage());
             $result = ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_exception'];

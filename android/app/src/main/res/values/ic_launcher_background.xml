@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#512A87</color>
+    <!-- Frames the orange "SB" mark on the adaptive icon. Matches
+         ColorRes.themeColor so the launcher icon reads as the same brand. -->
+    <color name="ic_launcher_background">#17120F</color>
 </resources>

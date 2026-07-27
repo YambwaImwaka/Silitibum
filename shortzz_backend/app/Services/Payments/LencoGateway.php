@@ -2,29 +2,26 @@
 
 namespace App\Services\Payments;
 
+use App\Models\GlobalFunction;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
-// Verified against https://lenco-api.readme.io/reference/ (get-started,
-// create-transfer, get-transfer-by-reference, webhooks pages).
+// Verified against https://lenco-api.readme.io/v2.0/reference/ (collections
+// and webhooks pages).
 //
-// CONFIRMED PRODUCT-FIT ISSUE, read before enabling this as the active
-// payout provider: Lenco is a Nigerian *business banking* API, not a mobile
-// money aggregator. Its transfer API pays out to a NUBAN bank account number
-// + bank code — there is no mobile-money-by-phone-number endpoint anywhere
-// in its reference docs, and no collections/charge endpoint at all (so it
-// can't power the web top-up flow either). It only fits this feature if a
-// user's payout "account" happens to be a Nigerian bank account, which
-// doesn't match "mobile money." Left implemented (against real, verified
-// endpoints) in case it's useful for a future bank-transfer payout option,
-// but it is not a drop-in mobile money provider like Paystack/DPO.
+// HISTORY, so nobody re-derives the old conclusion: this class previously
+// targeted Lenco's v1 API and documented that Lenco "has no collections
+// endpoint" and could not power the web top-up flow. That was true of v1 —
+// it is NOT true of v2, which added /collections/mobile-money for Zambia
+// (zm) and Malawi (mw) with airtel/mtn/zamtel/tnm operators. Collections are
+// now implemented below and Lenco is a valid active_collection_provider.
+//
+// Payouts are a different story and the old warning still stands there —
+// see payout().
 class LencoGateway implements PaymentGatewayInterface
 {
     private string $apiKey;
-    // Confirmed sandbox base URL from docs; production is presumably the
-    // same host without "sandbox." (standard convention) — confirm before
-    // going live, this specific substitution wasn't shown in what I fetched.
-    private string $baseUrl = 'https://api.lenco.co/access/v1';
+    private string $baseUrl = 'https://api.lenco.co/access/v2';
 
     public function __construct(string $apiKey)
     {
@@ -38,16 +35,39 @@ class LencoGateway implements PaymentGatewayInterface
 
     public function charge(string $phone, float $amount, string $currency, string $reference): array
     {
-        Log::error('LencoGateway::charge called — Lenco has no collections/mobile-money charge API. Pick a different active provider for the web top-up flow.');
-        return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'not_supported'];
+        $operator = $this->operatorFor($phone);
+        if ($operator === null) {
+            Log::error('LencoGateway::charge could not map phone to a mobile money operator: ' . $phone);
+            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'unsupported_operator'];
+        }
+
+        try {
+            $response = $this->client()->post('/collections/mobile-money', [
+                'amount' => $amount,
+                'reference' => $reference,
+                'phone' => $this->localPhone($phone),
+                'operator' => $operator,
+                'country' => 'zm',
+                // 'merchant' (the default) means we absorb the transaction
+                // fee rather than adding it to what the buyer is charged —
+                // the coin package price the user was shown is what they pay.
+                'bearer' => 'merchant',
+            ]);
+            return $this->mapResponse($response);
+        } catch (\Throwable $e) {
+            Log::error('LencoGateway::charge failed: ' . $e->getMessage());
+            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+        }
     }
 
-    // NOTE: signature keeps $phone for PaymentGatewayInterface compliance,
-    // but Lenco actually needs a bank accountId/accountNumber/bankCode, not
-    // a phone number — this will fail against the real API as written below
-    // unless the caller is somehow passing a NUBAN through $phone, which the
-    // rest of this codebase (phone-number withdrawal accounts) never will.
-    // Included for interface completeness, not recommended for use yet.
+    // NOTE: unchanged from the v1 implementation and still not recommended.
+    // Lenco's transfer API pays out to a NUBAN bank account number + bank
+    // code; there is no mobile-money-by-phone payout endpoint. This will fail
+    // against the real API unless the caller passes a bank account number
+    // through $phone, which the rest of this codebase (phone-number
+    // withdrawal accounts) never does. Collections above are unaffected —
+    // Lenco is fine as active_collection_provider and wrong as
+    // active_payout_provider.
     public function payout(string $phone, float $amount, string $currency, string $reference): array
     {
         try {
@@ -69,7 +89,7 @@ class LencoGateway implements PaymentGatewayInterface
     public function verify(string $reference): array
     {
         try {
-            $response = $this->client()->get('/transfer/by-reference/' . $reference);
+            $response = $this->client()->get('/collections/status/' . urlencode($reference));
             return $this->mapResponse($response);
         } catch (\Throwable $e) {
             Log::error('LencoGateway::verify failed: ' . $e->getMessage());
@@ -77,19 +97,61 @@ class LencoGateway implements PaymentGatewayInterface
         }
     }
 
+    // Zambian mobile prefixes, national form: MTN 096/076, Airtel 097/077,
+    // Zamtel 095/075. Lenco requires the operator explicitly and there is no
+    // lookup endpoint for it, so it has to come from the prefix — asking the
+    // user to pick their network on top of typing their number is exactly the
+    // kind of friction the top-up page is trying to avoid.
+    private function operatorFor(string $phone): ?string
+    {
+        $national = $this->localPhone($phone);
+        $prefix = substr($national, 0, 3);
+        return match ($prefix) {
+            '096', '076' => 'mtn',
+            '097', '077' => 'airtel',
+            '095', '075' => 'zamtel',
+            default => null,
+        };
+    }
+
+    // UNVERIFIED, confirm on the first live charge: Lenco's own reference
+    // docs don't state the expected phone format, and the two community
+    // implementations disagree — the Node SDK's example passes a national
+    // '0971234567' while another gateway passes an international
+    // '2609XXXXXXXX'. Going with the national form because it's what Lenco's
+    // own SDK shows and because `country` is already sent separately, so the
+    // number needn't carry the code. If a live charge is rejected for an
+    // invalid phone, this one method is the only thing that needs to change.
+    private function localPhone(string $phone): string
+    {
+        $msisdn = GlobalFunction::canonicalMsisdn($phone) ?? preg_replace('/[^0-9]/', '', $phone);
+        $code = (string) config('app.default_country_code');
+        if ($code !== '' && str_starts_with($msisdn, $code)) {
+            return '0' . substr($msisdn, strlen($code));
+        }
+        return $msisdn;
+    }
+
     private function mapResponse($response): array
     {
         if (!$response->successful() || !$response->json('status')) {
             return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => $response->json('message')];
         }
-        $txnStatus = $response->json('data.transaction.status');
+
+        // v2 collection statuses: pending | successful | failed | pay-offline
+        // | otp-required | 3ds-auth-required. Everything that isn't terminal
+        // maps to 'processing' — 'pay-offline' in particular is the normal,
+        // expected result of a mobile-money charge (the customer still has to
+        // approve the prompt on their handset), NOT a failure.
+        $txnStatus = $response->json('data.status');
         $mapped = $txnStatus === 'successful' ? 'completed'
             : ($txnStatus === 'failed' ? 'failed' : 'processing');
+
         return [
             'success' => $mapped !== 'failed',
             'status' => $mapped,
-            'provider_reference' => $response->json('data.transaction.transactionReference') ?? $response->json('data.request.reference'),
-            'message' => $response->json('message'),
+            'provider_reference' => $response->json('data.lencoReference') ?? $response->json('data.reference'),
+            'message' => $response->json('data.reasonForFailure') ?? $response->json('message'),
         ];
     }
 }

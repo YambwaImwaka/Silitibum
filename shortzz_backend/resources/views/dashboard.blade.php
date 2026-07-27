@@ -33,7 +33,7 @@
         <div class="card-body">
 
             <div dir="ltr">
-                <div id="chart-dashboard" class="apex-charts" data-colors="#B754F9,#0acf97"></div>
+                <div id="chart-dashboard" class="apex-charts" data-colors="#C2410C,#0acf97"></div>
             </div>
         </div>
         <!-- end card body-->

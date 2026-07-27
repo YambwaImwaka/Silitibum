@@ -58,6 +58,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Default Country Calling Code
+    |--------------------------------------------------------------------------
+    |
+    | Digits only, no '+'. Accounts are keyed by a canonical
+    | '+<code><national digits>' identity built by the app's country picker,
+    | but the web top-up login has no picker — most users here type their
+    | number the local way ('0977…') and many don't know their code at all.
+    | This is the code assumed for such input. See AppUserLoginController.
+    |
+    */
+
+    'default_country_code' => env('DEFAULT_COUNTRY_CODE', '260'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

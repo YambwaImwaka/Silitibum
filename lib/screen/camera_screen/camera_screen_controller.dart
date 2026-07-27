@@ -57,6 +57,10 @@ class CameraScreenController extends BaseController
   bool get isDeepAr => appSetting?.isDeepAr == 1;
 
   // Private variables
+  /// Whether a real DeepAR effect is currently loaded. The plugin gives no
+  /// way to ask, and clearing costs a full controller restart, so tapping
+  /// "None" with nothing applied must not pay that price.
+  bool _hasEffectApplied = false;
   Timer? _progressTimer;
   Completer<void>? _cameraOperationCompleter;
 
@@ -131,7 +135,12 @@ class CameraScreenController extends BaseController
   Future<void> _initCamera() async {
     Loggers.info('Initialize camera');
     if (isDeepAr) {
-      deepArControllerPlus.value.fireTrigger(trigger: 's');
+      // FIX: fireTrigger() used to run here, before initialize() had created
+      // the native DeepAR instance — so it threw
+      // `NullPointerException: ... DeepAR.fireTrigger(...) on a null object
+      // reference` on every camera open. It fires an fbx animation trigger on
+      // the currently loaded effect, and no effect is loaded at this point,
+      // so there is nothing to fire it at either way.
       await _initDeepArCamera();
     } else {
       Future.delayed(const Duration(milliseconds: 100), () {
@@ -147,7 +156,13 @@ class CameraScreenController extends BaseController
           androidLicenseKey: appSetting?.deeparAndroidKey,
           iosLicenseKey: appSetting?.deeparIOSKey,
           resolution: Resolution.high);
-      deepArControllerPlus.value.switchEffect('');
+      // FIX: switchEffect('') used to run here. switchEffect() always resolves
+      // its argument to a real file and hands the stream to native, so an
+      // empty path could only ever raise
+      // `PlatformException(111, switchEffect failed, Failed to load file from
+      // path: )`. A freshly initialized controller has no effect loaded, so
+      // there was nothing to clear in the first place.
+      _hasEffectApplied = false;
       isDeepARInitialized.value = true;
     } catch (e) {
       Loggers.error('Error initializing AR: $e');
@@ -555,21 +570,47 @@ class CameraScreenController extends BaseController
   }
 
   Future<void> applyARFilterEffect(DeepARFilters effect) async {
+    final DeepARFilters previousEffect = selectedEffect.value;
     selectedEffect.value = effect;
 
     try {
       if (effect.id != -1) {
         final fileInfo = await withLoader(() => DefaultCacheManager()
             .getSingleFile(effect.filterFile?.addBaseURL() ?? ''));
-        if (fileInfo == null) return;
-        deepArControllerPlus.value.switchEffect(fileInfo.path);
+        if (fileInfo == null) {
+          // The download failed (withLoader has already surfaced it). Leaving
+          // the tile highlighted would claim a filter is active when the
+          // preview is untouched.
+          selectedEffect.value = previousEffect;
+          return;
+        }
+        await deepArControllerPlus.value.switchEffect(fileInfo.path);
+        _hasEffectApplied = true;
       } else {
-        // Clear the effect if ID is -1
-        deepArControllerPlus.value.switchEffect('');
+        await _clearARFilterEffect();
       }
     } catch (e, stackTrace) {
       Loggers.error('Failed to apply AR filter: $e\n$stackTrace');
+      selectedEffect.value = previousEffect;
     }
+  }
+
+  /// Unloads the active DeepAR effect.
+  ///
+  /// The plugin exposes no way to do this directly: switchEffect() always
+  /// resolves its argument to a file and opens a stream from it, and the
+  /// Android handler has no null/empty branch, so the previous
+  /// `switchEffect('')` was guaranteed to raise
+  /// `PlatformException(111, switchEffect failed, ...)` rather than clear
+  /// anything. Restarting the controller is the only supported route back to
+  /// a clean preview; initialize() already waits out its own 500ms
+  /// post-destroy cooldown, so calling it straight after destroy() is safe.
+  Future<void> _clearARFilterEffect() async {
+    if (!_hasEffectApplied) return;
+    _hasEffectApplied = false;
+    isDeepARInitialized.value = false;
+    await deepArControllerPlus.value.destroy();
+    await _initDeepArCamera();
   }
 }
 

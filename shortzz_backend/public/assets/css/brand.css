@@ -1,0 +1,131 @@
+/* Silitibum brand theme.
+ *
+ * Mirrors lib/utilities/color_res.dart (ColorRes) so the admin panel and the
+ * public /topup pages read as the same product as the app: one saturated
+ * burnt-orange family for every brand surface, warm neutrals for everything
+ * supporting it.
+ *
+ * MUST be loaded AFTER app-saas.min.css. These are custom-property overrides
+ * at identical specificity to the vendor's own declarations, so they win by
+ * source order alone — no !important needed anywhere in this file. (Contrast
+ * with common.css, which is loaded BEFORE the theme and therefore needs
+ * !important on .hashtag to win.)
+ *
+ * The vendor theme file is deliberately left pristine so it stays upgradable;
+ * everything brand-specific lives here. The selectors below intentionally
+ * mirror the vendor's: :root, then :root/[data-bs-theme="light"], then
+ * [data-bs-theme="dark"].
+ */
+
+:root {
+    /* The theme's own brand hook — referenced by ~65 vendor rules including
+       --ct-primary, --ct-link-color, menu/topbar accents and help-box bg, so
+       setting it here recolours all of them in one place. */
+    --theme-color: #C2410C; /* ColorRes.themeAccentSolid — 5.2:1 on white */
+    --ct-primary-rgb: 194, 65, 12;
+
+    /* Gradient used by the app for large brand fills (buttons, headers). */
+    --brand-gradient-start: #E05514; /* ColorRes.themeGradient1 */
+    --brand-gradient-end: #9A3412; /* ColorRes.themeGradient2 */
+    --brand-gradient: linear-gradient(135deg, #E05514 0%, #9A3412 100%);
+}
+
+:root,
+[data-bs-theme="light"] {
+    --ct-primary: #C2410C;
+
+    /* The vendor ships these three still carrying the ORIGINAL Hyper indigo
+       (#2e3262 / #f1f2fe / #c7cbfb) rather than tints of its own primary.
+       They drive alert, badge and subtle-background components, which is why
+       those kept rendering blue-purple against an orange primary — setting
+       --theme-color alone never touched them. */
+    --ct-primary-text-emphasis: #9A3412;
+    --ct-primary-bg-subtle: #FDF1EA;
+    --ct-primary-border-subtle: #F4C6AC;
+
+    /* Semantic colours. Only defined in the light block by the vendor, so a
+       single definition covers dark mode too. Warning is amber, NOT orange —
+       it has to stay distinguishable from the burnt-orange brand colour when
+       both appear in the same status list. */
+    --ct-success: #15803D;
+    --ct-success-rgb: 21, 128, 61;
+    --ct-info: #2563EB;
+    --ct-info-rgb: 37, 99, 235;
+    --ct-warning: #F59E0B;
+    --ct-warning-rgb: 245, 158, 11;
+    --ct-danger: #FF2D55;
+    --ct-danger-rgb: 255, 45, 85;
+
+    /* Warm neutrals replacing Hyper's cool blue-greys. */
+    --ct-body-bg: #FAF9F8; /* bgLightGrey */
+    --ct-body-bg-rgb: 250, 249, 248;
+    --ct-body-color: #292524; /* textDarkGrey — 15.2:1 */
+    --ct-body-color-rgb: 41, 37, 36;
+    --ct-secondary-color: #78716C; /* textLightGrey — 4.8:1, passes AA */
+    --ct-secondary-color-rgb: 120, 113, 108;
+    --ct-secondary-bg-subtle: #F5F3F1; /* bgMediumGrey */
+    --ct-border-color: #EDEAE7; /* bgGrey */
+}
+
+[data-bs-theme="dark"] {
+    /* Same three stale-indigo tokens again — the dark block carries its own
+       copies (#aab0f9 / rgba(114,124,245,.15) / #444a93). */
+    --ct-primary-text-emphasis: #FDBA74;
+    --ct-primary-bg-subtle: rgba(194, 65, 12, 0.18);
+    --ct-primary-border-subtle: #7C2D12;
+
+    /* Warm charcoal rather than Hyper's blue-black, so the surfaces sit under
+       the orange instead of fighting it — same reasoning as ColorRes.themeColor. */
+    --ct-body-bg: #17120F; /* themeColor */
+    --ct-body-bg-rgb: 23, 18, 15;
+    --ct-secondary-bg: #221A16;
+    --ct-secondary-bg-rgb: 34, 26, 22;
+    --ct-border-color: #3A2D28;
+}
+
+/* Sidebar / topbar chrome. The vendor's "dark" variants are cool blue-greys
+   (#313a46 / #3a444e); these are the warm equivalents so the chrome matches
+   the app's dark surfaces. The "brand" variants already resolve through
+   var(--theme-color) and need no override. */
+html[data-menu-color="dark"] {
+    --ct-menu-bg: #17120F;
+    --ct-menu-item-color: #A8A29E;
+    --ct-menu-item-hover-color: #FFFFFF;
+    --ct-menu-item-active-color: #FFFFFF;
+}
+
+html[data-bs-theme="dark"][data-menu-color="dark"],
+html[data-bs-theme="dark"][data-menu-color="light"] {
+    --ct-menu-bg: #221A16;
+    --ct-menu-item-color: #A8A29E;
+    --ct-menu-item-hover-color: #FFFFFF;
+    --ct-menu-item-active-color: #FFFFFF;
+}
+
+html[data-topbar-color="dark"] {
+    --ct-topbar-bg: #17120F;
+    --ct-topbar-item-color: #A8A29E;
+    --ct-topbar-item-hover-color: #FFFFFF;
+    --ct-topbar-search-bg: #2E2320;
+    --ct-topbar-user-bg: #241C18;
+    --ct-topbar-user-border: #3A2D28;
+}
+
+html[data-bs-theme="dark"][data-topbar-color="dark"],
+html[data-bs-theme="dark"][data-topbar-color="light"] {
+    --ct-topbar-bg: #221A16;
+    --ct-topbar-item-color: #A8A29E;
+    --ct-topbar-item-hover-color: #FFFFFF;
+    --ct-topbar-search-bg: #2E2320;
+    --ct-topbar-user-bg: #241C18;
+    --ct-topbar-user-border: #3A2D28;
+}
+
+/* Opt-in gradient fill, matching the app's brand surfaces. Applied to the
+   auth/top-up card headers rather than to .bg-primary globally, so ordinary
+   primary buttons and badges stay flat — a gradient on every button reads
+   dated and hurts legibility at small sizes. */
+.bg-brand-gradient,
+.authentication-bg .card-header.bg-primary {
+    background: var(--brand-gradient) !important;
+}
