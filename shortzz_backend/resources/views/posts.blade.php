@@ -32,7 +32,7 @@
                      {{-- Reels --}}
                     <a class="nav-link " id="v-pills-reels-tab" data-bs-toggle="pill" href="#v-pills-reels" role="tab" aria-controls="v-pills-reels"
                         aria-selected="true">
-                        <span class="d-md-block">{{__('Reels')}}</span>
+                        <span class="d-md-block">{{__('Snaps')}}</span>
                     </a>
 
                      {{-- Video --}}

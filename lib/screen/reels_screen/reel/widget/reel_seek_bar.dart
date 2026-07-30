@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/duration_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
+import 'package:shortzz/common/service/media/video_cache_service.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
 import 'package:shortzz/screen/reels_screen/reel/reel_page_controller.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
@@ -31,19 +32,16 @@ class _ReelSeekBarState extends State<ReelSeekBar> {
   bool _isOverlayVisible = false;
   final dashboardController = Get.find<DashboardScreenController>();
   bool isVideoPlaying = true;
-  @override
-  void initState() {
-    super.initState();
-
-    _mainController?.addListener(_updateMainPosition);
-  }
-
-  void _updateMainPosition() async {
-    final pos = await _mainController?.position;
-    if (pos != null && mounted) {
-      setState(() => _currentPosition = pos);
-    }
-  }
+  // initState used to register `_mainController.addListener(...)` which, on
+  // *every* player tick (many times a second, for every mounted reel page),
+  // awaited `controller.position` — a MethodChannel round-trip to ExoPlayer —
+  // and then called setState, rebuilding this whole subtree.
+  //
+  // None of it was needed: `_currentPosition` is only ever painted inside the
+  // scrub overlay, which supplies its own position via _updateOverlayPosition,
+  // and the slider already reads the position synchronously from the
+  // ValueListenableBuilder below. Removing it takes a per-frame platform hop
+  // and a setState off the playback path.
 
   void _removeOverlay() {
     _overlayEntry?.remove();
@@ -61,9 +59,11 @@ class _ReelSeekBarState extends State<ReelSeekBar> {
     _overlayOffsetNotifier.value = null;
   }
 
-  void _updateOverlayPosition() async {
-    final pos = await _overlayController?.position;
-    if (pos != null && mounted) {
+  void _updateOverlayPosition() {
+    // Read the position the listener notification already carries instead of
+    // awaiting a platform-channel call for a value we were just handed.
+    final pos = _overlayController?.value.position;
+    if (pos != null && mounted && pos != _currentPosition) {
       setState(() => _currentPosition = pos);
     }
   }
@@ -81,7 +81,17 @@ class _ReelSeekBarState extends State<ReelSeekBar> {
     String url = widget.controller.reelData.value.video?.addBaseURL() ?? '';
     if (url.isEmpty) return;
 
-    VideoPlayerController newController = VideoPlayerController.networkUrl(Uri.parse(url));
+    // Start the preview where the reel currently is, so the thumbnail is not
+    // blank for the moment before the scrub controller reports a position.
+    _currentPosition = _mainController?.value.position ?? Duration.zero;
+
+    // Prefer the already-downloaded file. Scrubbing used to open a *second*
+    // network stream of a video we usually have on disk, competing with the
+    // reel still buffering behind it.
+    final cachedFile = await VideoCacheService.getCachedFile(url);
+    VideoPlayerController newController = cachedFile != null
+        ? VideoPlayerController.file(cachedFile)
+        : VideoPlayerController.networkUrl(Uri.parse(url));
     await newController.initialize();
     newController.addListener(_updateOverlayPosition);
 
@@ -157,7 +167,7 @@ class _ReelSeekBarState extends State<ReelSeekBar> {
   @override
   void dispose() {
     _removeOverlay();
-    _mainController?.removeListener(_updateMainPosition);
+    _overlayOffsetNotifier.dispose();
     super.dispose();
   }
 

@@ -26,7 +26,7 @@ class LiveStreamTextFieldView extends StatelessWidget {
       bool isTextEmpty = controller.isTextEmpty.value;
       bool isBattleON = stream.type == LivestreamType.battle;
       bool isGiftIconVisible = controller.streamViews.firstWhereOrNull(
-              (view) => view.streamId == controller.myUserId.toString()) ==
+              (view) => view.ownerUserId == controller.myUserId) ==
           null;
 
       List<AppUser> users =

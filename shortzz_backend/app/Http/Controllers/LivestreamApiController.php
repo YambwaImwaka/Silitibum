@@ -174,11 +174,23 @@ class LivestreamApiController extends Controller
         return $this->fullState($stream, $request->after_comment_id);
     }
 
+    // Both serializers below feed GlobalFunction::appUserPayload, which reads
+    // exactly these six columns. Selecting * pulled every column of every
+    // participant and every comment sender — bio, device_token, password,
+    // saved_music_ids and the rest — on a request that each viewer repeats
+    // every couple of seconds for the whole stream. Narrowing it cuts both the
+    // row width MySQL reads and the memory Laravel hydrates, which is what
+    // makes a tighter client poll interval affordable.
+    private const USER_PAYLOAD_COLUMNS = [
+        'id', 'identity', 'username', 'fullname', 'profile_photo', 'is_verify',
+    ];
+
     private function fullState($stream, $afterCommentId)
     {
         $participants = LivestreamUser::where('livestream_id', $stream->id)
             ->where('type', '!=', LivestreamUser::TYPE_LEFT)->get();
-        $users = Users::whereIn('id', $participants->pluck('user_id'))->get()->keyBy('id');
+        $users = Users::whereIn('id', $participants->pluck('user_id'))
+            ->get(self::USER_PAYLOAD_COLUMNS)->keyBy('id');
 
         $commentsQuery = LivestreamComment::where('livestream_id', $stream->id);
         if ($afterCommentId !== null && $afterCommentId !== '') {
@@ -187,7 +199,8 @@ class LivestreamApiController extends Controller
         } else {
             $comments = $commentsQuery->orderBy('id', 'desc')->limit(50)->get()->reverse()->values();
         }
-        $senders = Users::whereIn('id', $comments->pluck('sender_id'))->get()->keyBy('id');
+        $senders = Users::whereIn('id', $comments->pluck('sender_id'))
+            ->get(self::USER_PAYLOAD_COLUMNS)->keyBy('id');
         $gifts = Gifts::whereIn('id', $comments->pluck('gift_id')->filter())->get()->keyBy('id');
 
         return GlobalFunction::sendDataResponse(true, 'stream state fetched', [

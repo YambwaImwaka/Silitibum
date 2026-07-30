@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:csv/csv.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:shortzz/common/controller/base_controller.dart';
@@ -65,9 +66,16 @@ class SplashScreenController extends BaseController {
   }
 
   Future<void> fetchSettings() async {
+    // The 1s minimum splash and the settings call used to run back to back,
+    // so the network request didn't even start until a second of dead time
+    // had already elapsed. Starting it first and awaiting the delay
+    // afterwards keeps the same minimum splash duration while overlapping it
+    // with the request — on any connection slower than 1s this is a straight
+    // second off cold start.
+    final settingsRequest = CommonService.instance.fetchGlobalSettings();
     await Future.delayed(const Duration(milliseconds: 1000));
 
-    bool showNavigate = await CommonService.instance.fetchGlobalSettings();
+    bool showNavigate = await settingsRequest;
 
     // FIX: previously, if showNavigate was false, nothing happened and the
     // app was stuck on the splash screen forever. Now it falls back to login.
@@ -182,9 +190,12 @@ class SplashScreenController extends BaseController {
           .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final csvContent = utf8.decode(response.bodyBytes);
-        // Parse the CSV into a map
-        final parsedMap = _parseCsvToMap(csvContent);
+        // utf8-decoding and CSV-parsing a translation file (thousands of rows)
+        // used to happen inline on the UI isolate, at the exact moment the
+        // splash is meant to be animating — one of the "Skipped N frames"
+        // batches logcat reports during startup. compute() moves both onto a
+        // worker isolate; only the finished map crosses back.
+        final parsedMap = await compute(_decodeAndParseCsv, response.bodyBytes);
         languageData[language.code!] = parsedMap;
 
         Loggers.info('Downloaded and parsed: ${language.code}');
@@ -197,15 +208,18 @@ class SplashScreenController extends BaseController {
     }
   }
 
-  Map<String, String> _parseCsvToMap(String csvContent) {
-    final rows = const CsvToListConverter().convert(csvContent);
-    final map = <String, String>{};
+}
 
-    for (var row in rows) {
-      if (row.length >= 2) {
-        map[row[0].toString()] = row[1].toString();
-      }
+/// Runs on a worker isolate via [compute], so it must stay a top-level
+/// function and must not touch anything from the UI isolate.
+Map<String, String> _decodeAndParseCsv(Uint8List bodyBytes) {
+  final rows = const CsvToListConverter().convert(utf8.decode(bodyBytes));
+  final map = <String, String>{};
+
+  for (var row in rows) {
+    if (row.length >= 2) {
+      map[row[0].toString()] = row[1].toString();
     }
-    return map;
   }
+  return map;
 }

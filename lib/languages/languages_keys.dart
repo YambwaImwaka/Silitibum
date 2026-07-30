@@ -11,7 +11,7 @@ class LKey {
       "Collect likes and comments\nfrom your fans, which boosts\nyou to create more content!";
   static const String multipleSocialGateways = "MULTIPLE SOCIAL\nGATEWAYS";
   static const String postContentOptions =
-      "Post Reels, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!";
+      "Post Snaps, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!";
   static const String nearby = "Nearby";
   static const String following = "Following";
   static const String followersOnly = "Followers Only";
@@ -40,8 +40,8 @@ class LKey {
   static const String successfully = "Successfully";
   static const String checkVideos = "Check Videos";
   static const String audioDetails = "Audio Details";
-  static const String makeReel = "Make Reel";
-  static const String reels = "Reels";
+  static const String makeReel = "Make Snap";
+  static const String reels = "Snaps";
   static const String reportPost = "Report @reportType";
   static const String report = "Report";
   static const String country = "Country";
@@ -431,9 +431,9 @@ class LKey {
   static const String noLivestreamsTitle = "No Live Streams Yet";
   static const String noLivestreamsDescription =
       "Live streams will appear here when someone goes live.";
-  static const String noUserReelsTitle = "No Reels Yet";
+  static const String noUserReelsTitle = "No Snaps Yet";
   static const String noUserReelsDescription =
-      "This user hasn’t posted any reels so far.";
+      "This user hasn’t posted any snaps so far.";
   static const String noMyPostsTitle = "You Haven’t Shared Any Posts";
   static const String noMyPostsDescription =
       "Start posting to share your moments with the community.";
@@ -472,7 +472,7 @@ class LKey {
   static const String uploadFromGallery = "Upload From Gallery";
   static const String reelsEmptyTitle = "Nothing to Watch Yet";
   static const String reelsEmptyDescription =
-      "Reels will appear here once new content is shared.";
+      "Snaps will appear here once new content is shared.";
   static const String searchPageEmptyTitle = "Nothing to Show Yet";
   static const String searchPageEmptyDescription =
       "Explore content by entering keywords in the search bar above.";
@@ -499,13 +499,13 @@ class LKey {
       "This post doesn’t have any comments. Join in and share your thoughts.";
   static const String postSentSuccessfully = "Post sent successfully";
   static const String searchGiphy = "Search @brand_name";
-  static const String nearbyReelsPermissionTitle = "Find Reels Around You";
+  static const String nearbyReelsPermissionTitle = "Find Snaps Around You";
   static const String nearbyReelsPermissionDescription =
-      "Allow location access to explore reels shared by people near you.";
+      "Allow location access to explore snaps shared by people near you.";
   static const String locationServicesDisabledTitle =
       "Location Services Are Still Disabled";
   static const String locationServicesDisabledDescription =
-      "To see nearby reels, please turn on location services in your device settings.";
+      "To see nearby snaps, please turn on location services in your device settings.";
   static const String seePlacesNearYou = "See places near you.";
   static const String turnOnLocationServicesMessage =
       "To include nearby places, turn on location services.";

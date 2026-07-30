@@ -269,6 +269,13 @@ class SettingsController extends Controller
 
         return GlobalFunction::sendSimpleResponse(true, 'Settings saved successfully!');
     }
+    function changeNativeAdStatus($status){
+        $settings = GlobalSettings::first();
+        $settings->native_ad_status = $status;
+        $settings->save();
+
+        return GlobalFunction::sendSimpleResponse(true, 'Settings saved successfully!');
+    }
 
 
     public function updateOnboardingOrder(Request $request)
@@ -1043,6 +1050,13 @@ class SettingsController extends Controller
         $admobSetting->admob_int = $request->admob_int;
         $admobSetting->admob_banner_ios = $request->admob_banner_ios;
         $admobSetting->admob_int_ios = $request->admob_int_ios;
+
+        $admobSetting->native_ad_android = $request->native_ad_android;
+        $admobSetting->native_ad_ios = $request->native_ad_ios;
+        // Clamped to the same 3..100 range the form enforces, so a hand-crafted
+        // POST cannot set a frequency of 1 (an ad between every Snap) or 0
+        // (which the client reads as "ads disabled").
+        $admobSetting->native_ad_frequency = max(3, min(100, (int) ($request->native_ad_frequency ?: 8)));
 
         $admobSetting->save();
 

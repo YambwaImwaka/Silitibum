@@ -55,6 +55,57 @@ class AdsManager {
         ));
   }
 
+  /// Loads the in-feed native ad rendered by [NativeAdReelCard].
+  ///
+  /// Gated on BOTH the native-ad switch and the per-platform admob switch: an
+  /// operator needs to be able to run banners/interstitials while in-feed ads
+  /// are off, and killing all ads on a platform must kill these too.
+  ///
+  /// `factoryId` must match the factory registered natively — MainActivity.kt
+  /// on Android, AppDelegate.swift on iOS.
+  void loadNativeAd({
+    required Function(Ad) onAdLoaded,
+    required Function() onAdFailedToLoad,
+  }) {
+    Setting? setting = SessionManager.instance.getSettings();
+    if (setting?.nativeAdStatus != 1) {
+      onAdFailedToLoad();
+      return;
+    }
+    if (Platform.isAndroid && setting?.admobAndroidStatus == 0) {
+      onAdFailedToLoad();
+      return;
+    }
+    if (Platform.isIOS && setting?.admobIosStatus == 0) {
+      onAdFailedToLoad();
+      return;
+    }
+
+    final adUnitId = Platform.isAndroid
+        ? (setting?.nativeAdAndroid ?? '')
+        : (setting?.nativeAdIos ?? '');
+    if (adUnitId.isEmpty) {
+      // Status on but no unit configured for this platform — requesting with an
+      // empty id throws inside the plugin.
+      onAdFailedToLoad();
+      return;
+    }
+
+    NativeAd(
+      adUnitId: adUnitId,
+      factoryId: 'snapNativeAdFactory',
+      request: const AdRequest(),
+      listener: NativeAdListener(
+        onAdLoaded: onAdLoaded,
+        onAdFailedToLoad: (ad, err) {
+          log('NativeAd failed to load: $err');
+          ad.dispose();
+          onAdFailedToLoad();
+        },
+      ),
+    ).load();
+  }
+
   void requestConsentInfoUpdate() {
     final params = ConsentRequestParameters(
         consentDebugSettings: ConsentDebugSettings(

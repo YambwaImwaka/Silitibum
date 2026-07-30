@@ -11,14 +11,26 @@ import 'package:shortzz/screen/create_feed_screen/widget/mention_sheet.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
-class FeedTextFieldView extends StatelessWidget {
+class FeedTextFieldView extends StatefulWidget {
   const FeedTextFieldView({super.key});
+
+  @override
+  State<FeedTextFieldView> createState() => _FeedTextFieldViewState();
+}
+
+class _FeedTextFieldViewState extends State<FeedTextFieldView> {
+  // Held in State rather than rebuilt inline. As a build-local it changed
+  // identity on every rebuild, which re-inflated the DetectableTextField
+  // subtree underneath it — and the onTap handler's
+  // `Scrollable.ensureVisible(globalKey.currentContext!)` fires 350ms later,
+  // by which point a rebuild could have left it pointing at a detached
+  // element and thrown on the `!`.
+  final GlobalKey globalKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<CreateFeedScreenController>();
     CommentHelper helper = controller.commentHelper;
-    GlobalKey globalKey = GlobalKey();
     return Container(
       key: globalKey,
       height: 180,

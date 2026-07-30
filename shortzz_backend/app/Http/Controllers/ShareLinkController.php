@@ -40,7 +40,9 @@ class ShareLinkController extends Controller
             // Case: drama
             $itemId = (int) $matches[1];
             $result = Posts::find($itemId);
-            $type = 'Reel';
+            // Display label only — the `reel_<id>` share-link format itself is
+            // baked into already-shared URLs and must keep its wire name.
+            $type = 'Snap';
             $title = $result->description;
             if($result->description == null){
                 $title = 'Post By '.$result->user->fullname;

@@ -98,9 +98,7 @@ class Comment {
     likes = asNumOrNull(json['likes']);
     repliesCount = asNumOrNull(json['replies_count']);
     isPinned = asNumOrNull(json['is_pinned']);
-    type = CommentType.values.firstWhereOrNull(
-            (element) => element.value == json['type']) ??
-        CommentType.text;
+    type = CommentType.fromValue(json['type']);
     createdAt = asStringOrNull(json['created_at']);
     updatedAt = asStringOrNull(json['updated_at']);
     isLiked = asBoolOrNull(json['is_liked']);

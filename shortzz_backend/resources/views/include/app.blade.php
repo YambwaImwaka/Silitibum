@@ -249,10 +249,10 @@
                         </a>
                     </li>
                       {{-- Dummy Lives --}}
-                      <li class="side-nav-item dummyLives">
-                        <a href="{{ url('dummyLives')}}" class="side-nav-link">
-                            <i class="uil-selfie"></i>
-                            <span> {{ __('Dummy Lives')}} </span>
+                      <li class="side-nav-item livestreamAnalytics">
+                        <a href="{{ url('livestreamAnalytics')}}" class="side-nav-link">
+                            <i class="uil-chart-line"></i>
+                            <span> {{ __('Livestream Analytics')}} </span>
                         </a>
                     </li>
                     <li class="side-nav-title">{{ __('settings')}}</li>
@@ -933,7 +933,7 @@
     <script src="{{ asset('assets/vendor/datatables.net-keytable/js/dataTables.keyTable.min.js') }}"></script>
     <script src="{{ asset('assets/vendor/datatables.net-select/js/dataTables.select.min.js') }}"></script>
         <!-- Apex Charts js -->
-    <script src="assets/vendor/apexcharts/apexcharts.min.js"></script>
+    <script src="{{ asset('assets/vendor/apexcharts/apexcharts.min.js') }}"></script>
 
 
   <!-- Swiper JS -->

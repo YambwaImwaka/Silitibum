@@ -23,17 +23,18 @@
                 <option value="11">November</option>
                 <option value="12">December</option>
             </select>
+            {{-- Rolling window rather than a hardcoded 2024-2027 list, which
+                 would have silently stopped offering the current year. --}}
             <select class="picker" name="year" id="years">
-                <option value="2024">2024</option>
-                <option value="2025">2025</option>
-                <option value="2026">2026</option>
-                <option value="2027">2027</option>
+                @foreach (range(now()->year - 2, now()->year + 1) as $selectableYear)
+                    <option value="{{ $selectableYear }}">{{ $selectableYear }}</option>
+                @endforeach
             </select>
         </div>
         <div class="card-body">
 
             <div dir="ltr">
-                <div id="chart-dashboard" class="apex-charts" data-colors="#C2410C,#0acf97"></div>
+                <div id="chart-dashboard" class="apex-charts"></div>
             </div>
         </div>
         <!-- end card body-->
@@ -54,7 +55,7 @@
                         <i class="uil-link-h"></i>
                     </a>
                 </h5>
-                <h2 class="my-2" id="active-users-count">{{$userTotal}}</h2>
+                <h2 class="my-2" id="stat-total-users">{{$userTotal}}</h2>
                     <span class="text-muted badge border">
                         <span class="text-danger fw-medium me-1 fs-6 ">{{$userFreezed}}</span>
                         <span class="text-nowrap fw-medium fs-6">{{__('Freezed')}}</span>
@@ -83,10 +84,10 @@
                         <i class="uil-link-h"></i>
                     </a>
                 </h5>
-                <h2 class="my-2" id="active-users-count">{{$postsTotal}}</h2>
+                <h2 class="my-2" id="stat-total-posts">{{$postsTotal}}</h2>
                     <span class="text-muted badge border">
                         <span class="text-success fw-medium me-1 fs-6 ">{{$postsReels}}</span>
-                        <span class="text-nowrap fw-medium fs-6">{{__('Reels')}}</span>
+                        <span class="text-nowrap fw-medium fs-6">{{__('Snaps')}}</span>
                     </span>
                     <span class="text-muted badge border">
                         <span class="text-success fw-medium me-1 fs-6 ">{{$postsVideos}}</span>
@@ -116,7 +117,7 @@
                         <i class="uil-link-h"></i>
                     </a>
                 </h5>
-                <h2 class="my-2" id="active-users-count">{{$reportsPost + $reportsUser}}</h2>
+                <h2 class="my-2" id="stat-total-reports">{{$reportsPost + $reportsUser}}</h2>
                     <span class="text-muted badge border">
                         <span class="text-success fw-medium me-1 fs-6 ">{{$reportsUser}}</span>
                         <span class="text-nowrap fw-medium fs-6">{{__('User Reports')}}</span>
@@ -141,7 +142,7 @@
                         <i class="uil-link-h"></i>
                     </a>
                 </h5>
-                <h2 class="my-2" id="active-users-count">{{$withdrawalPending + $withdrawalCompleted + $withdrawalRejected}}</h2>
+                <h2 class="my-2" id="stat-total-withdrawals">{{$withdrawalPending + $withdrawalCompleted + $withdrawalRejected + $withdrawalProcessing + $withdrawalFailed}}</h2>
                     <span class="text-muted badge border">
                         <span class="text-success fw-medium me-1 fs-6 ">{{$withdrawalPending}}</span>
                         <span class="text-nowrap fw-medium fs-6">{{__('Pending')}}</span>
@@ -154,6 +155,48 @@
                         <span class="text-success fw-medium me-1 fs-6 ">{{$withdrawalRejected}}</span>
                         <span class="text-nowrap fw-medium fs-6">{{__('Rejected')}}</span>
                     </span>
+                    <span class="text-muted badge border">
+                        <span class="text-info fw-medium me-1 fs-6 ">{{$withdrawalProcessing}}</span>
+                        <span class="text-nowrap fw-medium fs-6">{{__('Processing')}}</span>
+                    </span>
+                    <span class="text-muted badge border">
+                        <span class="text-danger fw-medium me-1 fs-6 ">{{$withdrawalFailed}}</span>
+                        <span class="text-nowrap fw-medium fs-6">{{__('Failed')}}</span>
+                    </span>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{-- Engagement + revenue. Both share the month/year pickers above. --}}
+<div class="row">
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header border-bottom">
+                <h4 class="header-title mb-0">{{__('Engagement')}}</h4>
+            </div>
+            <div class="card-body">
+                <div dir="ltr">
+                    <div id="chart-engagement" class="apex-charts"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header border-bottom">
+                <h4 class="header-title mb-0">{{__('Revenue')}}</h4>
+                {{-- Stated plainly: there is no coin-transaction ledger in the
+                     schema, so gift coins can only be counted from livestream
+                     gift events and exclude gifts sent on posts. --}}
+                <p class="text-muted mb-0 mt-1 fs-6">
+                    {{__('Top-ups and payouts are exact. Gift coins are an estimate from livestream gift events only.')}}
+                </p>
+            </div>
+            <div class="card-body">
+                <div dir="ltr">
+                    <div id="chart-revenue" class="apex-charts"></div>
+                </div>
             </div>
         </div>
     </div>

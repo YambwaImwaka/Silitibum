@@ -465,7 +465,7 @@ class GlobalFunction extends Model
                 $postType = 'Text';
                 break;
             case Constants::postTypeReel:
-                $postType = 'Reel';
+                $postType = 'Snap';
                 break;
         }
         $postType = "<span class='badge badge-info-lighten fs-5'>{$postType}</span>";

@@ -189,7 +189,7 @@ class _PostTextViewState extends State<PostTextView> {
   }
 }
 
-class PostImageView extends StatelessWidget {
+class PostImageView extends StatefulWidget {
   final Post post;
   final double height;
   final EdgeInsets? margin;
@@ -207,16 +207,40 @@ class PostImageView extends StatelessWidget {
       this.onDoubleTap});
 
   @override
+  State<PostImageView> createState() => _PostImageViewState();
+}
+
+class _PostImageViewState extends State<PostImageView> {
+  // All three of these used to be created inside build(). That meant every
+  // rebuild of the surrounding post card (a like, a comment count, a
+  // pagination append) produced:
+  //   * a fresh PageController that was never disposed — a leak per rebuild,
+  //     and the carousel silently snapped back to the first image;
+  //   * a fresh GlobalKey, which changed every Hero tag below it, so Flutter
+  //     tore down and re-inflated the CustomImage subtree instead of updating
+  //     it — the image visibly reloaded and flashed each time;
+  //   * a fresh RxInt, orphaning whatever the page indicator was listening to.
+  // Holding them in State fixes all three; the images now stay resolved.
+  final RxInt selectedIndex = 0.obs;
+  final PageController controller = PageController();
+  final GlobalKey uniqueTag = GlobalKey();
+
+  Post get post => widget.post;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    RxInt selectedIndex = 0.obs;
-    PageController controller = PageController();
-    GlobalKey uniqueTag = GlobalKey();
+    final double height = widget.height;
+    final EdgeInsets? margin = widget.margin;
+    final double? radius = widget.radius;
+    final Function(TapDownDetails)? onDoubleTap = widget.onDoubleTap;
     return DoubleTapDetector(
-      onDoubleTap: (details) {
-        if (onDoubleTap != null) {
-          onDoubleTap?.call(details);
-        }
-      },
+      onDoubleTap: (details) => onDoubleTap?.call(details),
       child: Container(
         margin: margin ?? const EdgeInsets.only(right: 10.0, top: 10),
         constraints: BoxConstraints(

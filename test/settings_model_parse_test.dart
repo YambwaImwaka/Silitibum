@@ -20,6 +20,10 @@ Map<String, dynamic> _stringifiedSettingsJson() => {
         'admob_banner': null,
         'admob_android_status': '0',
         'admob_ios_status': '0',
+        'native_ad_android': 'ca-app-pub-3940256099942544/2247696110',
+        'native_ad_ios': null,
+        'native_ad_status': '1',
+        'native_ad_frequency': '8',
         'max_upload_daily': '99',
         'max_story_daily': '10',
         'max_comment_daily': '10000',
@@ -117,6 +121,14 @@ void main() {
     expect(data.coinPackages!.first.status, 1);
     expect(data.coinPackages!.first.coinAmount, 100);
     expect(data.coinPackages!.first.playStoreProductId, 'coins_100');
+
+    // Native in-feed ad config. Frequency is read as an int on every feed
+    // fetch, so a stringified "8" arriving as a String would silently disable
+    // ad insertion rather than throw.
+    expect(data.nativeAdStatus, 1);
+    expect(data.nativeAdFrequency, 8);
+    expect(data.nativeAdAndroid, 'ca-app-pub-3940256099942544/2247696110');
+    expect(data.nativeAdIos, isNull);
 
     expect(data.gifts!.first.coinPrice, 10);
     expect(data.languages!.first.isDefault, 1);

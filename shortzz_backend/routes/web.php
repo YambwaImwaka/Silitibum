@@ -5,7 +5,6 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\LanguageController;
-use App\Http\Controllers\LiveStreamController;
 use App\Http\Controllers\LoginController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\NotificationController;
@@ -111,6 +110,10 @@ Route::middleware(['checkLogin'])->group(function () {
     // Dashboard
     Route::get('dashboard', [DashboardController::class, 'dashboard'])->name('dashboard');
     Route::post('fetchChartData', [DashboardController::class, 'fetchChartData'])->name('fetchChartData');
+    Route::post('fetchEngagementChartData', [DashboardController::class, 'fetchEngagementChartData'])->name('fetchEngagementChartData');
+    Route::post('fetchRevenueChartData', [DashboardController::class, 'fetchRevenueChartData'])->name('fetchRevenueChartData');
+    Route::get('livestreamAnalytics', [DashboardController::class, 'livestreamAnalytics'])->name('livestreamAnalytics');
+    Route::post('fetchLivestreamChartData', [DashboardController::class, 'fetchLivestreamChartData'])->name('fetchLivestreamChartData');
 
     // Settings
     Route::get('setting', [SettingsController::class, 'settings'])->name('setting');
@@ -134,6 +137,7 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('imageUploadInEditor', [SettingsController::class, 'imageUploadInEditor'])->name('imageUploadInEditor');
     Route::get('changeAndroidAdmobStatus/{value}', [SettingsController::class, 'changeAndroidAdmobStatus'])->name('changeAndroidAdmobStatus');
     Route::get('changeiOSAdmobStatus/{value}', [SettingsController::class, 'changeiOSAdmobStatus'])->name('changeiOSAdmobStatus');
+    Route::get('changeNativeAdStatus/{value}', [SettingsController::class, 'changeNativeAdStatus'])->name('changeNativeAdStatus');
 
     // Onboarding Screens
     Route::post('addOnBoardingScreen', [SettingsController::class, 'addOnBoardingScreen'])->name('addOnBoardingScreen');
@@ -219,13 +223,10 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('changeCoinPackageStatus', [WalletController::class, 'changeCoinPackageStatus'])->name('changeCoinPackageStatus');
     Route::post('listCoinPackages', [WalletController::class, 'listCoinPackages'])->name('listCoinPackages');
 
-    // Dummy Lives
-    Route::get('dummyLives', [LiveStreamController::class, 'dummyLives'])->name('dummyLives');
-    Route::post('addDummyLive', [LiveStreamController::class, 'addDummyLive'])->name('addDummyLive');
-    Route::post('listDummyLives', [LiveStreamController::class, 'listDummyLives'])->name('listDummyLives');
-    Route::post('deleteDummyLive', [LiveStreamController::class, 'deleteDummyLive'])->name('deleteDummyLive');
-    Route::post('changeDummyLiveStatus', [LiveStreamController::class, 'changeDummyLiveStatus'])->name('changeDummyLiveStatus');
-    Route::post('editDummyLive', [LiveStreamController::class, 'editDummyLive'])->name('editDummyLive');
+    // Dummy Lives admin panel removed. The DummyLiveVideos model and its table
+    // are deliberately kept: SettingsController::fetchSettings still serves any
+    // status=1 rows to the app, and the "Show Dummy Lives" switch under
+    // Settings > Livestream remains the control for turning them off there.
 
     // restrictions
     Route::get('restrictions', [RestrictionsController::class, 'restrictions'])->name('restrictions');

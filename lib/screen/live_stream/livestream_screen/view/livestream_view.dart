@@ -27,11 +27,10 @@ class LivestreamView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Obx(() {
       Livestream stream = controller.liveData.value;
-      final hostId = stream.hostId.toString();
       final views =
           List<StreamView>.from(streamViews); // Optional: clone if needed
 
-      final hostIndex = views.indexWhere((v) => v.streamId == hostId);
+      final hostIndex = views.indexWhere((v) => v.ownerUserId == stream.hostId);
       if (hostIndex != -1 && hostIndex != 0) {
         final hostView = views.removeAt(hostIndex);
         views.insert(0, hostView);
@@ -226,11 +225,11 @@ class LiveStreamUserView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Obx(() {
-      LivestreamUserState? state = controller.liveUsersStates.firstWhereOrNull(
-          (element) =>
-              element.userId == int.parse(streamingView?.streamId ?? ''));
-      AppUser? liveUser = controller.cacheController.users.firstWhereOrNull((element) =>
-              element.userId == int.parse(streamingView?.streamId ?? ''));
+      final int? ownerId = streamingView?.ownerUserId;
+      LivestreamUserState? state = controller.liveUsersStates
+          .firstWhereOrNull((element) => element.userId == ownerId);
+      AppUser? liveUser = controller.cacheController.users
+          .firstWhereOrNull((element) => element.userId == ownerId);
 
       return Stack(
         children: [

@@ -18,6 +18,8 @@ $(document).ready(function () {
             year = $('#years').val();
 
             initDashboardChart(month, year);
+            loadEngagementChart(month, year);
+            loadRevenueChart(month, year);
 
         })
 
@@ -75,7 +77,8 @@ $(document).ready(function () {
             const chart = new ApexCharts(chartElement, {
                 chart: { type: 'area', height: 350 },
                 stroke: { width: 3, curve: 'smooth' },
-                colors: ['#1E90FF', '#28a745', '#ffc107'],
+                // Brand tokens from assets/css/brand.css (theme / success / info).
+                colors: ['#C2410C', '#15803D', '#2563EB'],
                 dataLabels: {
                     enabled: false,
                     // formatter: function (value) {
@@ -87,27 +90,22 @@ $(document).ready(function () {
                 markers: { size: 0, style: 'hollow' },
                 xaxis: {
                     type: 'datetime',
+                    // Single labels block. This was declared twice, and the
+                    // second literal silently discarded datetimeUTC/format/
+                    // rotate/showDuplicates from the first.
                     labels: {
                         datetimeUTC: false,
                         format: 'dd MMM yyyy', // Format the labels as Day-Month-Year
                         style: { colors: '#6c757d', fontSize: '12px', fontFamily: 'inherit' },
                         rotate: 0, // Keep labels horizontal
                         showDuplicates: false, // Ensures no duplicate labels
+                        padding: 10,
                     },
                     axisBorder: { show: true, color: '#e0e0e0' },
                     axisTicks: { show: true, color: '#e0e0e0' },
                     tickAmount: 10, // Dynamically adjusted based on data points
                     min: undefined,
                     max: undefined,
-                    // Set padding for labels
-                    labels: {
-                        style: {
-                            colors: '#6c757d',
-                            fontSize: '12px',
-                            fontFamily: 'inherit',
-                        },
-                        padding: 10
-                    },
                 },
                 yaxis: {
                     labels: {
@@ -129,5 +127,124 @@ $(document).ready(function () {
             chart.render();
 
             initDashboardChart(month, year);
+
+            // ---- Engagement + revenue -------------------------------------
+            // Brand tokens from assets/css/brand.css.
+            const BRAND = {
+                theme: '#C2410C',
+                success: '#15803D',
+                info: '#2563EB',
+                warning: '#F59E0B',
+                danger: '#FF2D55',
+            };
+
+            // Both charts share the dashboard chart's shape, so the common
+            // options live in one place rather than being pasted twice.
+            function timeSeriesOptions(colors, seriesNames, valueFormatter) {
+                return {
+                    chart: { type: 'area', height: 320, toolbar: { show: false } },
+                    stroke: { width: 2, curve: 'smooth' },
+                    colors: colors,
+                    dataLabels: { enabled: false },
+                    series: seriesNames.map((name) => ({ name: name, data: [] })),
+                    markers: { size: 0, style: 'hollow' },
+                    legend: { position: 'top', horizontalAlign: 'left' },
+                    xaxis: {
+                        type: 'datetime',
+                        labels: {
+                            datetimeUTC: false,
+                            format: 'dd MMM',
+                            style: { colors: '#6c757d', fontSize: '12px', fontFamily: 'inherit' },
+                            rotate: 0,
+                            showDuplicates: false,
+                        },
+                        axisBorder: { show: true, color: '#e0e0e0' },
+                        axisTicks: { show: true, color: '#e0e0e0' },
+                        tickAmount: 8,
+                    },
+                    yaxis: { labels: { formatter: valueFormatter } },
+                    tooltip: { x: { format: 'dd MMM yyyy' }, y: { formatter: valueFormatter } },
+                    fill: {
+                        type: 'gradient',
+                        gradient: { shadeIntensity: 1, opacityFrom: 0.5, opacityTo: 0, stops: [0, 100] },
+                    },
+                };
+            }
+
+            const countFormatter = (value) => (value === null || value === undefined ? '0' : value.toLocaleString());
+
+            const engagementChart = new ApexCharts(
+                document.querySelector('#chart-engagement'),
+                timeSeriesOptions(
+                    [BRAND.danger, BRAND.info, BRAND.success, BRAND.warning],
+                    ['Likes', 'Comments', 'Follows', 'Saves'],
+                    countFormatter
+                )
+            );
+            engagementChart.render();
+
+            // Currency prefix is filled in from the API response, which reads it
+            // from tbl_settings rather than hardcoding a symbol here.
+            let revenueCurrency = '';
+            const revenueChart = new ApexCharts(
+                document.querySelector('#chart-revenue'),
+                timeSeriesOptions(
+                    [BRAND.success, BRAND.danger, BRAND.theme],
+                    ['Top-ups', 'Payouts', 'Gift Coins (est.)'],
+                    (value) => {
+                        if (value === null || value === undefined) return '0';
+                        return `${revenueCurrency}${value.toLocaleString()}`;
+                    }
+                )
+            );
+            revenueChart.render();
+
+            function loadSeries(endpoint, month, year, onData) {
+                const formdata = new FormData();
+                formdata.append('month', month);
+                formdata.append('year', year);
+                try {
+                    doAjax(`${domainUrl}${endpoint}`, formdata).then(function (response) {
+                        if (!response || !response.data) {
+                            console.error(`No response for ${endpoint}.`);
+                            return;
+                        }
+                        onData(response.data);
+                    });
+                } catch (error) {
+                    console.log('Error! : ', error.message);
+                    showErrorToast(error.message);
+                }
+            }
+
+            function loadEngagementChart(month, year) {
+                loadSeries('fetchEngagementChartData', month, year, function (rows) {
+                    if (!Array.isArray(rows)) return;
+                    const pick = (key) => rows.map((r) => ({ x: r.date, y: r[key] }));
+                    engagementChart.updateSeries([
+                        { name: 'Likes', data: pick('likes') },
+                        { name: 'Comments', data: pick('comments') },
+                        { name: 'Follows', data: pick('follows') },
+                        { name: 'Saves', data: pick('saves') },
+                    ]);
+                });
+            }
+
+            function loadRevenueChart(month, year) {
+                loadSeries('fetchRevenueChartData', month, year, function (payload) {
+                    const rows = payload.series;
+                    if (!Array.isArray(rows)) return;
+                    revenueCurrency = payload.currency ? `${payload.currency} ` : '';
+                    const pick = (key) => rows.map((r) => ({ x: r.date, y: r[key] }));
+                    revenueChart.updateSeries([
+                        { name: 'Top-ups', data: pick('topUps') },
+                        { name: 'Payouts', data: pick('payouts') },
+                        { name: 'Gift Coins (est.)', data: pick('giftCoins') },
+                    ]);
+                });
+            }
+
+            loadEngagementChart(month, year);
+            loadRevenueChart(month, year);
 
 });

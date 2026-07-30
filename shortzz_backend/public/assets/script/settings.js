@@ -174,6 +174,27 @@ $(document).ready(function () {
             });
         });
     });
+    $(document).on("change", "#switchNativeAdStatus", function (event) {
+        event.preventDefault();
+        checkUserType(() => {
+            if ($(this).prop("checked") == true) {
+                var value = 1;
+            } else {
+                value = 0;
+            }
+
+            var updateEventStatusUrl =
+                `${domainUrl}changeNativeAdStatus` + "/" + value;
+
+            $.getJSON(updateEventStatusUrl).done(function (data) {
+                if (data.status) {
+                    showSuccessToast(data.message);
+                } else {
+                    somethingWentWrongToast();
+                }
+            });
+        });
+    });
 
     $("#limitSettingForm").on("submit", function (event) {
         event.preventDefault();

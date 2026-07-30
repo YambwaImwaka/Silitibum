@@ -66,11 +66,21 @@ class PostService {
 
   static final PostService instance = PostService._();
 
+  /// [excludeIds] are post ids already served this session. The ranked feed has
+  /// no page cursor — it scores a candidate pool each call — so without this the
+  /// same high-scoring posts come back on every load-more.
   Future<List<Post>> fetchPostsDiscover(
-      {required String type, CancelToken? cancelToken}) async {
+      {required String type,
+      List<int>? excludeIds,
+      CancelToken? cancelToken}) async {
     PostsModel model = await ApiService.instance.call(
         url: WebService.post.fetchPostsDiscover,
-        param: {Params.limit: AppRes.paginationLimit, Params.types: type},
+        param: {
+          Params.limit: AppRes.paginationLimit,
+          Params.types: type,
+          if (excludeIds != null && excludeIds.isNotEmpty)
+            Params.excludeIds: excludeIds.join(','),
+        },
         fromJson: PostsModel.fromJson,
         cancelToken: cancelToken);
     return model.data ?? [];

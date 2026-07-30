@@ -87,7 +87,7 @@ class _LiveBattleOverlayWidgetState extends State<LiveBattleOverlayWidget> {
       AppUser? hostUser;
       if (streamViews.isNotEmpty) {
         hostState = userStates.firstWhereOrNull(
-          (e) => '${e.userId}' == streamViews[0].streamId,
+          (e) => e.userId == streamViews[0].ownerUserId,
         );
         hostUser = hostState?.getUser(liveUsers);
       }
@@ -97,7 +97,7 @@ class _LiveBattleOverlayWidgetState extends State<LiveBattleOverlayWidget> {
       AppUser? coHostUser;
       if (streamViews.length > 1) {
         coHostState = userStates.firstWhereOrNull(
-          (e) => '${e.userId}' == streamViews[1].streamId,
+          (e) => e.userId == streamViews[1].ownerUserId,
         );
         coHostUser = coHostState?.getUser(liveUsers);
       }

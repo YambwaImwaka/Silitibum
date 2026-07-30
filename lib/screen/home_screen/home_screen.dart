@@ -36,11 +36,23 @@ class HomeScreen extends StatelessWidget {
           // sign-in CTA instead of the generic empty state. Starts below the
           // top bar so the tab switcher stays reachable.
           Obx(() {
-            final bool guestFollowing = controller.isGuest &&
-                controller.selectedReelCategory.value == TabType.following;
-            if (!guestFollowing ||
-                controller.isLoading.value ||
-                controller.reels.isNotEmpty) {
+            // Read every observable this builder depends on up front, before
+            // any short-circuiting logic. `isGuest` is a plain getter, not an
+            // Rx: for a signed-in user it is false, so `&&` skipped
+            // `selectedReelCategory.value`, and `!guestFollowing` was then
+            // true so `||` skipped `isLoading` and `reels` too. The builder
+            // returned having touched no observable at all, which is exactly
+            // what GetX throws ObxError for ("improper use of a GetX") — and
+            // that exception replaced the whole reels screen with a red error
+            // box for every logged-in user. Guests took the other branch and
+            // read the tab, which is why it only reproduced after sign-in.
+            final TabType tab = controller.selectedReelCategory.value;
+            final bool isLoading = controller.isLoading.value;
+            final bool hasReels = controller.reels.isNotEmpty;
+
+            final bool guestFollowing =
+                controller.isGuest && tab == TabType.following;
+            if (!guestFollowing || isLoading || hasReels) {
               return const SizedBox.shrink();
             }
             return Positioned.fill(

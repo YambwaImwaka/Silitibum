@@ -15,6 +15,7 @@ use App\Models\PostLikes;
 use App\Models\Posts;
 use App\Models\PostSaves;
 use App\Models\Users;
+use App\Services\FeedRankingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -803,6 +804,10 @@ class PostsController extends Controller
         $rules = [
             'limit' => 'required',
             'types' => 'required',
+            // Post ids the client has already been served this session, so
+            // load-more does not repeat them. Optional: older app builds and
+            // the first page of a session send nothing.
+            'exclude_ids' => 'sometimes|string',
         ];
         $validator = Validator::make($request->all(), $rules);
         if ($validator->fails()) {
@@ -811,23 +816,39 @@ class PostsController extends Controller
 
        $blockedUserIds = GlobalFunction::getUsersBlockedUsersIdsArray($user->id);
 
-        // Two-phase random pick: ORDER BY RAND() over full rows + eager loads
-        // shuffled every column of every matching post per request. Shuffling
-        // just the ids first is far cheaper; the second query loads only the
-        // selected page with its relations.
-        $randomIds = Posts::whereHas('user', function ($query) {
-                $query->Where('is_freez', 0);
-            })
-            ->whereNotIn('user_id', $blockedUserIds)
-            ->whereIn('post_type', explode(',',$request->types))
-            ->inRandomOrder()
-            ->limit($request->limit)
-            ->pluck('id');
+        $excludeIds = array_slice(
+            array_values(array_filter(array_map('intval', explode(',', (string) $request->exclude_ids)))),
+            // Bound it: the client caps its own list, but a hand-rolled request
+            // should not be able to put thousands of ids into a NOT IN.
+            0,
+            300
+        );
 
+        // Was pure inRandomOrder() — an unpersonalised "For You". Now scored on
+        // the viewer's location, interests and the content types they actually
+        // engage with. See App\Services\FeedRankingService.
+        $ranker = new FeedRankingService();
+        $candidates = $ranker->fetchCandidates(
+            explode(',', $request->types),
+            $blockedUserIds,
+            $excludeIds
+        );
+        $ranked = $ranker->rank($candidates, $user, (int) $request->limit);
+
+        $rankedIds = $ranked->pluck('id')->all();
+        if (empty($rankedIds)) {
+            return GlobalFunction::sendDataResponse(true, 'discover posts fetched successfully', []);
+        }
+
+        // Re-fetch the winning page with its relations, then restore the ranked
+        // order — whereIn comes back in whatever order the engine likes, which
+        // would throw away the ranking entirely.
+        $rankedPositions = array_flip($rankedIds);
         $posts = Posts::with(Constants::postsWithArray)
-            ->whereIn('id', $randomIds)
-            ->inRandomOrder()
-            ->get();
+            ->whereIn('id', $rankedIds)
+            ->get()
+            ->sortBy(fn($post) => $rankedPositions[$post->id] ?? PHP_INT_MAX)
+            ->values();
 
             $postList = GlobalFunction::processPostsListData($posts, $user);
 

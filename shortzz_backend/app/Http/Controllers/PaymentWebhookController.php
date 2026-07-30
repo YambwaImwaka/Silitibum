@@ -8,6 +8,7 @@ use App\Models\GlobalSettings;
 use App\Models\RedeemRequests;
 use App\Models\Users;
 use App\Services\Payments\PaymentGatewayFactory;
+use App\Services\Payments\TopUpReconciler;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -133,15 +134,20 @@ class PaymentWebhookController extends Controller
         $result = $gateway->verify($reference);
 
         if ($result['status'] === 'completed') {
-            $redeem->status = Constants::withdrawalCompleted;
-            $redeem->save();
+            RedeemRequests::where('id', $redeem->id)
+                ->where('status', Constants::withdrawalProcessing)
+                ->update(['status' => Constants::withdrawalCompleted, 'updated_at' => now()]);
         } elseif ($result['status'] === 'failed') {
-            $redeem->status = Constants::withdrawalFailed;
-            $redeem->save();
-            $user = Users::find($redeem->user_id);
-            if ($user != null) {
-                $user->coin_wallet += $redeem->coins;
-                $user->save();
+            // Same concurrent-delivery hazard as the top-up side below, and
+            // worse here: the refund is the payout going back to the user, so
+            // two deliveries landing together would hand out the coins twice.
+            // Claim the row with the write itself and refund only if this
+            // call is the one that actually moved it out of 'processing'.
+            $claimed = RedeemRequests::where('id', $redeem->id)
+                ->where('status', Constants::withdrawalProcessing)
+                ->update(['status' => Constants::withdrawalFailed, 'updated_at' => now()]);
+            if ($claimed === 1) {
+                Users::where('id', $redeem->user_id)->increment('coin_wallet', $redeem->coins);
             }
         }
         // 'processing' — leave as-is, another webhook call or the admin's
@@ -152,8 +158,10 @@ class PaymentWebhookController extends Controller
 
     private function resolveTopUpRequest(CoinTopUpRequests $topup, string $reference, string $provider, GlobalSettings $settings)
     {
+        // Fast path only — NOT the guard that prevents double-crediting. See
+        // the claim below for why reading the status can never be the check.
         if ($topup->status === 'completed' || $topup->status === 'failed') {
-            return response()->json(['status' => true]); // already finalized, avoid double-crediting
+            return response()->json(['status' => true]);
         }
 
         $gateway = PaymentGatewayFactory::forProvider($provider, $settings);
@@ -162,23 +170,14 @@ class PaymentWebhookController extends Controller
         }
         $result = $gateway->verify($reference);
 
-        if ($result['status'] === 'completed') {
-            // The only place a web top-up ever credits the wallet — never
-            // trusted from TopUpController's synchronous response, only
-            // from this server-to-server confirmation.
-            $topup->status = 'completed';
-            $topup->save();
-            $user = Users::find($topup->user_id);
-            if ($user != null) {
-                $user->coin_wallet += $topup->coins;
-                $user->coin_purchased_lifetime += $topup->coins;
-                $user->save();
-            }
-        } elseif ($result['status'] === 'failed') {
-            $topup->status = 'failed';
-            $topup->save();
-        }
-        // 'processing' — leave as-is, another webhook call will resolve it.
+        // Crediting lives in TopUpReconciler, shared with the topups:reconcile
+        // sweep that catches payments whose webhook never arrives at all
+        // (which is how top-up 1 stranded a real payment). Deliberately one
+        // implementation: two copies of "have we already credited this?" is
+        // how double-credits get reintroduced. The claim there is a single
+        // conditional UPDATE, so of the three deliveries Lenco fires for one
+        // payment only one can ever credit.
+        TopUpReconciler::apply($topup, $result['status']);
 
         return response()->json(['status' => true]);
     }

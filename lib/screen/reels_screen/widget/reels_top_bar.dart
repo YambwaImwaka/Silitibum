@@ -3,6 +3,7 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen_controller.dart';
+import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
 import 'package:shortzz/utilities/asset_res.dart';
 import 'package:shortzz/utilities/theme_res.dart';
@@ -30,8 +31,15 @@ class ReelsTopBar extends StatelessWidget {
                     final reels = controller.reels;
                     final index = controller.position.value;
 
-                    // Prevent invalid index access
-                    if (reels.isEmpty || index < 0 || index >= reels.length) {
+                    // Prevent invalid index access. Ad slots are excluded too:
+                    // this widget reads the current index independently of the
+                    // PageView's itemBuilder, so without the check a sponsored
+                    // card would still show a live report flag — and filing it
+                    // would report the sentinel post id.
+                    if (reels.isEmpty ||
+                        index < 0 ||
+                        index >= reels.length ||
+                        AdSlot.isAdSlot(reels[index])) {
                       return const SizedBox(width: 30, height: 30);
                     }
 

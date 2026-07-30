@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:shortzz/common/widget/my_refresh_indicator.dart';
+import 'package:shortzz/common/widget/native_ad_reel_card.dart';
 import 'package:shortzz/common/widget/no_data_widget.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/post_story/post_by_id.dart';
@@ -10,6 +11,7 @@ import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/comment_sheet/widget/hashtag_and_mention_view.dart';
 import 'package:shortzz/screen/reels_screen/reel/reel_page.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen_controller.dart';
+import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
 import 'package:shortzz/screen/reels_screen/widget/reels_text_field.dart';
 import 'package:shortzz/screen/reels_screen/widget/reels_top_bar.dart';
@@ -133,17 +135,25 @@ class _ReelsScreenState extends State<ReelsScreen> {
                                       onPageChanged: controller.onPageChanged,
                                       itemBuilder: (context, index) {
                                         Post reel = controller.reels[index];
+                                        // Sponsored slot: returning early keeps
+                                        // ReelController and all the like /
+                                        // comment / gift / report machinery from
+                                        // ever running against a sentinel post.
+                                        if (AdSlot.isAdSlot(reel)) {
+                                          return const NativeAdReelCard();
+                                        }
+                                        // Watches only this page's slot, so a
+                                        // swipe no longer rebuilds every
+                                        // sibling page; the like key is stable
+                                        // across rebuilds.
                                         return Obx(
                                           () {
                                             return ReelPage(
                                               reelData: reel,
-                                              likeKey: GlobalKey(),
+                                              likeKey: controller.likeKeyFor(index),
                                               onUpdateReelData: controller.onUpdateReelData,
                                               videoPlayerController:
-                                                  controller.players[index]?.status ==
-                                                          PlayerStatus.disposed
-                                                      ? null
-                                                      : controller.players[index]?.controller,
+                                                  controller.slotFor(index).value,
                                               postByIdData: widget.postByIdData,
                                             );
                                           },

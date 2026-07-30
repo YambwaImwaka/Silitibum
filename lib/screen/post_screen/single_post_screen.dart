@@ -25,6 +25,12 @@ class SinglePostScreen extends StatefulWidget {
 class _SinglePostScreenState extends State<SinglePostScreen> {
   CommentHelper helper = CommentHelper();
 
+  /// Held in State, not rebuilt inline. A GlobalKey created inside build()
+  /// changes identity on every rebuild, which re-inflates the whole PostCard
+  /// (images and all) instead of updating it, and breaks the like animation's
+  /// `currentContext` lookup. Same fix as PostList and ReelsScreenController.
+  final GlobalKey _likeKey = GlobalKey();
+
   @override
   void dispose() {
     if (Get.isRegistered<PostScreenController>(tag: '${widget.post.id}')) {
@@ -49,7 +55,7 @@ class _SinglePostScreenState extends State<SinglePostScreen> {
                   PostCard(
                       post: widget.post,
                       shouldShowPinOption: false,
-                      likeKey: GlobalKey(),
+                      likeKey: _likeKey,
                       postByIdData: widget.postByIdData,
                       isFromSinglePost: true),
                   CommentSheet(post: widget.post, isFromBottomSheet: false)

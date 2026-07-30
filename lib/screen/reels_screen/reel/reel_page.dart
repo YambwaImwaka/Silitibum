@@ -81,7 +81,9 @@ class _ReelPageState extends State<ReelPage> {
 
   void _handleVisibilityChanged(VisibilityInfo info) {
     final controller = widget.videoPlayerController;
-    isPlaying.value = true;
+    // This used to assign `isPlaying.value = true` unconditionally on every
+    // visibility callback — and VisibilityDetector fires continuously through
+    // a swipe — notifying the Obx overlay each time even when nothing changed.
     if (!_isControllerAlive(controller)) return;
 
     final isMostlyVisible = info.visibleFraction > 0.9;
@@ -262,7 +264,11 @@ class CustomCacheVideoPlayer extends StatelessWidget {
                 child: SizedBox(
                   width: videoSize.width,
                   height: videoSize.height,
-                  child: videoPlayer == null ? null : VideoPlayer(videoPlayer!),
+                  // Keeps the video texture repainting on its own layer so a
+                  // new frame does not dirty the overlays stacked on top.
+                  child: videoPlayer == null
+                      ? null
+                      : RepaintBoundary(child: VideoPlayer(videoPlayer!)),
                 ),
               ),
             ),

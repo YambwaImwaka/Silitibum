@@ -447,6 +447,59 @@
                                         </div>
                                     </div>
                                 </div>
+                                {{-- Native in-feed ads (Snaps feed) --}}
+                                <div class="row">
+                                    <div class="col-12">
+                                        <div class="card">
+                                            <div class="card-body">
+                                                <div class="d-flex align-items-center">
+                                                    <h4 class="mt-0 d-inline">{{ __('Native Ads (Snaps Feed)') }}</h4>
+                                                    <!-- Native Ad Switch-->
+                                                    <div class="d-inline ms-2 mb-0">
+                                                        <input type="checkbox" id="switchNativeAdStatus"
+                                                            {{ $setting->native_ad_status == 1 ? 'checked' : '' }}
+                                                            data-switch="primary" />
+                                                        <label for="switchNativeAdStatus"></label>
+                                                    </div>
+                                                </div>
+                                                <p class="text-muted mb-0 mt-1">
+                                                    {{ __('Shows a sponsored card inside the Snaps feed. Requires the matching platform switch above to also be on.') }}
+                                                </p>
+                                                <hr>
+                                                <div class="row">
+                                                    <div class="col-md-4">
+                                                        <div class="mb-3">
+                                                            <label for="native_ad_android"
+                                                                class="form-label">{{ __('Android Native Ad Unit') }}</label>
+                                                            <input class="form-control" type="text"
+                                                                name="native_ad_android" placeholder="Enter Ad Unit"
+                                                                value="{{ $setting->native_ad_android }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="mb-3">
+                                                            <label for="native_ad_ios"
+                                                                class="form-label">{{ __('iOS Native Ad Unit') }}</label>
+                                                            <input class="form-control" type="text" name="native_ad_ios"
+                                                                placeholder="Enter ID"
+                                                                value="{{ $setting->native_ad_ios }}">
+                                                        </div>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <div class="mb-3">
+                                                            <label for="native_ad_frequency"
+                                                                class="form-label">{{ __('Show An Ad Every N Snaps') }}</label>
+                                                            <input class="form-control" type="number"
+                                                                name="native_ad_frequency" min="3" max="100" step="1"
+                                                                placeholder="8"
+                                                                value="{{ $setting->native_ad_frequency }}">
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
                             </form>
                         </div>

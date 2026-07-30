@@ -83,7 +83,7 @@ class LivestreamService {
         fromJson: StreamStateResult.fromJson);
   }
 
-  Future<StatusModel> sendComment(
+  Future<SendCommentResult> sendComment(
       {required String roomId,
       String? comment,
       String commentType = 'TEXT',
@@ -96,7 +96,7 @@ class LivestreamService {
           Params.commentType: commentType,
           Params.receiverId: receiverId,
         },
-        fromJson: StatusModel.fromJson);
+        fromJson: SendCommentResult.fromJson);
   }
 
   Future<StatusModel> addLikes(
@@ -208,6 +208,36 @@ class StreamStateResult {
         }
         comments.add(LivestreamComment.fromJson(commentJson));
       }
+    }
+  }
+}
+
+/// Result of [LivestreamService.sendComment].
+///
+/// The backend has always returned the created comment in `data`, but the
+/// client parsed the response as a bare StatusModel and threw it away — so the
+/// sender did not see their own comment until the next 4s poll picked it back
+/// up off the server. Keeping the payload lets the caller echo it into the list
+/// immediately.
+class SendCommentResult {
+  bool? status;
+  String? message;
+  LivestreamComment? comment;
+
+  SendCommentResult.fromJson(Map<String, dynamic> json) {
+    status = json['status'];
+    message = json['message'];
+    final data = json['data'];
+    if (data is Map) {
+      final commentJson = data.cast<String, dynamic>();
+      if (commentJson['sender_user'] is Map) {
+        final cache = Get.isRegistered<AppUserCacheController>()
+            ? Get.find<AppUserCacheController>()
+            : null;
+        cache?.addAppUser(AppUser.fromJson(
+            (commentJson['sender_user'] as Map).cast<String, dynamic>()));
+      }
+      comment = LivestreamComment.fromJson(commentJson);
     }
   }
 }

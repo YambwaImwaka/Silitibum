@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/widget/custom_image.dart';
 import 'package:shortzz/common/widget/full_name_with_blue_tick.dart';
@@ -197,9 +198,15 @@ enum ActivityNotifyType {
 
   const ActivityNotifyType(this.type);
 
-  static ActivityNotifyType fromString(int value) {
-    return ActivityNotifyType.values.firstWhere((e) => e.type == value,
-        orElse: () =>
-            throw ArgumentError('Invalid activity notify type : $value'));
+  /// `value` arrives as a *string* ("2") from the production host, so the old
+  /// `int` parameter threw a TypeError on the implicit downcast and took the
+  /// whole notification list's parse down with it. Unknown/new server-side
+  /// types now degrade to [none], which the list already skips over
+  /// (see ActivityNotificationPage's `data.type != ActivityNotifyType.none`
+  /// guard) rather than throwing.
+  static ActivityNotifyType fromString(dynamic value) {
+    final type = asIntOrNull(value);
+    return ActivityNotifyType.values.firstWhereOrNull((e) => e.type == type) ??
+        ActivityNotifyType.none;
   }
 }

@@ -8,7 +8,7 @@ GET\nAPPRECIATED,GET\nAPPRECIATED
 Select,Select
 "Collect likes and comments\nfrom your fans, which boosts\nyou to create more content!","Collect likes and comments\nfrom your fans, which boosts\nyou to create more content!"
 MULTIPLE SOCIAL\nGATEWAYS,MULTIPLE SOCIAL\nGATEWAYS
-"Post Reels, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!","Post Reels, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!"
+"Post Snaps, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!","Post Snaps, Images, Videos, Go\nLive. Choose any way\nfits to you & your audience!"
 Nearby,Nearby
 Following,Following
 Followers Only,Followers Only
@@ -37,8 +37,8 @@ Send Gifts,Send Gifts
 Successfully,Successfully
 Check Videos,Check Videos
 Audio Details,Audio Details
-Make Reel,Make Reel
-Reels,Reels
+Make Snap,Make Snap
+Snaps,Snaps
 Report @reportType,Report @reportType
 Report,Report
 Country,Country
@@ -354,8 +354,8 @@ Co-hosts will appear here once they accept your invitation.,Co-hosts will appear
 You are sending coins to the above user.,You are sending coins to the above user.
 No Live Streams Yet,No Live Streams Yet
 Live streams will appear here when someone goes live.,Live streams will appear here when someone goes live.
-No Reels Yet,No Reels Yet
-This user hasn’t posted any reels so far.,This user hasn’t posted any reels so far.
+No Snaps Yet,No Snaps Yet
+This user hasn’t posted any snaps so far.,This user hasn’t posted any snaps so far.
 You Haven’t Shared Any Posts,You Haven’t Shared Any Posts
 Start posting to share your moments with the community.,Start posting to share your moments with the community.
 No Posts Yet,No Posts Yet
@@ -381,7 +381,7 @@ Scan QR Code,Scan QR Code
 Scan the QR of the profile you want to search.,Scan the QR of the profile you want to search.
 Upload From Gallery,Upload From Gallery
 Nothing to Watch Yet,Nothing to Watch Yet
-Reels will appear here once new content is shared.,Reels will appear here once new content is shared.
+Snaps will appear here once new content is shared.,Snaps will appear here once new content is shared.
 Nothing to Show Yet,Nothing to Show Yet
 Explore content by entering keywords in the search bar above.,Explore content by entering keywords in the search bar above.
 km,km
@@ -401,10 +401,10 @@ No Comments Yet,No Comments Yet
 This post doesn’t have any comments. Join in and share your thoughts.,This post doesn’t have any comments. Join in and share your thoughts.
 Post sent successfully,Post sent successfully
 Search @brand_name,Search @brand_name
-Find Reels Around You,Find Reels Around You
-Allow location access to explore reels shared by people near you.,Allow location access to explore reels shared by people near you.
+Find Snaps Around You,Find Snaps Around You
+Allow location access to explore snaps shared by people near you.,Allow location access to explore snaps shared by people near you.
 Location Services Are Still Disabled,Location Services Are Still Disabled
-"To see nearby reels, please turn on location services in your device settings.","To see nearby reels, please turn on location services in your device settings."
+"To see nearby snaps, please turn on location services in your device settings.","To see nearby snaps, please turn on location services in your device settings."
 See places near you.,See places near you.
 "To include nearby places, turn on location services.","To include nearby places, turn on location services."
 Turn on Location Services,Turn on Location Services

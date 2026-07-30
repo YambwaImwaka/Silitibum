@@ -7,7 +7,7 @@ import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/post_screen/post_card.dart';
 
-class PostList extends StatelessWidget {
+class PostList extends StatefulWidget {
   final RxList<Post> posts;
   final RxBool isLoading;
   final Future<void> Function()? onFetchMoreData;
@@ -38,6 +38,36 @@ class PostList extends StatelessWidget {
   });
 
   @override
+  State<PostList> createState() => _PostListState();
+}
+
+class _PostListState extends State<PostList> {
+  RxList<Post> get posts => widget.posts;
+
+  RxBool get isLoading => widget.isLoading;
+
+  bool get asSliver => widget.asSliver;
+
+  /// Stable like-button [GlobalKey] per row.
+  ///
+  /// This used to be `likeKey: GlobalKey()` inline in the item builder, which
+  /// minted a brand new key every time the surrounding Obx fired — and it
+  /// fires for every like, every pagination append, every refresh. A changed
+  /// GlobalKey forces Flutter to tear the whole subtree down and re-inflate it
+  /// instead of updating it in place, so each rebuild threw away every visible
+  /// PostCard along with its images (they visibly re-fetch and flash) and left
+  /// any in-flight like animation holding a stale key whose `currentContext`
+  /// is null, sending the heart to the wrong spot. The reels list already hit
+  /// this and fixed it the same way — see ReelsScreenController.likeKeyFor.
+  ///
+  /// Keyed by index rather than post id: posts still uploading share id -1,
+  /// and two identical GlobalKeys in one tree throw.
+  final Map<int, GlobalKey> _likeKeys = {};
+
+  GlobalKey _likeKeyFor(int index) =>
+      _likeKeys.putIfAbsent(index, () => GlobalKey());
+
+  @override
   Widget build(BuildContext context) {
     return Obx(() {
       if (isLoading.value && posts.isEmpty) {
@@ -47,7 +77,7 @@ class PostList extends StatelessWidget {
       }
 
       if (!isLoading.value && posts.isEmpty) {
-        final empty = showNoData ? _buildNoDataView() : const SizedBox();
+        final empty = widget.showNoData ? _buildNoDataView() : const SizedBox();
         return asSliver ? SliverToBoxAdapter(child: empty) : empty;
       }
 
@@ -56,21 +86,21 @@ class PostList extends StatelessWidget {
           padding: EdgeInsets.only(bottom: AppBar().preferredSize.height / 2),
           sliver: SliverList.builder(
             itemCount: posts.length,
-            itemBuilder: (context, index) => _buildPostCard(posts[index]),
+            itemBuilder: (context, index) => _buildPostCard(posts[index], index),
           ),
         );
       }
 
       return LoadMoreWidget(
-        loadMore: onFetchMoreData ?? () async {},
+        loadMore: widget.onFetchMoreData ?? () async {},
         child: ListView.builder(
           itemCount: posts.length,
-          primary: !shrinkWrap,
-          shrinkWrap: shrinkWrap,
+          primary: !widget.shrinkWrap,
+          shrinkWrap: widget.shrinkWrap,
           padding: EdgeInsets.only(bottom: AppBar().preferredSize.height / 2),
           itemBuilder: (context, index) {
             final post = posts[index];
-            return _buildPostCard(post);
+            return _buildPostCard(post, index);
           },
         ),
       );
@@ -81,8 +111,8 @@ class PostList extends StatelessWidget {
     return Stack(
       children: [
         NoDataView(
-          title: isMe ? LKey.noMyPostsTitle.tr : LKey.noUserPostsTitle.tr,
-          description: isMe
+          title: widget.isMe ? LKey.noMyPostsTitle.tr : LKey.noUserPostsTitle.tr,
+          description: widget.isMe
               ? LKey.noMyPostsDescription.tr
               : LKey.noUserPostsDescription.tr,
           showShow: !isLoading.value && posts.isEmpty,
@@ -96,10 +126,10 @@ class PostList extends StatelessWidget {
     );
   }
 
-  Widget _buildPostCard(Post post) {
+  Widget _buildPostCard(Post post, int index) {
     return PostCard(
         post: post,
-        shouldShowPinOption: shouldShowPinOption,
-        likeKey: GlobalKey());
+        shouldShowPinOption: widget.shouldShowPinOption,
+        likeKey: _likeKeyFor(index));
   }
 }

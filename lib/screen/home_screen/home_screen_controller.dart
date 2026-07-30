@@ -17,6 +17,7 @@ import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/location/location_service.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
+import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/model/general/place_detail.dart';
 import 'package:shortzz/model/post_story/post_by_id.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
@@ -24,6 +25,7 @@ import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/post_screen/single_post_screen.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen_controller.dart';
+import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
 import 'package:shortzz/utilities/app_res.dart';
 
@@ -180,7 +182,11 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
   Future<void> fetchDiscoverPost(bool resetData) async {
     isLoading.value = true;
     try {
-      List<Post> newPosts = await PostService.instance.fetchPostsDiscover(type: PostType.reels, cancelToken: token);
+      List<Post> newPosts = await PostService.instance.fetchPostsDiscover(
+          type: PostType.reels,
+          // A reset is a fresh feed, so nothing is "already served" yet.
+          excludeIds: resetData ? null : _servedPostIds,
+          cancelToken: token);
       addResponseData(newPosts, resetData);
     } catch (e) {
       // A failed fetch must never leave the shimmer running forever.
@@ -222,16 +228,69 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
   void addResponseData(List<Post> newPosts, bool resetData) {
     if (resetData) {
       reels.clear();
+      _organicPostsSinceLastAd = 0;
       if (Get.isRegistered<ReelsScreenController>(tag: ReelsScreenController.tag)) {
         var controller = Get.find<ReelsScreenController>(tag: ReelsScreenController.tag);
         controller.handleRefresh(() async {});
       }
     }
     if (newPosts.isNotEmpty) {
-      reels.addAll(newPosts);
+      reels.addAll(_interleaveAds(newPosts));
     }
 
     isLoading.value = false;
+  }
+
+  /// Organic Snaps served since the last ad slot. Carried across pages so the
+  /// cadence is continuous — counting per-page would put an ad at the same
+  /// offset in every batch, or drop it entirely on short pages.
+  int _organicPostsSinceLastAd = 0;
+
+  /// Inserts a sponsored slot every `native_ad_frequency` organic Snaps.
+  ///
+  /// Done client-side rather than in the ranked API response so ad cadence stays
+  /// independent of ranking, and so a settings change takes effect on the next
+  /// fetch with no API change.
+  List<Post> _interleaveAds(List<Post> posts) {
+    final setting = SessionManager.instance.getSettings();
+    final frequency = setting?.nativeAdFrequency ?? 0;
+
+    final isPlatformAdsOn = (Platform.isAndroid && setting?.admobAndroidStatus == 1) ||
+        (Platform.isIOS && setting?.admobIosStatus == 1);
+    final isEnabled = !isSubscribe.value && setting?.nativeAdStatus == 1 && isPlatformAdsOn;
+
+    if (!isEnabled || frequency <= 0) return posts;
+
+    final out = <Post>[];
+    for (final post in posts) {
+      out.add(post);
+      _organicPostsSinceLastAd++;
+      if (_organicPostsSinceLastAd >= frequency) {
+        out.add(AdSlot.build());
+        _organicPostsSinceLastAd = 0;
+      }
+    }
+    return out;
+  }
+
+  /// Post ids already served this session, for the ranked feed's `exclude_ids`.
+  ///
+  /// The ranked "For You" feed scores a candidate pool per call instead of
+  /// paging a cursor, so without this the same top-scoring Snaps come back on
+  /// every load-more. Filters ids <= 0, which drops both the -1 local-upload
+  /// and -2 ad sentinels.
+  List<int> get _servedPostIds {
+    final ids = reels
+        .map((post) => post.id)
+        .whereType<int>()
+        .where((id) => id > 0)
+        .toList();
+
+    // Keep the most recently served ids (the tail — reels is in feed order) and
+    // cap the list. The server bounds this too; an uncapped list would grow the
+    // request body for the whole session.
+    if (ids.length <= 150) return ids;
+    return ids.sublist(ids.length - 150);
   }
 
   Future<void> _fetchLocation() async {

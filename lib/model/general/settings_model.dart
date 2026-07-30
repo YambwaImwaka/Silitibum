@@ -50,6 +50,13 @@ class Setting {
   String? admobIntIos;
   int? admobAndroidStatus;
   int? admobIosStatus;
+  String? nativeAdAndroid;
+  String? nativeAdIos;
+  int? nativeAdStatus;
+
+  /// Organic Snaps between consecutive in-feed ads. 0 (or null) means the feed
+  /// inserts none — see HomeScreenController._interleaveAds.
+  int? nativeAdFrequency;
   int? maxUploadDaily;
   int? maxStoryDaily;
   int? maxCommentDaily;
@@ -109,6 +116,10 @@ class Setting {
     this.admobIntIos,
     this.admobAndroidStatus,
     this.admobIosStatus,
+    this.nativeAdAndroid,
+    this.nativeAdIos,
+    this.nativeAdStatus,
+    this.nativeAdFrequency,
     this.maxUploadDaily,
     this.maxStoryDaily,
     this.maxCommentDaily,
@@ -169,6 +180,10 @@ class Setting {
         admobIntIos: asStringOrNull(json["admob_int_ios"]),
         admobAndroidStatus: asIntOrNull(json["admob_android_status"]),
         admobIosStatus: asIntOrNull(json["admob_ios_status"]),
+        nativeAdAndroid: asStringOrNull(json["native_ad_android"]),
+        nativeAdIos: asStringOrNull(json["native_ad_ios"]),
+        nativeAdStatus: asIntOrNull(json["native_ad_status"]),
+        nativeAdFrequency: asIntOrNull(json["native_ad_frequency"]),
         maxUploadDaily: asIntOrNull(json["max_upload_daily"]),
         maxStoryDaily: asIntOrNull(json["max_story_daily"]),
         maxCommentDaily: asIntOrNull(json["max_comment_daily"]),
@@ -261,6 +276,10 @@ class Setting {
         "admob_int_ios": admobIntIos,
         "admob_android_status": admobAndroidStatus,
         "admob_ios_status": admobIosStatus,
+        "native_ad_android": nativeAdAndroid,
+        "native_ad_ios": nativeAdIos,
+        "native_ad_status": nativeAdStatus,
+        "native_ad_frequency": nativeAdFrequency,
         "max_upload_daily": maxUploadDaily,
         "max_story_daily": maxStoryDaily,
         "max_comment_daily": maxCommentDaily,

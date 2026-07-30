@@ -85,7 +85,7 @@ class ProfileUserHeader extends StatelessWidget {
   }
 }
 
-class ProfileStatsRow extends StatelessWidget {
+class ProfileStatsRow extends StatefulWidget {
   final User? user;
   final List<StatItem> stats;
   final Function(int value) onTap;
@@ -102,11 +102,30 @@ class ProfileStatsRow extends StatelessWidget {
   });
 
   @override
+  State<ProfileStatsRow> createState() => _ProfileStatsRowState();
+}
+
+class _ProfileStatsRowState extends State<ProfileStatsRow> {
+  // Was `RxBool isHeroEnable = false.obs` inside build(): recreated on every
+  // rebuild, so the Obx below ended up watching an observable that the
+  // long-press handlers no longer wrote to, and each rebuild orphaned another
+  // one. The dead `GlobalKey previewKey` that used to sit here is gone
+  // entirely — nothing ever read its currentContext (the only caller is
+  // commented out), but because its identity changed every build it forced
+  // the avatar's whole subtree, CustomImage included, to be re-inflated
+  // instead of updated.
+  final RxBool isHeroEnable = false.obs;
+
+  User? get user => widget.user;
+
+  @override
   Widget build(BuildContext context) {
+    final List<StatItem> stats = widget.stats;
+    final ProfileScreenController controller = widget.controller;
+    final bool userNotFound = widget.userNotFound;
+    final Function(int value) onTap = widget.onTap;
     bool isStoryAvailable = (user?.stories ?? []).isNotEmpty;
-    GlobalKey previewKey = GlobalKey();
     bool isWatch = isStoryAvailable && (user?.stories ?? []).every((element) => element.isWatchedByMe());
-    RxBool isHeroEnable = false.obs;
     return Row(
       children: [
         // Profile Picture
@@ -135,7 +154,6 @@ class ProfileStatsRow extends StatelessWidget {
               });
             },
             child: Container(
-              key: previewKey,
               width: 80,
               height: 80,
               alignment: Alignment.center,

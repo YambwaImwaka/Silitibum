@@ -40,10 +40,52 @@ class CustomImage extends StatelessWidget {
     this.placeHolderImage,
   });
 
+  /// Caps the decoded pixel size to what this box can actually show.
+  /// Returns (memCacheWidth, memCacheHeight) — at most one is ever non-null.
+  ///
+  /// Without this every image was decoded at whatever resolution the server
+  /// happened to store — a 1080x1080 profile photo costs 1080*1080*4 = 4.6MB
+  /// of RAM to display in a 40x40 avatar that only needs ~57KB. Multiplied by
+  /// a scrolling feed that is the whole jank story: long decodes, constant GC
+  /// pressure, and an image cache that evicts itself so re-scrolling re-decodes
+  /// everything from scratch.
+  ///
+  /// Only ONE axis is ever capped. CachedNetworkImage forwards these to
+  /// [ResizeImage], whose default policy resizes to *exactly* the dimensions
+  /// given, so passing both would stretch the image; passing one preserves the
+  /// aspect ratio and lets BoxFit do the rest. The longer edge is the one
+  /// capped, so the shorter edge always keeps at least as many pixels as it
+  /// needs. Callers also routinely pass a half-unbounded size such as
+  /// `Size(double.infinity, 211)` (a video thumbnail that fills its row), so
+  /// the axis with the real number wins; only when neither is usable do we
+  /// fall back to decoding at full source resolution.
+  (int?, int?) _decodeCap(BuildContext context) {
+    final double w = size.width;
+    final double h = size.height;
+    final bool wOk = w.isFinite && w > 0;
+    final bool hOk = h.isFinite && h > 0 && fit != BoxFit.fitWidth;
+
+    final bool useWidth;
+    if (wOk && hOk) {
+      useWidth = w >= h;
+    } else if (wOk) {
+      useWidth = true;
+    } else if (hOk) {
+      useWidth = false;
+    } else {
+      return (null, null);
+    }
+
+    final double dpr = MediaQuery.devicePixelRatioOf(context);
+    final int px = ((useWidth ? w : h) * dpr).round();
+    return useWidth ? (px, null) : (null, px);
+  }
+
   @override
   Widget build(BuildContext context) {
     String imageUrl = image ?? '';
     double cornerSmoothing = this.cornerSmoothing ?? 0;
+    final (int? memCacheWidth, int? memCacheHeight) = _decodeCap(context);
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
@@ -76,6 +118,18 @@ class CustomImage extends StatelessWidget {
                           fit: fit ?? BoxFit.cover,
                           imageUrl: imageUrl,
                           cacheKey: imageUrl,
+                          memCacheWidth: memCacheWidth,
+                          memCacheHeight: memCacheHeight,
+                          // 500ms is CachedNetworkImage's default and it reads
+                          // as "the image is slow" even when the bytes were
+                          // already in cache and arrived instantly.
+                          fadeInDuration: const Duration(milliseconds: 120),
+                          fadeOutDuration: const Duration(milliseconds: 120),
+                          placeholderFadeInDuration: Duration.zero,
+                          // Keep showing the image already on screen while a
+                          // new url resolves, instead of flashing to shimmer.
+                          useOldImageOnUrlChange: true,
+                          filterQuality: FilterQuality.medium,
                           placeholder: (context, url) {
                             return isImageLoaderVisible
                                 ? Shimmer.fromColors(

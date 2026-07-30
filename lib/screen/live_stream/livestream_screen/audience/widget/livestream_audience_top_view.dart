@@ -250,7 +250,7 @@ class _BuildBottomView extends StatelessWidget {
       Livestream data = controller.liveData.value;
       bool isBattleView = data.type == LivestreamType.battle;
       StreamView? hostView = controller.streamViews
-          .firstWhereOrNull((element) => element.streamId == '${data.hostId}');
+          .firstWhereOrNull((element) => element.ownerUserId == data.hostId);
       if (isBattleView) {
         return const SizedBox();
       }

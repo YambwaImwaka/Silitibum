@@ -99,6 +99,10 @@ class LivestreamScreenController extends BaseController {
 
   StreamSubscription<RealtimeEvent>? _realtimeSub;
   Timer? _pollTimer;
+
+  /// When the last realtime event landed on this room's channel. Drives the
+  /// safety-net reconcile in [_startRealtime] — see the note there.
+  DateTime _lastRealtimeEventAt = DateTime.now();
   Timer? _likeFlushTimer;
   String? _presenceChannelName;
   int _lastCommentId = 0;
@@ -162,16 +166,45 @@ class LivestreamScreenController extends BaseController {
         .subscribePresence('livestream.$roomId', RealtimeService.livestreamEvents);
     _presenceChannelName = 'presence-livestream.$roomId';
     _realtimeSub = RealtimeService.instance.events.listen(_onRealtimeEvent);
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) {
-      if (!RealtimeService.instance.isConnected) _pollState();
+    // Poll cadence is what everyone else in the room waits on when the
+    // WebSocket transport is off, so it is the floor on how fast a comment,
+    // gift or join-request can reach them. 4s meant a mean 2s / worst 4s delay
+    // on top of the request itself. Polls are cheap delta fetches
+    // (after_comment_id), so 1.2s is affordable and cuts that ~3x.
+    //
+    // This timer is skipped entirely once realtime connects — turning on
+    // BROADCAST_DRIVER + realtimeAppKey removes this path, and its load, for
+    // good. Revisit the interval only if you ship without realtime at scale.
+    _pollTimer = Timer.periodic(const Duration(milliseconds: 1200), (_) {
+      if (!RealtimeService.instance.isConnected) {
+        _pollState();
+        return;
+      }
+      // An open socket is not proof that events are actually arriving. If the
+      // backend is still on BROADCAST_DRIVER=log, or channel auth / app keys
+      // mismatch, the client connects happily and then receives nothing —
+      // and cutting polling off on `isConnected` alone would silently freeze
+      // the entire room with no error anywhere. Reconcile whenever the stream
+      // has been quiet for 10s so a misconfigured transport degrades to
+      // "slightly behind" instead of "completely broken".
+      if (DateTime.now().difference(_lastRealtimeEventAt) >
+          const Duration(seconds: 10)) {
+        _pollState();
+      }
     });
-    _likeFlushTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+    // Hearts are batched so a rapid tap burst is one request. 4s of batching
+    // was long enough that a reaction could take ~4s to even leave the device,
+    // then up to another poll interval to appear for anyone else — the worst
+    // end-to-end delay of any live action. 600ms still coalesces a burst into
+    // a single call while feeling immediate.
+    _likeFlushTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
       _flushPendingLikes();
     });
   }
 
   void _onRealtimeEvent(RealtimeEvent event) {
     if (event.channel != _presenceChannelName) return;
+    _lastRealtimeEventAt = DateTime.now();
     switch (event.name) {
       case 'livestream.updated':
       case 'battle.updated':
@@ -215,6 +248,16 @@ class LivestreamScreenController extends BaseController {
     } catch (e) {
       Loggers.error('fetchStreamState failed: $e');
     }
+  }
+
+  /// Pulls the next delta now rather than on the next tick. Used right after a
+  /// local action that the server turns into state we do not get back inline
+  /// (a gift becomes a gift comment, a join request becomes a user state), so
+  /// the actor sees the result immediately instead of up to a full interval
+  /// later. No-op when realtime is live — the event beats any poll.
+  void _pollSoon() {
+    if (RealtimeService.instance.isConnected) return;
+    _pollState();
   }
 
   Future<void> _pollState() async {
@@ -686,18 +729,18 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
-  void toggleStreamAudio(int? streamId) {
-    StreamView? view = streamViews
-        .firstWhereOrNull((element) => int.parse(element.streamId) == streamId);
+  void toggleStreamAudio(int? userId) {
+    int index =
+        streamViews.indexWhere((element) => element.ownerUserId == userId);
+    if (index == -1) return;
+    StreamView view = streamViews[index];
 
-    zegoEngine.mutePlayStreamAudio(
-        '$streamId', (view?.isMuted ?? false) ? false : true);
-    view?.isMuted = view.isMuted ? false : true;
-    if (view != null) {
-      streamViews[streamViews.indexWhere(
-          (element) => int.parse(element.streamId) == streamId)] = view;
-      streamViews.refresh();
-    }
+    // Mute against the id the stream is actually published under (the room id
+    // for the host), not the user id we looked it up by.
+    zegoEngine.mutePlayStreamAudio(view.streamId, !view.isMuted);
+    view.isMuted = !view.isMuted;
+    streamViews[index] = view;
+    streamViews.refresh();
   }
 
   /// Hearts: instant local animation, batched server flush (one addLikes call
@@ -756,6 +799,9 @@ class LivestreamScreenController extends BaseController {
               final me = SessionManager.instance.getUser();
               me?.removeCoinFromWallet(gift.coinPrice ?? 0);
               SessionManager.instance.setUser(me);
+              // The gift becomes a gift comment server-side; fetch it now so
+              // the sender sees their own gift land straight away.
+              _pollSoon();
             } else {
               showSnackBar(res.message);
             }
@@ -774,11 +820,19 @@ class LivestreamScreenController extends BaseController {
       String? comment,
       int? receiverId}) async {
     try {
-      await LivestreamService.instance.sendComment(
+      final res = await LivestreamService.instance.sendComment(
           roomId: roomId,
           comment: comment,
           commentType: type.value,
           receiverId: receiverId);
+      // Echo our own comment straight into the list instead of waiting for the
+      // next poll to fetch back something we already have. _appendComment
+      // dedupes on id and advances _lastCommentId, so the poll that later
+      // returns this same row is a no-op.
+      final sent = res.comment;
+      if (res.status == true && sent != null) {
+        _appendComment(sent);
+      }
     } catch (e) {
       Loggers.error('sendComment failed: $e');
     }
@@ -1209,4 +1263,16 @@ class StreamView {
   bool isMuted;
 
   StreamView(this.streamId, this.streamViewId, this.streamView, this.isMuted);
+
+  /// The owner of this view, or null if the id isn't one we recognise.
+  ///
+  /// A stream id is NOT a user id and must never be parsed as one. The host
+  /// publishes under the room id — '<hostId>_<millis>', built server-side by
+  /// LivestreamApiController — while co-hosts publish under their bare
+  /// numeric user id. `int.parse` on the host's id is what threw
+  /// "FormatException: invalid radix-10 number ... 40_1785236249170" and took
+  /// the Go Live screen down; comparing it to '$hostId' silently never
+  /// matched, which is why the host's own name and avatar went missing.
+  /// Both forms start with the owner's id, so resolve through this getter.
+  int? get ownerUserId => int.tryParse(streamId.split('_').first);
 }

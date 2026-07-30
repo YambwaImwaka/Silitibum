@@ -18,13 +18,34 @@ import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart
 import 'package:shortzz/screen/profile_screen/profile_screen_controller.dart';
 import 'package:shortzz/screen/profile_screen/widget/post_options_sheet.dart';
 import 'package:shortzz/screen/reels_screen/reel/reel_page_controller.dart';
+import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
 import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 import 'package:video_player/video_player.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 class ReelsScreenController extends BaseController {
-  RxMap<int, ReelPlayerEntry> players = <int, ReelPlayerEntry>{}.obs;
+  /// Player bookkeeping. Deliberately a *plain* map: as an RxMap every
+  /// mutation notified the `Obx` in every mounted page, and a single swipe
+  /// mutates it ~10 times (4 lookahead slots each marked initializing then
+  /// initialized, plus disposals). That rebuilt all ~3 live ReelPage subtrees
+  /// ~10 times per swipe — during the swipe animation. Per-page notification
+  /// now lives in [_slotViews], so only the page whose controller actually
+  /// changed rebuilds.
+  final Map<int, ReelPlayerEntry> players = {};
+
+  /// One observable per page index, holding the controller that page should
+  /// render (null while uninitialized or after disposal).
+  final Map<int, Rx<VideoPlayerController?>> _slotViews = {};
+
+  /// Stable like-button [GlobalKey] per page index. These used to be built
+  /// inline in the itemBuilder (`likeKey: GlobalKey()`), which minted a fresh
+  /// key on every rebuild: that forces the subtree under it to be rebuilt
+  /// from scratch, and it left the in-flight like animation holding a stale
+  /// key whose `currentContext` was null, so the heart flew to the wrong
+  /// place. Keyed by index (not reel id) because locally-uploading reels all
+  /// share id -1 and duplicate GlobalKeys in one tree throw.
+  final Map<int, GlobalKey> _likeKeys = {};
 
   static const String tag = "REEL";
   RxInt position = 0.obs;
@@ -60,6 +81,24 @@ class ReelsScreenController extends BaseController {
     disposeAllController();
   }
 
+  /// Observable view of one page's controller. Pages watch this instead of the
+  /// whole player map so a swipe only rebuilds the pages that actually changed.
+  Rx<VideoPlayerController?> slotFor(int index) =>
+      _slotViews.putIfAbsent(index, () => Rx<VideoPlayerController?>(null));
+
+  GlobalKey likeKeyFor(int index) =>
+      _likeKeys.putIfAbsent(index, () => GlobalKey());
+
+  /// Pushes the current state of slot [index] out to whichever page is
+  /// watching it. Replaces the old blanket `players.refresh()`.
+  void _publishSlot(int index) {
+    final entry = players[index];
+    final controller =
+        entry?.status == PlayerStatus.disposed ? null : entry?.controller;
+    final slot = slotFor(index);
+    if (slot.value != controller) slot.value = controller;
+  }
+
   Future<void> initVideoPlayer() async {
     /// Initialize 1st video
     await _initializeControllerAtIndex(position.value);
@@ -67,32 +106,41 @@ class ReelsScreenController extends BaseController {
     /// Play 1st video
     _playControllerAtIndex(position.value);
 
-    /// Initialize previous video (instant back-swipe)
-    if (position >= 0) {
-      await _initializeControllerAtIndex(position.value - 1);
-    }
-
-    /// Always keep the next 2 videos loading in the background, in order.
+    /// Then the *next* videos — that is where the user is going, so they get
+    /// the bandwidth first. The previous video (instant back-swipe) is the
+    /// least likely to be needed, so it no longer blocks the lookahead.
     await _initializeControllerAtIndex(position.value + 1);
     await _initializeControllerAtIndex(position.value + 2);
+    await _initializeControllerAtIndex(position.value - 1);
+
+    _prefetchBeyondLookahead(position.value);
   }
 
   void onPageChanged(int index) {
-    if (index > position.value) {
-      _fetchMoreData();
-      _playNextReel(index);
-    } else {
-      _playPreviousReel(index);
-    }
+    final isForward = index > position.value;
     position.value = index;
+
+    if (isForward) _fetchMoreData(index);
+
+    // Both directions want the same thing: stop what was playing, make sure
+    // the window around `index` is warm, drop everything outside it.
+    pauseAllPlayers(except: index);
+    _disposeAllExcept(index);
+
+    _initializeControllerAtIndex(index);
+    _initializeControllerAtIndex(index + 1);
+    _initializeControllerAtIndex(index + 2);
+    _initializeControllerAtIndex(index - 1);
+
+    _prefetchBeyondLookahead(index);
 
     _playControllerAtIndex(index);
   }
 
-  Future<void> _fetchMoreData() async {
+  Future<void> _fetchMoreData(int index) async {
     // Kick off the next page immediately — the old 1s artificial delay meant
     // fast swipers hit the end of the list and stared at a spinner.
-    if (position >= reels.length - 3) {
+    if (index >= reels.length - 3) {
       await onFetchMoreData?.call().then((value) {
         _initializeControllerAtIndex(position.value + 1);
         _initializeControllerAtIndex(position.value + 2);
@@ -100,24 +148,26 @@ class ReelsScreenController extends BaseController {
     }
   }
 
-  void _playNextReel(int index) {
-    pauseAllPlayers();
-    _initializeControllerAtIndex(index);
-    _initializeControllerAtIndex(index + 1);
-    _initializeControllerAtIndex(index + 2);
-    _initializeControllerAtIndex(index - 1);
-
-    _disposeAllExcept(index);
-  }
-
-  void _playPreviousReel(int index) {
-    pauseAllPlayers();
-    _initializeControllerAtIndex(index);
-    _initializeControllerAtIndex(index + 1);
-    _initializeControllerAtIndex(index + 2);
-    _initializeControllerAtIndex(index - 1);
-
-    _disposeAllExcept(index);
+  /// Warms the disk cache for reels just *outside* the controller window.
+  ///
+  /// Prefetch used to run alongside `VideoPlayerController.networkUrl` for the
+  /// very same url, so each reel was pulled down twice concurrently — once by
+  /// ExoPlayer to play it, once by the cache manager to store it. With four
+  /// controllers alive that is eight competing downloads, and the one the user
+  /// is actually watching only got a fraction of the bandwidth, which is what
+  /// made playback stall mid-reel. Now the two never overlap: indices inside
+  /// the window stream, indices beyond it download, and by the time the user
+  /// swipes that far the file is already local.
+  void _prefetchBeyondLookahead(int index) {
+    for (final i in [index + 3, index + 4]) {
+      if (i < 0 || i >= reels.length) continue;
+      if (players[i]?.controller != null) continue;
+      final reel = reels[i];
+      if (reel.id == -1) continue;
+      // Sponsored slots have no video to warm.
+      if (AdSlot.isAdSlot(reel)) continue;
+      VideoCacheService.prefetch(reel.video?.addBaseURL() ?? '');
+    }
   }
 
   void _disposeAllExcept(int index) {
@@ -129,6 +179,7 @@ class ReelsScreenController extends BaseController {
       if (!validIndexes.contains(i)) {
         _disposeControllerAtIndex(i);
         players.remove(i);
+        _publishSlot(i);
       }
     }
   }
@@ -152,13 +203,19 @@ class ReelsScreenController extends BaseController {
     entry.listener = null;
     entry.status = PlayerStatus.disposed;
     players[index] = entry;
-    players.refresh();
+    _publishSlot(index);
 
     Loggers.info("🗑 DISPOSED $index");
   }
 
   Future<void> _initializeControllerAtIndex(int index) async {
     if (index < 0 || index >= reels.length) return;
+
+    // A sponsored slot renders a native ad view, not a video — never allocate a
+    // player for it. Leaving the slot without an entry also means
+    // _playControllerAtIndex finds nothing to play, which is what keeps ad
+    // pages from firing _increaseViewsCount against the sentinel id.
+    if (AdSlot.isAdSlot(reels[index])) return;
 
     /// 🔒 HARD GUARD (no race possible)
     if (players[index]?.status == PlayerStatus.initializing ||
@@ -179,16 +236,16 @@ class ReelsScreenController extends BaseController {
         );
       } else {
         final videoUrl = reel.video?.addBaseURL() ?? '';
-        // Play straight from disk when a prior prefetch already landed the
-        // file (this index was someone's +1/+2 lookahead, or a rewatch) —
-        // zero network cost. Otherwise stream it and cache it in the
-        // background so the next time (rewatch, back-swipe) is a disk hit.
+        // Play straight from disk when _prefetchBeyondLookahead already landed
+        // the file (or this is a rewatch) — zero network cost. Otherwise
+        // stream it. Note we deliberately do *not* also kick off a cache
+        // download for this url here: doing both meant downloading the same
+        // video twice at once and starving the playing stream.
         final cachedFile = await VideoCacheService.getCachedFile(videoUrl);
         if (cachedFile != null) {
           controller = VideoPlayerController.file(cachedFile);
         } else {
           controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-          VideoCacheService.prefetch(videoUrl);
         }
       }
 
@@ -209,6 +266,7 @@ class ReelsScreenController extends BaseController {
         controller: controller,
         status: PlayerStatus.initialized,
       );
+      _publishSlot(index);
 
       Loggers.info("🚀 INITIALIZED $index");
 
@@ -223,6 +281,12 @@ class ReelsScreenController extends BaseController {
   }
 
   void _playControllerAtIndex(int index) {
+    // Explicit rather than relying on the null-controller check below: this is
+    // also what stops _increaseViewsCount POSTing the ad sentinel id.
+    if (index >= 0 && index < reels.length && AdSlot.isAdSlot(reels[index])) {
+      return;
+    }
+
     final dashController = Get.find<DashboardScreenController>();
     if (reelPageType == ReelPageType.home && dashController.selectedPageIndex.value != 0) {
       return;
@@ -253,9 +317,10 @@ class ReelsScreenController extends BaseController {
     });
   }
 
-  void pauseAllPlayers() {
+  void pauseAllPlayers({int? except}) {
     final keys = players.keys.toList(); // 👈 COPY
     for (var i in keys) {
+      if (i == except) continue;
       _stopControllerAtIndex(i);
     }
   }
@@ -263,11 +328,18 @@ class ReelsScreenController extends BaseController {
   void _stopControllerAtIndex(int index) {
     if (reels.length > index && index >= 0) {
       final controller = players[index]?.controller;
-      if (controller != null) {
-        controller.pause();
-        controller.seekTo(const Duration()); // Reset position
-        Loggers.info('🚀🚀🚀 STOPPED $index');
+      if (controller == null || !controller.value.isInitialized) return;
+      if (controller.value.isPlaying) controller.pause();
+
+      // Only rewind a player that actually advanced. This ran unconditionally
+      // on every player on every swipe, including the +1/+2 lookahead ones
+      // sitting untouched at 0:00 — and seeking ExoPlayer flushes the preroll
+      // buffer, throwing away exactly the head-start the lookahead existed to
+      // build. That is what made the next swipe re-buffer.
+      if (controller.value.position > Duration.zero) {
+        controller.seekTo(Duration.zero);
       }
+      Loggers.info('🚀🚀🚀 STOPPED $index');
     }
   }
 
@@ -284,6 +356,15 @@ class ReelsScreenController extends BaseController {
       entry.value.controller = null;
     }
     players.clear();
+    // Drop the controller reference any still-mounted page is holding, so
+    // nothing paints a disposed player. The Rx objects themselves are kept:
+    // a mounted Obx subscribes to the instance it read at build time, so
+    // replacing them here (this also runs mid-session from handleRefresh)
+    // would leave that page listening to an Rx nobody publishes to again.
+    // They are a handful of bytes each and die with the controller.
+    for (final slot in _slotViews.values) {
+      slot.value = null;
+    }
   }
 
   /// Handle refresh logic

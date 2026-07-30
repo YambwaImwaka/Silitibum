@@ -15,7 +15,15 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule)
     {
-        // $schedule->command('inspire')->hourly();
+        // Catches top-ups the provider charged successfully but whose webhook
+        // never reached us — otherwise the customer's money is gone and their
+        // coins never arrive, silently and permanently (this is what stranded
+        // top-up 1). withoutOverlapping() because verify() is a network call
+        // per row and runs can outlast the interval on a slow provider.
+        $schedule->command('topups:reconcile')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The mandatory "Ad" disclosure chip. Brand orange so it reads as
+     deliberate UI rather than an artifact of the creative. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#C2410C" />
+    <corners android:radius="4dp" />
+</shape>

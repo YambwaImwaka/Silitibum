@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -431,4 +432,15 @@ enum CommentType {
         CommentType.text => 0,
         CommentType.image => 1,
       };
+
+  /// Parses the wire value, which arrives as the *string* "1" from the
+  /// production host (PDO stringifies numeric columns and `tbl_comments` has
+  /// no `$casts`). Comparing an int `value` against that string never matched,
+  /// so every GIF comment silently degraded to [CommentType.text] and rendered
+  /// as a bare tappable Giphy URL instead of the GIF. See json_parse.dart.
+  static CommentType fromValue(dynamic raw) {
+    final value = asIntOrNull(raw);
+    return CommentType.values.firstWhereOrNull((e) => e.value == value) ??
+        CommentType.text;
+  }
 }
