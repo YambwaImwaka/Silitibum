@@ -295,11 +295,9 @@ class CameraEditScreenController extends BaseController {
     if (currentContent.type == PostStoryContentType.reel) {
       final videoPath = currentContent.content ?? '';
       if (videoPath.isNotEmpty) {
-        SightEngineService.shared.checkVideoInSightEngine(
-          xFile: XFile(videoPath),
-          duration: videoPlayerController.value?.value.duration.inSeconds ?? 0,
-          completion: handleReelUpload,
-        );
+        // No automated video moderation — see SightEngineService. Reels go
+        // straight to processing and are reviewed by an admin after posting.
+        await handleReelUpload();
       } else {
         showSnackBar(LKey.videoPathNotFound.tr);
       }
@@ -468,68 +466,63 @@ class CameraEditScreenController extends BaseController {
     }
   }
 
-  /// Handles video story: moderation, filtering, music overlay
+  /// Handles video story: filtering, music overlay
+  ///
+  /// Video stories are not screened automatically — see SightEngineService for
+  /// why the moderation gate was removed. They publish immediately and are
+  /// reviewed by an admin afterwards.
   Future<void> _processVideoStory(String inputFile, int storyDuration) async {
     final story = content.value;
     final outputPath = '${localPath}video_story.mp4';
 
-    Loggers.info('[Story Upload] Checking moderation for video...');
+    Get.back();
+    Get.back();
+    Get.back();
+    Get.back();
+    updateUploadingProgress(progress: 20);
 
-    await SightEngineService.shared.checkVideoInSightEngine(
-      xFile: XFile(inputFile),
-      duration: storyDuration,
-      completion: () async {
-        Get.back();
-        Get.back();
-        Get.back();
-        Get.back();
-        Loggers.info('[Story Upload] Moderation completed.');
-        updateUploadingProgress(progress: 20);
+    String finalVideoPath = inputFile;
+    bool hasUserVoice = videoPlayerController.value?.value.volume != 0.0;
+    List<double> filtersValue =
+        listEquals(selectedFilter.value, filters.first.colorFilter)
+            ? []
+            : selectedFilter.value;
+    String? audioPath = story.sound?.downloadedURL;
+    double audioStartMS =
+        double.tryParse('${story.sound?.audioStartMS ?? 0}') ?? 0.0;
+    // Apply filters/music if needed
+    if (audioPath != null) {
+      try {
+        bool? result = await _retrytechPlugin.applyFilterAndAudioToVideo(
+            inputPath: inputFile,
+            outputPath: outputPath,
+            shouldBothMusics: hasUserVoice,
+            filterValues: filtersValue,
+            audioPath: audioPath,
+            audioStartTimeInMS: audioStartMS);
 
-        String finalVideoPath = inputFile;
-        bool hasUserVoice = videoPlayerController.value?.value.volume != 0.0;
-        List<double> filtersValue =
-            listEquals(selectedFilter.value, filters.first.colorFilter)
-                ? []
-                : selectedFilter.value;
-        String? audioPath = story.sound?.downloadedURL;
-        double audioStartMS =
-            double.tryParse('${story.sound?.audioStartMS ?? 0}') ?? 0.0;
-        // Apply filters/music if needed
-        if (audioPath != null) {
-          try {
-            bool? result = await _retrytechPlugin.applyFilterAndAudioToVideo(
-                inputPath: inputFile,
-                outputPath: outputPath,
-                shouldBothMusics: hasUserVoice,
-                filterValues: filtersValue,
-                audioPath: audioPath,
-                audioStartTimeInMS: audioStartMS);
+        if (result == true) finalVideoPath = outputPath;
+      } catch (e) {
+        Loggers.error('[Story Upload] Failed to apply filter/audio: $e');
+        failedResponseSnackBar();
+        return;
+      }
+    }
 
-            if (result == true) finalVideoPath = outputPath;
-          } catch (e) {
-            Loggers.error('[Story Upload] Failed to apply filter/audio: $e');
-            failedResponseSnackBar();
-            return;
-          }
-        }
+    updateUploadingProgress(progress: 90);
 
-        updateUploadingProgress(progress: 90);
-
-        try {
-          await addStory(
-              content: finalVideoPath,
-              duration: storyDuration,
-              type: PostStoryContentType.storyVideo,
-              musicId: story.sound?.music?.id ?? -1,
-              thumbnail: inputFile);
-        } catch (e) {
-          Loggers.error('❌ Error posting image/text story: $e');
-        } finally {
-          isMergingVideo.value = false;
-        }
-      },
-    );
+    try {
+      await addStory(
+          content: finalVideoPath,
+          duration: storyDuration,
+          type: PostStoryContentType.storyVideo,
+          musicId: story.sound?.music?.id ?? -1,
+          thumbnail: inputFile);
+    } catch (e) {
+      Loggers.error('❌ Error posting image/text story: $e');
+    } finally {
+      isMergingVideo.value = false;
+    }
   }
 
   /// Handles image/text story: moderation, screenshot, optional music or filter

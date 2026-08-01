@@ -273,7 +273,48 @@ class ApiService {
     }
 
     final responseStr = await responseStream.stream.bytesToString();
-    final decodedResponse = jsonDecode(responseStr) as Map<String, dynamic>;
+    Loggers.success(responseStream.statusCode);
+
+    // This path used to jsonDecode the body blind — no status check, none of
+    // the tolerance call() has. Anything that is not the JSON we expect (a
+    // LiteSpeed 413 page when the body exceeds post_max_size, a 502/504 from
+    // the shared host, a PHP warning printed ahead of the JSON) came back as a
+    // raw FormatException and was shown to the user as
+    // "FormatException: Unexpected character...". Classify the failure here so
+    // callers can surface something a user can act on.
+    if (responseStream.statusCode == 413) {
+      Loggers.error('Upload rejected as too large (413): $url');
+      // post_max_size on the production host is the real ceiling (128M at time
+      // of writing) and it is smaller than upload_max_filesize, so PHP discards
+      // the body before Laravel ever sees the file.
+      throw Exception(
+          'File too large to upload. Please choose a shorter or smaller video.');
+    } else if (responseStream.statusCode == 401) {
+      Loggers.error('Unauthorized Error 401: $url');
+      // Mirrors call(): only a logged-in user has a session that can expire.
+      if (SessionManager.instance.isLogin()) {
+        DebounceAction.shared.call(() {
+          Get.offAll(
+              () => const SessionExpiredScreen(type: SessionType.unauthorized));
+        });
+      }
+      throw Exception('Unauthorized Error: ${responseStream.statusCode}');
+    } else if (responseStream.statusCode < 200 ||
+        responseStream.statusCode >= 300) {
+      Loggers.error(
+          'Upload HTTP error ${responseStream.statusCode}: ${_shorten(responseStr)}');
+      throw Exception(
+          "HTTP Error: ${responseStream.statusCode} - ${responseStream.reasonPhrase}");
+    }
+
+    final Map<String, dynamic> decodedResponse;
+    try {
+      decodedResponse = _decodeJsonBody(responseStr, url);
+    } on FormatException catch (e) {
+      Loggers.error(
+          'Invalid JSON from upload $url: ${_shorten(responseStr)}');
+      throw Exception("Invalid JSON format: ${e.message}");
+    }
 
     if (decodedResponse['status'] == false) {
       Loggers.error(decodedResponse['message']);

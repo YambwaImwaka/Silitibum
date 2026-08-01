@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'dart:developer';
-import 'dart:io';
 
-import 'package:flutter_native_video_trimmer/flutter_native_video_trimmer.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -12,7 +10,6 @@ import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/sight_engine/sight_engine_media_model.dart';
 import 'package:shortzz/model/sight_engine/text_moderation_model.dart';
-import 'package:shortzz/utilities/app_res.dart';
 
 class SightEngineService {
   static var shared = SightEngineService();
@@ -105,74 +102,21 @@ class SightEngineService {
     }
   }
 
-  Future<void> checkVideoInSightEngine(
-      {required XFile xFile,
-      required int duration,
-      required Function() completion}) async {
-    if (_isModerationOff) {
-      completion();
-      return;
-    }
-    final workflow =
-        (SessionManager.instance.getSettings()?.sightEngineVideoWorkflowId ??
-                '')
-            .trim();
-    if (!_ensureConfigured(workflowId: workflow)) return;
-
-    final String? action =
-        await BaseController.share.withLoader<String?>(() async {
-      File file = File(xFile.path);
-      if (duration > AppRes.sightEngineCropSec) {
-        final videoTrimmer = VideoTrimmer();
-        await videoTrimmer.loadVideo(file.path);
-        final trimmedPath = await videoTrimmer.trimVideo(
-          startTimeMs: 0,
-          endTimeMs: AppRes.sightEngineCropSec * 1000,
-          includeAudio: false,
-        );
-        file = File(trimmedPath ?? '');
-      }
-
-      var request = http.MultipartRequest(
-        'POST',
-        Uri.parse(
-            'https://api.sightengine.com/1.0/video/check-workflow-sync.json'),
-      );
-      request.fields['workflow'] = workflow;
-      request.fields['api_user'] = _apiUser;
-      request.fields['api_secret'] = _apiSecret;
-
-      request.files.add(await http.MultipartFile.fromPath('media', file.path,
-          filename: file.path.split("/").last));
-
-      var response = await request.send().timeout(_requestTimeout);
-      var respStr = await response.stream.bytesToString();
-      SightEngineMediaModel sightEngineMediaModel =
-          SightEngineMediaModel.fromJson(jsonDecode(respStr));
-
-      if (sightEngineMediaModel.error != null) {
-        Loggers.error(sightEngineMediaModel.error?.message);
-        BaseController.share
-            .showSnackBar(sightEngineMediaModel.error?.message ?? '');
-        return null;
-      }
-
-      var result = sightEngineMediaModel.summary?.action ?? '';
-      if (result == 'reject') {
-        var summaryDescription = sightEngineMediaModel.summary?.rejectReason
-                ?.map((e) => e.text ?? '')
-                .join(', ') ??
-            '';
-        BaseController.share.showSnackBar(
-            '${LKey.mediaRejectedAndContainsSuchThings.tr} $summaryDescription');
-      }
-      return result;
-    });
-
-    if (action == 'accept') {
-      completion();
-    }
-  }
+  // NOTE: there is deliberately no video moderation here.
+  //
+  // Video Analysis is a paid-plan SightEngine feature. On this account every
+  // call to video/check-workflow-sync.json came back
+  // `usage_limit` / code 3701 ("You do not have access to Video Analysis"),
+  // which the caller could not distinguish from a real verdict — the upload
+  // callback simply never fired, so reels, video stories and video feed posts
+  // silently refused to upload while photos still worked.
+  //
+  // Videos are now published unchecked and reviewed by hand: an admin removes
+  // explicit uploads from the dashboard (Posts → delete, and the moderator
+  // endpoints in ModeratorController). Image and text moderation below are
+  // unaffected — those work on the free plan and still run on every post.
+  // If a video-capable provider is added later, re-introduce the gate here so
+  // the call sites keep their single moderation entry point.
 
   Future<void> chooseTextModeration(
       {required String text, required Function() completion}) async {

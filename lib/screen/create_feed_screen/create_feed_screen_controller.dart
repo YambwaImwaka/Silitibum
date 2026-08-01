@@ -252,14 +252,10 @@ class CreateFeedScreenController extends BaseController {
         );
         break;
       case FeedPostType.video:
-        Loggers.info('Running SightEngine video moderation...');
-        SightEngineService.shared.checkVideoInSightEngine(
-          xFile: video.value!.media,
-          duration: videoPlayerController.value?.value.duration.inSeconds ?? 0,
-          completion: () {
-            _uploadPostHandler(params);
-          },
-        );
+        // Videos are not screened automatically — see SightEngineService.
+        // They upload straight away and an admin reviews them afterwards.
+        Loggers.info('Skipping video moderation (manual review)...');
+        _uploadPostHandler(params);
         break;
     }
   }

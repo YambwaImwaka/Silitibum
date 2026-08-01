@@ -119,9 +119,6 @@ class AppRes {
     "gym",
     "restaurant"
   ]; // For more Type visit : https://developers.google.com/maps/documentation/places/web-service/place-types#table-a
-
-  // Sight engine
-  static const int sightEngineCropSec = 5;
 }
 
 enum TabType {
