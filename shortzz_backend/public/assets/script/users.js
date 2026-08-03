@@ -148,19 +148,28 @@ $(document).ready(function () {
 
                 const formData = new FormData();
                 formData.append("user_id", userId);
-                try {
-                    doAjax(`${domainUrl}deleteUser_Admin`, formData).then(function (response) {
+                doAjax(`${domainUrl}deleteUser_Admin`, formData)
+                    .then(function (response) {
                         if (response.status) {
                             reloadDataTables(["usersTable", "moderatorsTable", "dummyUserTable"]);
                             showSuccessToast(response.message);
                         } else {
                             showErrorToast(response.message);
                         }
+                    })
+                    // Without this a rejected request (419 expired session,
+                    // 500, dropped connection) never reaches .then() and the
+                    // click looks like it did nothing at all. A try/catch
+                    // cannot cover it — the failure is asynchronous.
+                    .catch(function (xhr) {
+                        console.error("deleteUser_Admin failed", xhr);
+                        const status = xhr && xhr.status ? xhr.status : "network";
+                        showErrorToast(
+                            status === 419
+                                ? "Session expired — reload the page and try again."
+                                : `Delete failed (${status}). See console for details.`
+                        );
                     });
-                } catch (error) {
-                    console.log("Error! : ", error.message);
-                    showErrorToast(error.message);
-                }
             });
         });
     });

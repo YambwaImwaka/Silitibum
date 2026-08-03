@@ -1,6 +1,10 @@
 @extends('include.app')
 @section('script')
-<script src="{{ asset('assets/script/users.js') }}"></script>
+{{-- ?v=filemtime busts the browser cache on deploy. Without it this file is
+     served with only a Last-Modified header, so browsers heuristically keep
+     the copy they already have and a JS change can appear to do nothing at
+     all — the handler simply is not in the script they are running. --}}
+<script src="{{ asset('assets/script/users.js') }}?v={{ @filemtime(public_path('assets/script/users.js')) ?: time() }}"></script>
 @endsection
 @section('content')
 
