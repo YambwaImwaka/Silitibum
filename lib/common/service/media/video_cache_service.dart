@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
+import 'package:video_player/video_player.dart';
 
 /// Disk cache for feed/reel video files, separate from the image cache
 /// cached_network_image manages. Reels get played from this cache when a
@@ -34,5 +35,16 @@ class VideoCacheService {
     if (url.isEmpty) return null;
     final info = await instance.getFileFromCache(url);
     return info?.file;
+  }
+
+  /// Shared "play from disk if we already have it, otherwise stream" logic —
+  /// previously duplicated across reels_screen_controller.dart, reel_seek_bar.dart
+  /// and video_player_screen.dart. Callers must still call `.initialize()` on
+  /// the returned controller.
+  static Future<VideoPlayerController> createController(String url) async {
+    final cachedFile = await getCachedFile(url);
+    return cachedFile != null
+        ? VideoPlayerController.file(cachedFile)
+        : VideoPlayerController.networkUrl(Uri.parse(url));
   }
 }

@@ -150,6 +150,7 @@ class _Post {
 
 class _Setting {
   String fetchSettings = "${apiURL}settings/fetchSettings";
+  String fetchLegalDocs = "${apiURL}settings/fetchLegalDocs";
   String uploadFileGivePath = "${apiURL}settings/uploadFileGivePath";
   String deleteFile = "${apiURL}settings/deleteFile";
 }

@@ -17,6 +17,7 @@ import 'package:shortzz/common/widget/no_internet_sheet.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/model/general/settings_model.dart';
+import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen.dart';
 import 'package:shortzz/screen/on_boarding_screen/on_boarding_screen.dart';
 import 'package:shortzz/screen/select_language_screen/select_language_screen.dart';
@@ -90,6 +91,36 @@ class SplashScreenController extends BaseController {
     var languages = setting?.languages ?? [];
     List<Language> downloadLanguages = languages.where((element) => element.status == 1).toList();
 
+    // Start the profile refetch NOW rather than after the translation
+    // downloads and the widget-tree restart. It depends only on the restored
+    // session, so running it in sequence just stacked another round trip on
+    // top of the language CSVs — on a slow connection that was the difference
+    // between one wait and two. Errors are folded into a null result here so
+    // a failure can't escape as an unhandled rejection while nothing is
+    // awaiting it yet.
+    Future<User?>? userRequest;
+    if (SessionManager.instance.isLogin()) {
+      // RevenueCat identity has to be re-established on EVERY launch, not just
+      // at login. Purchases.configure() in main() always starts an anonymous
+      // customer, and a restored session used to reach the dashboard without
+      // ever calling logIn() — so every returning user stayed
+      // $RCAnonymousID:... Purchases made in that state are invisible to both
+      // consumers of the id: WalletController::buyCoins looks the customer up
+      // by numeric id and finds no purchase (store charges, coins never
+      // credited), and RevenueCatWebhookController's ctype_digit() guard
+      // no-ops, so the verified badge never lands.
+      final rcUserId = SessionManager.instance.getUserID();
+      if (rcUserId != 0) {
+        SubscriptionManager.shared.login('$rcUserId');
+      }
+      userRequest = UserService.instance
+          .fetchUserDetails(userId: SessionManager.instance.getUserID())
+          .catchError((e, st) {
+        Loggers.error('fetchUserDetails failed, falling back to cached user: $e');
+        return null;
+      });
+    }
+
     if (downloadLanguages.isEmpty) {
       // FIX: previously returned here with only a snackbar shown, leaving
       // the user stuck on the splash screen. Now it still warns, but also
@@ -107,32 +138,15 @@ class SplashScreenController extends BaseController {
 
     RestartWidget.restartApp(Get.context!);
 
-    if (SessionManager.instance.isLogin()) {
-      // RevenueCat identity has to be re-established on EVERY launch, not just
-      // at login. Purchases.configure() in main() always starts an anonymous
-      // customer, and a restored session used to reach the dashboard without
-      // ever calling logIn() — so every returning user stayed
-      // $RCAnonymousID:... Purchases made in that state are invisible to both
-      // consumers of the id: WalletController::buyCoins looks the customer up
-      // by numeric id and finds no purchase (store charges, coins never
-      // credited), and RevenueCatWebhookController's ctype_digit() guard
-      // no-ops, so the verified badge never lands.
-      final rcUserId = SessionManager.instance.getUserID();
-      if (rcUserId != 0) {
-        SubscriptionManager.shared.login('$rcUserId');
-      }
-      UserService.instance.fetchUserDetails(userId: SessionManager.instance.getUserID()).then((value) {
-        // The session stays logged in either way; on a failed refetch we
-        // still pass the last-known cached user (rather than null) so the
-        // profile tab doesn't render as "user not found" for someone who is
-        // actually signed in — it'll just refresh again from there.
-        Get.off(() => DashboardScreen(myUser: value ?? SessionManager.instance.getUser()));
-      }).catchError((e, st) {
-        // FIX: fetchUserDetails() had no error handling — a failed/timed
-        // out call here would leave the app stuck after the restart.
-        Loggers.error('fetchUserDetails failed, falling back to cached user: $e');
-        Get.off(() => DashboardScreen(myUser: SessionManager.instance.getUser()));
-      });
+    if (userRequest != null) {
+      // Already in flight since before the translation downloads — by now it
+      // has usually resolved, so this await costs nothing. The session stays
+      // logged in either way; on a failed refetch we still pass the
+      // last-known cached user (rather than null) so the profile tab doesn't
+      // render as "user not found" for someone who is actually signed in —
+      // it'll just refresh again from there.
+      final value = await userRequest;
+      Get.off(() => DashboardScreen(myUser: value ?? SessionManager.instance.getUser()));
     } else {
       bool isLanguageSelect = SessionManager.instance.getBool(SessionKeys.isLanguageScreenSelect);
       bool onBoardingShow = SessionManager.instance.getBool(SessionKeys.isOnBoardingScreenSelect);

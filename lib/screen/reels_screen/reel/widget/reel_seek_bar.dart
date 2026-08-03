@@ -88,10 +88,7 @@ class _ReelSeekBarState extends State<ReelSeekBar> {
     // Prefer the already-downloaded file. Scrubbing used to open a *second*
     // network stream of a video we usually have on disk, competing with the
     // reel still buffering behind it.
-    final cachedFile = await VideoCacheService.getCachedFile(url);
-    VideoPlayerController newController = cachedFile != null
-        ? VideoPlayerController.file(cachedFile)
-        : VideoPlayerController.networkUrl(Uri.parse(url));
+    VideoPlayerController newController = await VideoCacheService.createController(url);
     await newController.initialize();
     newController.addListener(_updateOverlayPosition);
 

@@ -189,6 +189,9 @@ Route::middleware('checkHeader')->group(function () {
     // Settings Routes
     Route::prefix('settings')->group(function () {
         Route::post('fetchSettings', [SettingsController::class, 'fetchSettings']);
+        // Split out of fetchSettings so its ~20KB of HTML is fetched only when
+        // the privacy/terms screen is actually opened.
+        Route::post('fetchLegalDocs', [SettingsController::class, 'fetchLegalDocs']);
         Route::post('uploadFileGivePath', [SettingsController::class, 'uploadFileGivePath'])->middleware('authorizeUser');
         Route::post('deleteFile', [SettingsController::class, 'deleteFile'])->middleware('authorizeUser');
     });

@@ -36,8 +36,17 @@ android {
 
     buildTypes {
         release {
-            shrinkResources false
-            minifyEnabled false
+            // R8 code + resource shrinking. Keep rules live in
+            // proguard-rules.pro, which deliberately keeps the reflection-heavy
+            // SDKs (Zego, DeepAR, RevenueCat, flutter_local_notifications)
+            // whole — R8 cannot see their runtime-resolved call sites, and a
+            // wrongly-stripped class there fails only in a release build.
+            //
+            // If a release-only crash ever points at one of those SDKs, flip
+            // both flags back to false to confirm before chasing it further.
+            shrinkResources true
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug

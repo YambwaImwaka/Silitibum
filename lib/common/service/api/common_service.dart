@@ -22,6 +22,11 @@ class CommonService {
   Future<bool> fetchGlobalSettings() async {
     SettingModel settingsModel = await ApiService.instance.call(
         url: WebService.setting.fetchSettings,
+        // Skips privacy_policy + terms_of_uses, which were 79% of this
+        // payload (26KB -> 5KB) and are only needed on the privacy/terms
+        // screen — fetchLegalDocs() loads them there instead. This request
+        // is on the cold-start critical path, so the bytes matter.
+        param: {Params.lite: '1'},
         fromJson: SettingModel.fromJson,
         cancelAuthToken: true);
 
@@ -31,6 +36,21 @@ class CommonService {
       return true;
     }
     return false;
+  }
+
+  /// The two large HTML documents split out of [fetchGlobalSettings]. Returns
+  /// null on failure so the caller can show its own error state rather than
+  /// an empty page that looks like missing content.
+  Future<LegalDocs?> fetchLegalDocs() async {
+    try {
+      final json = await ApiService.instance.call<Map<String, dynamic>>(
+          url: WebService.setting.fetchLegalDocs, cancelAuthToken: true);
+      final data = json['data'];
+      if (data is Map<String, dynamic>) return LegalDocs.fromJson(data);
+    } catch (e) {
+      Loggers.error('fetchLegalDocs failed: $e');
+    }
+    return null;
   }
 
   Future<FilePathModel> uploadFileGivePath(XFile files,

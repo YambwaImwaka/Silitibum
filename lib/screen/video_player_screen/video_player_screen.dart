@@ -4,6 +4,8 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/duration_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
+import 'package:shortzz/common/service/media/video_cache_service.dart';
+import 'package:shortzz/common/service/media/video_stall_watcher.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
 import 'package:shortzz/common/widget/black_gradient_shadow.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
@@ -28,24 +30,60 @@ class VideoPlayerScreen extends StatefulWidget {
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   final Rx<VideoPlayerController?> _videoPlayerController = Rx(null);
+  final RxBool hasPlaybackError = false.obs;
   Post? post;
   bool isUIVisible = true;
+  VideoStallWatcher? _stallWatcher;
 
   @override
   void initState() {
     super.initState();
     post = widget.post;
-    _videoPlayerController.value =
-        VideoPlayerController.networkUrl(Uri.parse(post?.video?.addBaseURL() ?? ''))
-          ..initialize().then((value) {
-            _videoPlayerController.value?.play();
-            _videoPlayerController.refresh();
-            _increaseViewCount();
-          });
+    _initPlayer();
+  }
+
+  Future<void> _initPlayer() async {
+    // Prefers the HLS master playlist once transcoding has finished
+    // (adaptive bitrate), falling back to the raw MP4 otherwise — see
+    // Post.playbackVideoPath.
+    final url = post?.playbackVideoPath?.addBaseURL() ?? '';
+    hasPlaybackError.value = false;
+
+    // Cache-aware: plays instantly from disk if this video was already
+    // downloaded elsewhere in the app (e.g. seen earlier in the reels feed),
+    // otherwise falls back to streaming — same helper the reels feed uses,
+    // so this screen is no longer the one video surface with zero caching.
+    final controller = await VideoCacheService.createController(url);
+    await controller.initialize();
+    if (!mounted) {
+      controller.dispose();
+      return;
+    }
+    _videoPlayerController.value = controller;
+    controller.play();
+    _videoPlayerController.refresh();
+    _increaseViewCount();
+
+    _stallWatcher?.dispose();
+    _stallWatcher = VideoStallWatcher(
+      url: url,
+      onControllerReplaced: (fresh) {
+        if (!mounted) {
+          fresh.dispose();
+          return;
+        }
+        _videoPlayerController.value = fresh;
+        _videoPlayerController.refresh();
+      },
+      onGiveUp: () {
+        if (mounted) hasPlaybackError.value = true;
+      },
+    )..watch(controller);
   }
 
   @override
   void dispose() {
+    _stallWatcher?.dispose();
     if (_videoPlayerController.value != null) {
       _videoPlayerController.value?.dispose();
       _videoPlayerController.value = null; // Set to null after disposing
@@ -63,8 +101,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: blackPure(context),
-      body: Center(
-        child: Obx(
+      body: Stack(
+        children: [
+          Center(child: _buildPlayerBody(context)),
+          Obx(() {
+            if (!hasPlaybackError.value) return const SizedBox.shrink();
+            return Positioned.fill(
+              child: Container(
+                color: blackPure(context).withValues(alpha: .6),
+                child: Center(
+                  child: InkWell(
+                    onTap: _initPlayer,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.refresh, color: whitePure(context), size: 40),
+                        const SizedBox(height: 8),
+                        Text('Tap to retry',
+                            style: TextStyleCustom.outFitMedium500(
+                                color: whitePure(context), fontSize: 15)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayerBody(BuildContext context) {
+    return Obx(
           () {
             if (_videoPlayerController.value == null) {
               return CustomImage(
@@ -166,9 +235,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
               );
             }
           },
-        ),
-      ),
-    );
+        );
   }
 }
 

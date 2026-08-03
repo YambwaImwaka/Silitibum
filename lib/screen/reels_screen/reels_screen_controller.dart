@@ -235,18 +235,20 @@ class ReelsScreenController extends BaseController {
           File(reel.video ?? ''),
         );
       } else {
-        final videoUrl = reel.video?.addBaseURL() ?? '';
+        // Prefers the HLS master playlist once transcoding has finished
+        // (adaptive bitrate), falling back to the raw MP4 otherwise — see
+        // Post.playbackVideoPath. VideoCacheService's disk cache only ever
+        // holds MP4s (prefetch() below always targets `video`, never
+        // `hlsPath`), so an HLS url simply misses the cache lookup and falls
+        // through to networkUrl(), which is the correct behavior: ExoPlayer/
+        // AVPlayer do their own internal HLS segment handling.
+        final videoUrl = reel.playbackVideoPath?.addBaseURL() ?? '';
         // Play straight from disk when _prefetchBeyondLookahead already landed
         // the file (or this is a rewatch) — zero network cost. Otherwise
         // stream it. Note we deliberately do *not* also kick off a cache
         // download for this url here: doing both meant downloading the same
         // video twice at once and starving the playing stream.
-        final cachedFile = await VideoCacheService.getCachedFile(videoUrl);
-        if (cachedFile != null) {
-          controller = VideoPlayerController.file(cachedFile);
-        } else {
-          controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-        }
+        controller = await VideoCacheService.createController(videoUrl);
       }
 
       await controller.initialize();

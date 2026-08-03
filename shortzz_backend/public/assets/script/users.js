@@ -114,6 +114,57 @@ $(document).ready(function () {
         });
     })
 
+    // Permanent account deletion. Unlike every other action on this page this
+    // one cannot be undone, so it asks the admin to type the username back
+    // rather than offering a single "Yes" — a misplaced click on the row above
+    // would otherwise destroy the wrong person's account and all their media.
+    $(document).on("click", ".deleteUserAccount", function (e) {
+        e.preventDefault();
+        const userId = $(this).attr("rel");
+        const username = $(this).data("username");
+
+        checkUserType(() => {
+            Swal.fire({
+                icon: "warning",
+                title: "Delete this account permanently?",
+                html:
+                    `This removes <b>${username}</b> and all their posts, comments, ` +
+                    `likes, follows, stories, chats and uploaded files.<br><br>` +
+                    `Payment records are kept for auditing, with the link to this ` +
+                    `user removed.<br><br><b>This cannot be undone.</b><br><br>` +
+                    `Type the username to confirm:`,
+                input: "text",
+                inputPlaceholder: username,
+                showDenyButton: true,
+                denyButtonText: "Cancel",
+                confirmButtonText: "Delete permanently",
+                confirmButtonColor: "#d33",
+                inputValidator: (value) =>
+                    value === String(username)
+                        ? undefined
+                        : "That does not match the username.",
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+
+                const formData = new FormData();
+                formData.append("user_id", userId);
+                try {
+                    doAjax(`${domainUrl}deleteUser_Admin`, formData).then(function (response) {
+                        if (response.status) {
+                            reloadDataTables(["usersTable", "moderatorsTable", "dummyUserTable"]);
+                            showSuccessToast(response.message);
+                        } else {
+                            showErrorToast(response.message);
+                        }
+                    });
+                } catch (error) {
+                    console.log("Error! : ", error.message);
+                    showErrorToast(error.message);
+                }
+            });
+        });
+    });
+
     $(document).on("change", ".freezeUser", function () {
          checkUserType(() => {
             const userId = $(this).attr("rel");

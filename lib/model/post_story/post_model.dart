@@ -57,6 +57,8 @@ class Post {
     this.hashtags,
     this.video,
     this.thumbnail,
+    this.videoStatus,
+    this.hlsPath,
     this.views,
     this.likes,
     this.comments,
@@ -92,6 +94,8 @@ class Post {
     hashtags = asStringOrNull(json['hashtags']);
     video = asStringOrNull(json['video']);
     thumbnail = asStringOrNull(json['thumbnail']);
+    videoStatus = asIntOrNull(json['video_status']);
+    hlsPath = asStringOrNull(json['hls_path']);
     views = asNumOrNull(json['views']);
     likes = asNumOrNull(json['likes']);
     comments = asNumOrNull(json['comments']);
@@ -136,6 +140,14 @@ class Post {
   String? hashtags;
   String? video;
   String? thumbnail;
+  // 0=raw (video only) 1=transcoding 2=ready (hlsPath set) 3=failed. Null on
+  // any post predating this field (chat/legacy payloads) — treated the same
+  // as 0, i.e. play `video`.
+  int? videoStatus;
+  // Relative key (same convention as video/thumbnail) to the adaptive-bitrate
+  // HLS master playlist, set once videoStatus reaches 2. See
+  // playbackVideoPath below.
+  String? hlsPath;
   num? views;
   num? likes;
   num? comments;
@@ -159,6 +171,10 @@ class Post {
   Music? music;
   User? user;
 
+  /// Relative path to actually play: the HLS master playlist once transcoding
+  /// finished (adaptive bitrate), otherwise the original `video` MP4.
+  String? get playbackVideoPath => (videoStatus == 2 && hlsPath != null) ? hlsPath : video;
+
   Map<String, dynamic> toJson() {
     final map = <String, dynamic>{};
     map['id'] = id;
@@ -171,6 +187,8 @@ class Post {
     map['hashtags'] = hashtags;
     map['video'] = video;
     map['thumbnail'] = thumbnail;
+    map['video_status'] = videoStatus;
+    map['hls_path'] = hlsPath;
     map['views'] = views;
     map['likes'] = likes;
     map['comments'] = comments;

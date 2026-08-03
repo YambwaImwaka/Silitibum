@@ -177,6 +177,7 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::get('viewUserDetails/{id}', [UserController::class, 'viewUserDetails'])->name('viewUserDetails');
     Route::post('deleteUserLink_Admin', [UserController::class, 'deleteUserLink_Admin'])->name('deleteUserLink_Admin');
     Route::post('changeUserModeratorStatus', [UserController::class, 'changeUserModeratorStatus'])->name('changeUserModeratorStatus');
+    Route::post('deleteUser_Admin', [UserController::class, 'deleteUser_Admin'])->name('deleteUser_Admin');
     Route::post('listUserPosts', [PostsController::class, 'listUserPosts'])->name('listUserPosts');
     Route::post('listUserStories', [StoryController::class, 'listUserStories'])->name('listUserStories');
     Route::post('deleteStory_Admin', [StoryController::class, 'deleteStory_Admin'])->name('deleteStory_Admin');

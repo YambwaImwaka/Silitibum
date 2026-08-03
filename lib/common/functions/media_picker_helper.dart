@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:get/get.dart';
@@ -156,9 +157,25 @@ class MediaPickerHelper {
   }
 
   Future<XFile?> compressVideo(String filePath, String localPath) async {
-    MediaInfo oldFile = await getVideoInfo(filePath);
-    Loggers.success('Old File ${oldFile.toJson()}');
-    MediaInfo? file = await VideoCompress.compressVideo(filePath);
+    if (kDebugMode) {
+      // Guarded because getVideoInfo() is a platform-channel round trip whose
+      // only consumer is this log line — Loggers itself no-ops in release, but
+      // the await still ran, charging every upload for a native call nobody
+      // reads.
+      final oldFile = await getVideoInfo(filePath);
+      Loggers.success('Old File ${oldFile.toJson()}');
+    }
+    // Explicit 720p ceiling instead of the package's undocumented
+    // VideoQuality.DefaultQuality — caps upload size/bitrate regardless of
+    // source resolution (phone cameras commonly record 1080p/4K), which
+    // both speeds up the upload and reduces what has to be served/streamed
+    // to every viewer afterwards.
+    MediaInfo? file = await VideoCompress.compressVideo(
+      filePath,
+      quality: VideoQuality.Res1280x720Quality,
+      deleteOrigin: false,
+      includeAudio: true,
+    );
     if (file?.file == null) {
       return null;
     }

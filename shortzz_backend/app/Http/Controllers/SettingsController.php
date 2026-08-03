@@ -703,7 +703,7 @@ class SettingsController extends Controller
     // an admin edit to a couple of minutes without having to track down and
     // invalidate on every one of the many admin CRUD screens that touch
     // these tables.
-    public function fetchSettings()
+    public function fetchSettings(Request $request)
     {
         $data = Cache::remember('app_settings_payload', now()->addMinutes(2), function () {
             $data = GlobalSettings::first();
@@ -734,9 +734,48 @@ class SettingsController extends Controller
             return $data;
         });
 
+        // privacy_policy (~13KB) and terms_of_uses (~7KB) were 79% of this
+        // 26KB payload, downloaded on every cold start, to render on one
+        // screen most users never open. Clients that know to fetch them
+        // on demand (fetchLegalDocs below) send lite=1 and skip them.
+        //
+        // Opt-in rather than just removing them: already-installed builds
+        // read these straight off the cached settings object, so dropping
+        // them unconditionally would leave those users with a blank
+        // privacy/terms screen and no way to recover it.
+        if ($request->boolean('lite')) {
+            // Clone so stripping never mutates the object still sitting in
+            // the cache for concurrent/subsequent requests.
+            $data = clone $data;
+            $data->privacy_policy = null;
+            $data->terms_of_uses = null;
+        }
+
         return response()->json([
             'status' => true,
             'message' => 'Settings Fetched',
+            'data' => $data,
+        ]);
+    }
+
+    // Serves the two large HTML documents split out of fetchSettings, so they
+    // cost nothing until the user actually opens the privacy/terms screen.
+    // Longer TTL than the settings payload: legal copy changes far less often
+    // than gifts/coin packages do.
+    public function fetchLegalDocs()
+    {
+        $data = Cache::remember('app_legal_docs', now()->addMinutes(30), function () {
+            $settings = GlobalSettings::first(['privacy_policy', 'terms_of_uses']);
+
+            return [
+                'privacy_policy' => $settings->privacy_policy ?? '',
+                'terms_of_uses' => $settings->terms_of_uses ?? '',
+            ];
+        });
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Legal Docs Fetched',
             'data' => $data,
         ]);
     }

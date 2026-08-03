@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:just_audio/just_audio.dart';
@@ -1059,7 +1060,12 @@ class LivestreamScreenController extends BaseController {
   void updateStateAction(
       LivestreamUserState? oldState, LivestreamUserState newState) {
     if (newState.userId == myUserId) {
-      Loggers.info('Updating state for userId: ${newState.toJson()}');
+      // toJson() runs before Loggers can no-op it, and this fires on every
+      // participant state change for the whole livestream — guarded so
+      // release builds don't serialize a model per event.
+      if (kDebugMode) {
+        Loggers.info('Updating state for userId: ${newState.toJson()}');
+      }
       if (newState.type == LivestreamUserType.coHost &&
           oldState?.type != LivestreamUserType.coHost) {
         publishCoHostStream(myUserId);

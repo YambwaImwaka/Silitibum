@@ -24,6 +24,16 @@ class Kernel extends ConsoleKernel
             ->everyFiveMinutes()
             ->withoutOverlapping()
             ->runInBackground();
+
+        // TranscodeVideoJob only launches ffmpeg and records its PID (a
+        // queued job can't safely wait out an encode — see that class); this
+        // is what actually notices completion/failure/hangs and uploads the
+        // finished HLS output. schedule:run is already active in production
+        // (confirmed via crontab -l) so this needs no new cron entry.
+        $schedule->command('videos:poll-transcode-status')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**

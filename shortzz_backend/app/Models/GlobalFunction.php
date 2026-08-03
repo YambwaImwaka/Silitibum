@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Jobs\TranscodeVideoJob;
 use App\Mail\VerificationCodeMail;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
@@ -934,6 +935,25 @@ class GlobalFunction extends Model
         }
         $post->save();
 
+        // Kick off background HLS transcoding for reel/video posts. Publishing
+        // is never blocked on this — the post is already saved above and
+        // serves its raw `video` MP4 immediately; this job only upgrades it to
+        // adaptive-bitrate HLS once transcoding finishes (see TranscodeVideoJob
+        // and PollTranscodeStatus for why this is split into a fire-and-forget
+        // dispatch + a separate polling step rather than one blocking job).
+        //
+        // Deliberately NOT dispatched to a named queue: production's worker
+        // cron runs `queue:work --stop-when-empty --max-time=50` with no
+        // `--queue=` flag, which only drains the 'default' queue (see
+        // config/queue.php connections.database.queue). Dispatching to e.g.
+        // onQueue('transcode') would silently never run without also editing
+        // the crontab — not worth that risk for an isolation benefit we don't
+        // need (the job's handle() itself only takes milliseconds, see
+        // TranscodeVideoJob).
+        if ($postType == Constants::postTypeReel || $postType == Constants::postTypeVideo) {
+            TranscodeVideoJob::dispatch($post->id);
+        }
+
         // Image Post
         if ($postType == Constants::postTypeImage) {
             foreach ($request->post_images as $image) {
@@ -1373,6 +1393,21 @@ class GlobalFunction extends Model
                 return env('APP_URL') . 'public/storage/';
         }
     }
+    // The Laravel disk name (config/filesystems.php) matching whichever
+    // storage backend FILES_STORAGE_LOCATION currently selects — pulled out
+    // of the saveFileAndGivePath/deleteFile switch so PollTranscodeStatus can
+    // upload a completed HLS rendition tree to the same place everything
+    // else already goes, without duplicating the mapping a third time.
+    public static function resolveStorageDisk(): ?string
+    {
+        return match (env('FILES_STORAGE_LOCATION')) {
+            'AWSS3' => 's3',
+            'DOSPACE' => 'digitalocean',
+            'PUBLIC' => 'public',
+            default => null,
+        };
+    }
+
     public static function generateFileUrl($filePath)
     {
         if ($filePath != null) {

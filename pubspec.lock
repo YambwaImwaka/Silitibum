@@ -558,14 +558,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.0.0"
-  flutter_native_video_trimmer:
-    dependency: "direct main"
-    description:
-      name: flutter_native_video_trimmer
-      sha256: d31159c34fb4e56fe53919b5b9978f75b5fb4b2934ceb05c6b369929139d3b72
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.9"
   flutter_plugin_android_lifecycle:
     dependency: transitive
     description:
@@ -1185,7 +1177,7 @@ packages:
     source: hosted
     version: "3.2.1"
   path:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: path
       sha256: "75cca69d1490965be98c73ceaea117e8a04dd21217b37b292c9ddbec0d955bc5"
@@ -1470,14 +1462,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  smooth_highlight:
-    dependency: "direct main"
-    description:
-      name: smooth_highlight
-      sha256: ff22130e0dcadba40ea7c680b6a41470ebe05be18c7ab1b14b1d08e65ef789a6
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.1.2"
   source_span:
     dependency: transitive
     description:

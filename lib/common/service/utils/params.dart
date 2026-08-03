@@ -122,4 +122,5 @@ class Params {
   static const String regionName = 'regionName';
   static const String timezone = 'timezone';
   static const String metadata = 'metadata';
+  static const String lite = 'lite';
 }

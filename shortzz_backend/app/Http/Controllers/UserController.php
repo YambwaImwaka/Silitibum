@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Constants;
 use App\Models\Followers;
+use App\Services\AccountDeleter;
 use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
 use App\Models\UserAuthTokens;
@@ -108,6 +109,29 @@ class UserController extends Controller
         $user->save();
 
         return GlobalFunction::sendSimpleResponse(true, 'changes applied successfully');
+    }
+
+    // Permanently deletes an app user and everything attached to them. See
+    // App\Services\AccountDeleter for exactly what is purged, what is kept
+    // (payment records, de-identified) and what is deliberately spared
+    // (uploaded music other people's posts depend on).
+    public function deleteUser_Admin(Request $request){
+        $request->validate(['user_id' => 'required|exists:tbl_users,id']);
+
+        $user = Users::find($request->user_id);
+        if ($user == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found');
+        }
+
+        try {
+            $result = AccountDeleter::delete($user);
+        } catch (\Throwable $e) {
+            Log::error("deleteUser_Admin failed for user {$request->user_id}: {$e->getMessage()}");
+            return GlobalFunction::sendSimpleResponse(false, 'Could not delete this account. Nothing was removed.');
+        }
+
+        return GlobalFunction::sendSimpleResponse(true,
+            "Account deleted permanently ({$result['posts']} posts, {$result['files']} files removed)");
     }
 
     public function deleteUserLink_Admin(Request $request){
@@ -762,7 +786,18 @@ class UserController extends Controller
                           class='action-btn delete d-flex align-items-center justify-content-center btn border rounded-2 text-info ms-1'>
                             <i class='ri-eye-line'></i>
                         </a>";
-            $action = "<span class='d-flex justify-content-end align-items-center'>{$view}</span>";
+            // data-username is echoed back in the confirmation dialog —
+            // deleting the wrong account here is unrecoverable, so the admin
+            // is made to read who they are about to remove.
+            $username = e($item->username ?: ($item->identity ?: "user #{$item->id}"));
+            $delete = "<a href='#'
+                          rel='{$item->id}'
+                          data-username=\"{$username}\"
+                          title='Delete account permanently'
+                          class='action-btn deleteUserAccount d-flex align-items-center justify-content-center btn border rounded-2 text-danger ms-1'>
+                            <i class='ri-delete-bin-line'></i>
+                        </a>";
+            $action = "<span class='d-flex justify-content-end align-items-center'>{$view}{$delete}</span>";
 
             return [
                 $userProfileCard,

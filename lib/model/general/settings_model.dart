@@ -702,3 +702,18 @@ class DeepARFilters {
     return map;
   }
 }
+
+/// privacy_policy + terms_of_uses, split out of the settings payload (they
+/// were 79% of its bytes) and fetched only when the privacy/terms screen
+/// opens. See CommonService.fetchLegalDocs.
+class LegalDocs {
+  LegalDocs({this.privacyPolicy, this.termsOfUses});
+
+  factory LegalDocs.fromJson(Map<String, dynamic> json) => LegalDocs(
+        privacyPolicy: asStringOrNull(json['privacy_policy']),
+        termsOfUses: asStringOrNull(json['terms_of_uses']),
+      );
+
+  final String? privacyPolicy;
+  final String? termsOfUses;
+}
