@@ -4,10 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class CommentReplies extends Model
 {
     use HasFactory;
+    // Retained on delete, same as comments and posts.
+    use SoftDeletes;
+
     public $table = "comment_replies";
 
     public function comment()

@@ -12,6 +12,19 @@ class StyleRes {
     end: Alignment.centerRight,
   );
 
+  /// Flat fill for unselected bottom-bar icons. Not theme-resolved on purpose:
+  /// the bar is a fixed black surface, so it needs a colour picked against
+  /// black rather than against the scaffold.
+  static Gradient bottomBarInactiveGradient({double opacity = 1}) =>
+      LinearGradient(
+        colors: [
+          ColorRes.bottomBarInactive.withValues(alpha: opacity),
+          ColorRes.bottomBarInactive.withValues(alpha: opacity)
+        ],
+        begin: Alignment.centerLeft,
+        end: Alignment.centerRight,
+      );
+
   static Gradient textDarkGreyGradient({double opacity = 1}) => LinearGradient(
         colors: [
           textDarkGrey(Get.context!).withValues(alpha: opacity),

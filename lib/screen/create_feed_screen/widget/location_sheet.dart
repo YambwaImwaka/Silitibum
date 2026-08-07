@@ -54,7 +54,7 @@ class _LocationSheetState extends State<LocationSheet> {
             margin: const EdgeInsets.symmetric(horizontal: 10),
             onChanged: (value) {
               isLocationLoading.value = true;
-              DebounceAction.shared.call(() async {
+              DebounceAction.tagged('location_sheet_search').call(() async {
                 places.value = [];
                 List<Places> _place =
                     await CommonService.instance.searchPlace(title: value);

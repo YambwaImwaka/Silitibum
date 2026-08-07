@@ -37,6 +37,7 @@ class Params {
   static const String afterMessageId = 'after_message_id';
   static const String lastMsgAt = 'last_msg_at';
   static const String roomId = 'room_id';
+  static const String snapshot = 'snapshot';
   static const String count = 'count';
   static const String commentType = 'comment_type';
   static const String receiverUserId = 'receiver_user_id';

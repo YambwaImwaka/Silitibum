@@ -59,30 +59,7 @@ class CronsController extends Controller
         $item->save();
     }
 
-      function cleanDemoAppData(){
-        $userIds = [8,1,20,25,28,27,35,39,41,42,45];
-        // Posts
-       Posts::whereNotIn('user_id', $userIds)
-            ->chunk(100, function($posts) {
-                foreach ($posts as $post) {
-                    GlobalFunction::deleteAllPostData($post);
-                    $post->delete();
-                }
-            });
-
-        PostComments::whereNotIn('user_id', $userIds)
-            ->chunk(100, function($comments) {
-                foreach ($comments as $comment) {
-                    $postId = $comment->post_id;
-                    $userId = $comment->user_id;
-
-                    CommentReplies::where('comment_id', $comment->id)->delete();
-                    $comment->delete();
-
-                    GlobalFunction::settlePostCommentCount($postId);
-                    GlobalFunction::deleteNotifications(Constants::notify_comment_post, $comment->id, $userId);
-                }
-            });
-
-    }
+    // cleanDemoAppData() was removed along with its route. It wiped every post
+    // and comment not owned by a hardcoded list of demo user ids, and was
+    // reachable as an unauthenticated GET on /api/cron/cleanDemoAppData.
 }

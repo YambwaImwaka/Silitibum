@@ -58,7 +58,7 @@ class GifSheetController extends BaseController {
 
   onChanged(String value) async {
     isTextEmpty.value = value.trim().isEmpty;
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('gif_search').call(() {
       if (value.isEmpty) {
         fetchTrendingGiphy(isEmpty: true);
       } else {

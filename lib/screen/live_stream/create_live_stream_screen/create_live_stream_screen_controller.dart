@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/livestream_service.dart';
@@ -28,6 +29,16 @@ class CreateLiveStreamScreenController extends BaseController {
   @override
   void onInit() {
     super.onInit();
+    // Defensive second gate: broadcasting requires an account, and the flow
+    // below asks for camera + mic before it would ever discover that. Bail
+    // out before requesting any permission rather than dead-ending later.
+    if (!AuthGate.isLoggedIn) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Get.back();
+        AuthGate.check();
+      });
+      return;
+    }
     initZegoEngine();
   }
 

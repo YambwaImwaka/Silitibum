@@ -5,7 +5,6 @@ import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -66,19 +65,9 @@ class PostScreenController extends BaseController {
   }
 
   Future<void> _likePostApi(Post? post) async {
-    StatusModel model = await PostService.instance.likePost(postId: post?.id ?? -1);
-
-    if (model.status == true) {
-      if (post?.user?.notifyPostLike == 1 && myUser?.id != post?.userId) {
-        print(post?.user?.toJson());
-        FirebaseNotificationManager.instance.sendLocalisationNotification(LKey.activityLikedPost,
-            type: NotificationType.post,
-            body: NotificationInfo(id: post?.id),
-            deviceType: post?.user?.device ?? 0,
-            deviceToken: post?.user?.deviceToken ?? '',
-            languageCode: post?.user?.appLanguage);
-      }
-    }
+    // The like notification is sent server-side by PostsController::likePost,
+    // so the author gets it whether or not this device is still running.
+    await PostService.instance.likePost(postId: post?.id ?? -1);
   }
 
   Future<void> _disLikePostApi(Post? post) async {
@@ -111,7 +100,7 @@ class PostScreenController extends BaseController {
       val?.saveToggle(post.isSaved == true ? false : true);
     });
     try {
-      DebounceAction.shared.call(() async {
+      DebounceAction.tagged('post_save').call(() async {
         await ((post.isSaved ?? false) ? _savePostApi(post) : _unSavePostApi(post));
       });
     } finally {
@@ -183,7 +172,7 @@ class PostScreenController extends BaseController {
 
   void notifyCommentSheet(PostByIdData? data) {
     if (data != null && (data.comment != null || data.reply != null)) {
-      DebounceAction.shared.call(() {
+      DebounceAction.tagged('post_comment_sheet').call(() {
         onComment(postByIdData: data, isFromNotification: true);
       }, milliseconds: 1000);
     }

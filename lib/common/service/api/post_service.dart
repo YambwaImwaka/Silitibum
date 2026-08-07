@@ -86,6 +86,25 @@ class PostService {
     return model.data ?? [];
   }
 
+  /// Ranked trending feed, paginated on the server's rank_position.
+  ///
+  /// [lastItemId] is the id of the last post already shown; the server
+  /// resolves its rank and continues from there. Unlike the discover feed this
+  /// has a real cursor, so load-more does not repeat content.
+  Future<List<Post>> fetchTrendingPosts(
+      {int? lastItemId, String? type, CancelToken? cancelToken}) async {
+    PostsModel model = await ApiService.instance.call(
+        url: WebService.post.fetchTrendingPosts,
+        param: {
+          Params.limit: AppRes.paginationLimit,
+          if (type != null) Params.types: type,
+          if (lastItemId != null) Params.lastItemId: lastItemId,
+        },
+        fromJson: PostsModel.fromJson,
+        cancelToken: cancelToken);
+    return model.data ?? [];
+  }
+
   Future<PostByIdModel> fetchPostById(
       {required int postId, int? commentId, int? replyId}) async {
     if (postId == -1) {

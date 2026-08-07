@@ -3,9 +3,7 @@ import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
-import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
-import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/status_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 
@@ -43,19 +41,10 @@ class FollowController extends BaseController {
         });
         // Loggers.success(response.message);
         Loggers.success(user.value?.isFollowing);
-        User? _user = user.value;
-        if (_user != null &&
-            user.value?.isFollowing == true &&
-            _user.notifyFollow == 1 &&
-            _user.id != SessionManager.instance.getUserID()) {
-          FirebaseNotificationManager.instance.sendLocalisationNotification(
-              LKey.notifyStartedFollowing,
-              type: NotificationType.user,
-              languageCode: _user.appLanguage,
-              deviceToken: _user.deviceToken,
-              deviceType: _user.device,
-              body: NotificationInfo(id: SessionManager.instance.getUserID()));
-        }
+        // The follow notification is sent by the server (UserController's
+        // followUnfollowUser). It used to be fired from here, which meant it
+        // only arrived if this device stayed alive long enough — and required
+        // every user payload to carry the recipient's raw FCM token.
         return user.value;
       } else {
         Loggers.error('Failed to update follow status for User ID: $userId');

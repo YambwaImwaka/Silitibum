@@ -56,9 +56,14 @@ class NotificationController extends Controller
 
         $items = $query->get();
 
-        foreach ($items as $item) {
+        // Stale rows — the post/comment/gift they point at has since been
+        // deleted — hydrate to null. Drop them instead of shipping cards the
+        // app renders blank. Follow notifications legitimately carry no
+        // payload (they render from from_user alone), so they are kept.
+        $items = $items->filter(function ($item) use ($user) {
             $item->data = GlobalFunction::getNotificationItemData($item, $user);
-        }
+            return $item->data !== null || $item->type == Constants::notify_follow_user;
+        })->values();
 
         return GlobalFunction::sendDataResponse(true, 'activity notifications fetched successfully', $items);
     }
@@ -118,8 +123,8 @@ class NotificationController extends Controller
         $item->save();
 
         // Generate Payloads
-        $pushTokenAndroid = env('NOTIFICATION_TOPIC') . '_android';
-        $pushTokenIOS = env('NOTIFICATION_TOPIC') . '_ios';
+        $pushTokenAndroid = config('services.notification_topic') . '_android';
+        $pushTokenIOS = config('services.notification_topic') . '_ios';
         $androidPayload = GlobalFunction::generatePushNotificationPayload(Constants::android, Constants::pushTypeTopic, $pushTokenAndroid, $item->title, $item->description, $item->image);
         $iosPayLoad = GlobalFunction::generatePushNotificationPayload(Constants::iOS, Constants::pushTypeTopic, $pushTokenIOS, $item->title, $item->description, $item->image);
         // Sending Push
@@ -196,8 +201,8 @@ class NotificationController extends Controller
         $item = AdminNotifications::find($request->id);
         if ($item != null) {
             // Generate Payloads
-            $pushTokenAndroid = env('NOTIFICATION_TOPIC') . '_android';
-            $pushTokenIOS = env('NOTIFICATION_TOPIC') . '_ios';
+            $pushTokenAndroid = config('services.notification_topic') . '_android';
+            $pushTokenIOS = config('services.notification_topic') . '_ios';
             $androidPayload = GlobalFunction::generatePushNotificationPayload(Constants::android, Constants::pushTypeTopic, $pushTokenAndroid, $item->title, $item->description, $item->image);
             $iosPayLoad = GlobalFunction::generatePushNotificationPayload(Constants::iOS, Constants::pushTypeTopic, $pushTokenIOS, $item->title, $item->description, $item->image);
             // Sending Push

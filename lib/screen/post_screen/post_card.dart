@@ -133,7 +133,7 @@ class _PostCardState extends State<PostCard> {
                               },
                               onHeartAnimationEnd: () {
                                 controller.triggerLikeAnim.call();
-                                DebounceAction.shared.call(() {
+                                DebounceAction.tagged('post_like_anim').call(() {
                                   if (post.isLiked == false) {
                                     controller.onLike(post);
                                   }

@@ -19,11 +19,16 @@ class LiveStreamSummary extends StatelessWidget {
   final bool isHost;
   final VoidCallback? onGoHomeTap;
 
+  /// Still frame kept from the broadcast. The stream itself is not recorded,
+  /// so this is the only thing left of it once the room closes.
+  final String? snapshot;
+
   const LiveStreamSummary(
       {super.key,
       this.userState,
       required this.isHost,
       required this.viewers,
+      this.snapshot,
       this.onGoHomeTap});
 
   @override
@@ -37,6 +42,20 @@ class LiveStreamSummary extends StatelessWidget {
             children: [
               Column(
                 children: [
+                  if ((snapshot ?? '').isNotEmpty) ...[
+                    // The retained frame, shown in place of a replay — there
+                    // is no recording to play back.
+                    ClipSmoothRect(
+                      radius: SmoothBorderRadius(
+                          cornerRadius: 12, cornerSmoothing: 1),
+                      child: CustomImage(
+                          size: const Size(220, 124),
+                          image: snapshot,
+                          fit: BoxFit.cover,
+                          radius: 12),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   CustomImage(
                       size: const Size(137, 137),
                       image: userState?.user?.profile?.addBaseURL(),

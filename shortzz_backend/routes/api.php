@@ -98,8 +98,10 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('likePost', [PostsController::class, 'likePost'])->middleware('authorizeUser');
         Route::post('disLikePost', [PostsController::class, 'disLikePost'])->middleware('authorizeUser');
         // Guest-open: view/share counters (no user context used; guests count too)
-        Route::post('increaseViewsCount', [PostsController::class, 'increaseViewsCount']);
-        Route::post('increaseShareCount', [PostsController::class, 'increaseShareCount']);
+        // Guest-open by design (signed-out watching counts too), so throttled:
+        // each call now writes a deduplicated row rather than bumping a counter.
+        Route::post('increaseViewsCount', [PostsController::class, 'increaseViewsCount'])->middleware('throttle:engagement');
+        Route::post('increaseShareCount', [PostsController::class, 'increaseShareCount'])->middleware('throttle:engagement');
         Route::post('savePost', [PostsController::class, 'savePost'])->middleware('authorizeUser');
         Route::post('unSavePost', [PostsController::class, 'unSavePost'])->middleware('authorizeUser');
 
@@ -135,6 +137,9 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('fetchUserPosts', [PostsController::class, 'fetchUserPosts']);
         Route::post('fetchSavedPosts', [PostsController::class, 'fetchSavedPosts'])->middleware('authorizeUser');
         Route::post('fetchExplorePageData', [PostsController::class, 'fetchExplorePageData']);
+        // Guest-open like the rest of Explore. Backed by the hourly
+        // posts:compute-trending ranking.
+        Route::post('fetchTrendingPosts', [PostsController::class, 'fetchTrendingPosts']);
         Route::post('fetchPostsByLocation', [PostsController::class, 'fetchPostsByLocation']);
         Route::post('fetchPostsNearBy', [PostsController::class, 'fetchPostsNearBy']);
 
@@ -212,12 +217,17 @@ Route::middleware('checkHeader')->group(function () {
 
     // Livestream signalling (MySQL + presence channels; Zego carries media)
     Route::prefix('livestream')->group(function () {
-        // Guest-open: the Live tab lists streams without a session
+        // Guest-open: watching a stream needs no session — the Live tab already
+        // lists them signed-out, and join/leave/fetchStreamState are read-only
+        // for a guest (watching count only, no participant row). Everything
+        // that writes into the room stays behind authorizeUser below.
         Route::post('fetchLivestreams', [LivestreamApiController::class, 'fetchLivestreams']);
+        Route::post('joinLivestream', [LivestreamApiController::class, 'joinLivestream']);
+        Route::post('leaveLivestream', [LivestreamApiController::class, 'leaveLivestream']);
+        Route::post('fetchStreamState', [LivestreamApiController::class, 'fetchStreamState']);
         Route::post('createLivestream', [LivestreamApiController::class, 'createLivestream'])->middleware('authorizeUser');
-        Route::post('joinLivestream', [LivestreamApiController::class, 'joinLivestream'])->middleware('authorizeUser');
-        Route::post('leaveLivestream', [LivestreamApiController::class, 'leaveLivestream'])->middleware('authorizeUser');
-        Route::post('fetchStreamState', [LivestreamApiController::class, 'fetchStreamState'])->middleware('authorizeUser');
+        // Host-only still frame; the stream media itself is never recorded.
+        Route::post('uploadLivestreamSnapshot', [LivestreamApiController::class, 'uploadLivestreamSnapshot'])->middleware('authorizeUser');
         Route::post('sendComment', [LivestreamApiController::class, 'sendComment'])->middleware('authorizeUser');
         Route::post('addLikes', [LivestreamApiController::class, 'addLikes'])->middleware('authorizeUser');
         Route::post('sendStreamGift', [LivestreamApiController::class, 'sendStreamGift'])->middleware('authorizeUser');
@@ -238,9 +248,11 @@ Route::prefix('cron')->group(function () {
     Route::get('deleteOldNotifications', [CronsController::class, 'deleteOldNotifications']);
     Route::get('countDailyActiveUsers', [CronsController::class, 'countDailyActiveUsers']);
 
-
-    // Don't use below function on your live environment, This will delete data from the platform. For Author only
-    Route::get('cleanDemoAppData', [CronsController::class, 'cleanDemoAppData']);
+    // REMOVED: cleanDemoAppData. It was a public, unauthenticated GET (this
+    // group sits outside the checkHeader middleware) that mass-deleted every
+    // post and comment not belonging to a hardcoded list of 11 demo user ids
+    // — anyone who knew the URL could wipe the platform. It is a boilerplate
+    // demo-reset helper and has no place in production.
 });
 
 // Comment below route once the reset process is finished

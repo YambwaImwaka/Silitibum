@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/widget/custom_app_bar.dart';
 import 'package:shortzz/common/widget/custom_tab_switcher.dart';
+import 'package:shortzz/common/widget/error_retry_view.dart';
 import 'package:shortzz/common/widget/load_more_widget.dart';
 import 'package:shortzz/common/widget/loader_widget.dart';
 import 'package:shortzz/common/widget/no_data_widget.dart';
@@ -48,6 +49,8 @@ class NotificationScreen extends StatelessWidget {
                   _NotificationListWrapper<ActivityNotification>(
                       isLoading: controller.isActivityNotification.value,
                       isEmpty: controller.activityNotifications.isEmpty,
+                      error: controller.activityError.value,
+                      onRetry: controller.retryActivityNotifications,
                       items: controller.activityNotifications,
                       itemBuilder: (context, data) => ActivityNotificationPage(
                           data: data, controller: controller),
@@ -57,6 +60,8 @@ class NotificationScreen extends StatelessWidget {
                   _NotificationListWrapper<AdminNotificationData>(
                     isLoading: controller.isAdminNotification.value,
                     isEmpty: controller.adminNotifications.isEmpty,
+                    error: controller.adminError.value,
+                    onRetry: controller.retryAdminNotifications,
                     items: controller.adminNotifications,
                     itemBuilder: (context, data) =>
                         SystemNotificationPage(data: data),
@@ -75,6 +80,8 @@ class NotificationScreen extends StatelessWidget {
 class _NotificationListWrapper<T> extends StatelessWidget {
   final bool isLoading;
   final bool isEmpty;
+  final String? error;
+  final VoidCallback onRetry;
   final List<T> items;
   final Widget Function(BuildContext, T) itemBuilder;
   final Future<void> Function() loadMore;
@@ -82,6 +89,8 @@ class _NotificationListWrapper<T> extends StatelessWidget {
   const _NotificationListWrapper({
     required this.isLoading,
     required this.isEmpty,
+    required this.error,
+    required this.onRetry,
     required this.items,
     required this.itemBuilder,
     required this.loadMore,
@@ -91,6 +100,10 @@ class _NotificationListWrapper<T> extends StatelessWidget {
   Widget build(BuildContext context) {
     if (isLoading && isEmpty) {
       return const LoaderWidget();
+    }
+
+    if (error != null && isEmpty) {
+      return ErrorRetryView(message: error, onRetry: onRetry);
     }
 
     return NoDataView(

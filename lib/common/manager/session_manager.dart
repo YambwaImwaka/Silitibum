@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:get/get.dart';
 import 'package:get_storage/get_storage.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
@@ -15,6 +17,22 @@ class SessionManager {
   SessionManager() {
     listenNotifyCount();
     listenModerator();
+  }
+
+  /// Stable per-install identity for signed-out livestream viewers.
+  ///
+  /// Zego requires a unique user id per room: a guest has no account, and
+  /// using the sentinel user id 0 would make every signed-out viewer log in
+  /// as the same Zego user and evict one another. Generated once and kept so
+  /// a reconnect resumes as the same viewer rather than double-counting.
+  String getGuestStreamId() {
+    final String? existing = storage.read(SessionKeys.guestStreamId);
+    if (existing != null && existing.isNotEmpty) return existing;
+
+    final generated =
+        'g${DateTime.now().microsecondsSinceEpoch}${Random().nextInt(99999)}';
+    storage.write(SessionKeys.guestStreamId, generated);
+    return generated;
   }
 
   void setAuthToken(Token? token) {
@@ -200,4 +218,5 @@ class SessionKeys {
   static const notifyCount = "notify_count";
   static const isLanguageScreenSelect = "is_language_screen_select";
   static const isOnBoardingScreenSelect = "is_on_boarding_screen_select";
+  static const guestStreamId = "guest_stream_id";
 }

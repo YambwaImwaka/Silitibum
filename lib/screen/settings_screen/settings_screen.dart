@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/widget/custom_app_bar.dart';
 import 'package:shortzz/common/widget/custom_drop_down.dart';
 import 'package:shortzz/common/widget/custom_toggle.dart';
+import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/blocked_user_screen/blocked_user_screen.dart';
@@ -18,6 +19,7 @@ import 'package:shortzz/screen/settings_screen/widget/setting_icon_text_with_arr
 import 'package:shortzz/screen/subscription_screen/subscription_screen.dart';
 import 'package:shortzz/screen/term_and_privacy_screen/term_and_privacy_screen.dart';
 import 'package:shortzz/utilities/asset_res.dart';
+import 'package:shortzz/utilities/color_res.dart';
 import 'package:shortzz/utilities/style_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
@@ -42,6 +44,7 @@ class SettingsScreen extends StatelessWidget {
             children: [
               SubscriptionCard(
                   controller: controller, onUpdateUser: onUpdateUser),
+              _RecoveryEmailWarning(onUpdateUser: onUpdateUser),
               SettingLabel(title: LKey.personal.toUpperCase()),
               SettingIconTextWithArrow(
                 icon: AssetRes.icEdit,
@@ -267,6 +270,65 @@ class SettingLabel extends StatelessWidget {
         style: TextStyleCustom.outFitMedium500(
                 fontSize: 13, color: textLightGrey(context))
             .copyWith(letterSpacing: 2),
+      ),
+    );
+  }
+}
+
+/// Warns a phone-signup account that it has no recovery email.
+///
+/// This is the only self-service route back into such an account: there is no
+/// SMS gateway, so a forgotten password can only be reset via a code emailed
+/// to a recovery address — and one cannot be added while locked out, because
+/// adding it requires signing in. Shown here, next to Edit Profile, so it can
+/// be fixed before it is ever needed.
+class _RecoveryEmailWarning extends StatelessWidget {
+  const _RecoveryEmailWarning({this.onUpdateUser});
+
+  final Function(User? user)? onUpdateUser;
+
+  @override
+  Widget build(BuildContext context) {
+    final User? user = SessionManager.instance.getUser();
+    final bool isPhoneAccount = (user?.loginMethod ?? '') == 'phone';
+    final bool hasRecoveryEmail = (user?.userEmail ?? '').trim().isNotEmpty;
+
+    if (!isPhoneAccount || hasRecoveryEmail) return const SizedBox();
+
+    return InkWell(
+      onTap: () => Get.to(() => EditProfileScreen(onUpdateUser: onUpdateUser)),
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.fromLTRB(15, 12, 15, 4),
+        padding: const EdgeInsets.all(14),
+        decoration: ShapeDecoration(
+          color: ColorRes.orange.withValues(alpha: .12),
+          shape: SmoothRectangleBorder(
+            borderRadius: SmoothBorderRadius(cornerRadius: 10, cornerSmoothing: 1),
+            side: BorderSide(color: ColorRes.orange.withValues(alpha: .5)),
+          ),
+        ),
+        child: Row(
+          spacing: 12,
+          children: [
+            const Icon(Icons.warning_amber_rounded,
+                color: ColorRes.orange, size: 26),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 3,
+                children: [
+                  Text(LKey.addRecoveryEmail.tr,
+                      style: TextStyleCustom.outFitMedium500(
+                          fontSize: 15, color: textDarkGrey(context))),
+                  Text(LKey.addRecoveryEmailDescription.tr,
+                      style: TextStyleCustom.outFitLight300(
+                          fontSize: 13, color: textLightGrey(context))),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

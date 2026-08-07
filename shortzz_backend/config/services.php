@@ -30,4 +30,16 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    /*
+     * Base FCM topic for admin broadcasts. The app subscribes to
+     * "<topic>_android" / "<topic>_ios" — see notificationTopic in
+     * lib/utilities/const_res.dart, which must stay in sync with this.
+     *
+     * Read through config (not a bare env() at the call site) so it survives
+     * `php artisan config:cache`, and defaulted rather than left null: with
+     * NOTIFICATION_TOPIC unset the controllers were broadcasting to the topic
+     * "_android", which FCM accepts as valid and silently delivers to nobody.
+     */
+    'notification_topic' => env('NOTIFICATION_TOPIC', 'silitibum'),
+
 ];

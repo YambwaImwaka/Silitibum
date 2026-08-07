@@ -166,8 +166,9 @@ class DashboardScreen extends StatelessWidget {
                 alignment: Alignment.center,
                 children: [
                   GradientIcon(
-                    gradient:
-                        isSelected ? null : StyleRes.textDarkGreyGradient(),
+                    gradient: isSelected
+                        ? null
+                        : StyleRes.bottomBarInactiveGradient(),
                     child: Image.asset(controller.bottomIconList[index],
                         height: 38, width: 38),
                   ),

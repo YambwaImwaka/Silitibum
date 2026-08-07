@@ -390,7 +390,14 @@ class UserController extends Controller
         GlobalFunction::settleFollowCount($user->id);
 
         // Insert Notification Data : Follow User
-        $notificationData = GlobalFunction::insertUserNotification(Constants::notify_follow_user,$user->id, $dataUser->id, $user->id);
+        GlobalFunction::insertUserNotification(Constants::notify_follow_user,$user->id, $dataUser->id, $user->id);
+        GlobalFunction::pushToUser(
+            $dataUser->id,
+            $user->fullname ?: $user->username,
+            'started following you',
+            ['type' => (string) Constants::notify_follow_user, 'id' => (string) $user->id],
+            'notify_follow'
+        );
 
         return GlobalFunction::sendSimpleResponse(true, 'follow successful');
 
@@ -1069,8 +1076,23 @@ class UserController extends Controller
         $user->login_method = $request->login_method;
         $user->username = GlobalFunction::generateUsername($user->fullname);
 
-        if ($request->has('profile_photo')) {
-            $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->profile_photo);
+        // Recovery email. There is no SMS gateway, so a phone-only account
+        // with nothing here can NEVER self-serve a password reset — the reset
+        // code has nowhere to go, and "add one in Edit Profile" is impossible
+        // for someone already locked out. Captured at signup so the dead end
+        // does not arise; email signups get it for free from their identity.
+        if ($request->filled('user_email') && filter_var($request->user_email, FILTER_VALIDATE_EMAIL)) {
+            $user->user_email = $request->user_email;
+        } elseif (filter_var($request->identity, FILTER_VALIDATE_EMAIL)) {
+            $user->user_email = $request->identity;
+        }
+
+        // hasFile(), not has(): saveFileAndGivePath() calls
+        // getClientOriginalName() on its argument, so a client posting
+        // profile_photo as a plain string used to raise a fatal that the
+        // surrounding transaction reported as a generic 'registration_failed'.
+        if ($request->hasFile('profile_photo')) {
+            $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->file('profile_photo'));
         }
 
         $settings = GlobalSettings::first();
@@ -1113,6 +1135,13 @@ class UserController extends Controller
             'login_method' => 'required|in:email,phone',
             'device' => 'required',
             'device_token' => 'nullable',
+            // Optional avatar chosen during signup. Previously read by
+            // createAppUser() but never validated, so a non-file value
+            // reached the file helper and blew up the whole registration.
+            'profile_photo' => 'nullable|image|mimes:jpeg,jpg,png,webp|max:8192',
+            // Recovery address for phone signups — the only way such an
+            // account can ever reset its password without an SMS gateway.
+            'user_email' => 'nullable|email',
         ]);
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
@@ -1346,7 +1375,14 @@ class UserController extends Controller
         }
         $email = filter_var($request->identity, FILTER_VALIDATE_EMAIL) ? $request->identity : $user->user_email;
         if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            return GlobalFunction::sendSimpleResponse(false, 'no_recovery_email');
+            // Phone-only account with no recovery address. With no SMS
+            // gateway there is nowhere to send a code, and the user cannot
+            // add one themselves because that requires signing in — which is
+            // what they have just failed to do. Support (admin panel) is the
+            // only route back in, so hand back the address to contact.
+            return GlobalFunction::sendDataResponse(false, 'no_recovery_email', [
+                'help_mail' => optional(GlobalSettings::first())->help_mail,
+            ]);
         }
         [$ok, $msg] = GlobalFunction::issueVerificationCode($user, $email, VerificationCode::TYPE_RESET_PASSWORD);
         if (!$ok) {

@@ -125,7 +125,7 @@ class LocationScreenController extends BaseController {
           CameraPosition(target: latLng, zoom: 14.4746)));
     });
 
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('location_map_move').call(() {
       fetchMoreData(reset: true);
     });
 

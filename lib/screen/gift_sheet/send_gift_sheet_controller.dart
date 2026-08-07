@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -38,7 +37,7 @@ class SendGiftSheetController extends BaseController {
       if (livestreamController.selectedGiftUser.value == null) {
         livestreamController.selectedGiftUser = liveUsers.first.obs;
       } else {
-        DebounceAction.shared.call(() {
+        DebounceAction.tagged('gift_user_select').call(() {
           livestreamController.selectedGiftUser.value = liveUsers.firstWhere(
               (element) =>
                   element.userId ==
@@ -167,19 +166,8 @@ class GiftManager {
     );
   }
 
-  static void sendNotification(Post? post) {
-    final user = post?.user;
-    if (user == null || user.id == SessionManager.instance.getUserID()) return;
-
-    if (user.notifyGiftReceived == 1) {
-      FirebaseNotificationManager.instance.sendLocalisationNotification(
-        LKey.activitySentGift,
-        type: NotificationType.post,
-        deviceType: user.device,
-        deviceToken: user.deviceToken,
-        languageCode: user.appLanguage,
-        body: NotificationInfo(id: post?.id),
-      );
-    }
-  }
+  /// No-op: the gift notification is sent server-side when the coins move
+  /// (GlobalFunction::sendGift), so it cannot be lost if this device is
+  /// backgrounded mid-transfer. Kept as a stub because several sheets call it.
+  static void sendNotification(Post? post) {}
 }

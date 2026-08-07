@@ -23,7 +23,7 @@ class RequestWithdrawalScreen extends StatelessWidget {
     return Scaffold(
         body: Column(
       children: [
-        CustomAppBar(title: LKey.requestWithdrawal.tr),
+        CustomAppBar(title: LKey.requestWithdrawal.tr, showSearch: false),
         Expanded(
             child: SingleChildScrollView(
           child: Column(

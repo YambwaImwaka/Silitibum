@@ -13,6 +13,7 @@ import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
+import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
 import 'package:shortzz/screen/live_stream/create_live_stream_screen/create_live_stream_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/audience/live_stream_audience_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/livestream_host_screen.dart';
@@ -78,9 +79,15 @@ class LiveStreamSearchScreenController extends BaseController {
   }
 
   void onLiveUserTap(Livestream stream) async {
-    // Joining as audience writes viewer state and opens in-stream
-    // comment/gift paths that all assume a user — one gate at the door.
-    if (!AuthGate.check()) return;
+    // Watching is open to everyone, matching the signed-out Live tab that got
+    // them here. The in-stream write paths (comment, gift, like, co-host) each
+    // gate individually in LivestreamScreenController, so a guest is prompted
+    // to sign in at the point they try to interact rather than at the door.
+
+    // The engine is built lazily (it is no longer created for every user at
+    // dashboard startup), so make sure it exists before opening a room.
+    await _ensureZegoEngine();
+
     User? myUser = SessionManager.instance.getUser();
     if (stream.hostId == myUser?.id) {
       Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
@@ -95,7 +102,24 @@ class LiveStreamSearchScreenController extends BaseController {
     }, (p1) => p1.description ?? '');
   }
 
+  /// The Zego engine is created on first use rather than at app startup, so
+  /// every entry point into a room has to make sure it exists first.
+  Future<void> _ensureZegoEngine() async {
+    if (Get.isRegistered<DashboardScreenController>()) {
+      await Get.find<DashboardScreenController>().ensureZegoEngine();
+    }
+  }
+
   Future<void> onGoLive() async {
+    // Gate BEFORE navigating. Without this a guest walked all the way into
+    // the camera preview (granting camera + mic permissions on the way) and
+    // then hit a silent dead-end in CreateLiveStreamScreenController, which
+    // just logged "User Not found" and returned. Broadcasting needs an
+    // account, so ask for one at the button.
+    if (!AuthGate.check()) return;
+
+    await _ensureZegoEngine();
+
     User? myUser = SessionManager.instance.getUser();
     bool isExist =
         livestreamList.any((element) => element.hostId == myUser?.id);

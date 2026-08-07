@@ -4,7 +4,6 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/functions/json_parse.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
@@ -12,7 +11,6 @@ import 'package:shortzz/common/service/api/search_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/url_extractor/metadata_extract_base.dart';
 import 'package:shortzz/common/service/url_extractor/parsers/base_parser.dart';
-import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 import 'package:shortzz/model/post_story/hashtag_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
@@ -58,7 +56,7 @@ class CommentHelper {
       }
     }
 
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('comment_input').call(() {
       fetchUrlPreview();
     }, milliseconds: 2000);
 
@@ -76,7 +74,7 @@ class CommentHelper {
   void searchMentionUsers(String value) {
     isMentionUserView.value = true;
     isLoading.value = true;
-    DebounceAction.shared.call(
+    DebounceAction.tagged('comment_mention_search').call(
       () async {
         List<User> items = await UserService.instance.searchUsers(
             keyWord: value.split('@')[1],
@@ -101,7 +99,7 @@ class CommentHelper {
   void searchHashTag(String value) async {
     isHashTagView.value = true;
     isLoading.value = true;
-    DebounceAction.shared.call(() async {
+    DebounceAction.tagged('comment_hashtag_search').call(() async {
       List<Hashtag> items = await SearchService.instance
           .searchHashtags(keyword: value.split('#')[1]);
       hashTags.clear();
@@ -202,8 +200,11 @@ class CommentHelper {
     if (comment == null) return;
     // Loggers.success('REPLY COMMENT : ${comment.toJson()}');
     onUpdateComment.call(comment, isReply);
-    _sendCommentNotification(reel, comment, isReply, replyComment);
-    _notifyMentionedUsers(reel, comment, isReply);
+    // Comment, reply and mention notifications are all sent server-side by
+    // CommentController (addPostComment / addCommentReply). They used to be
+    // fired from here, which meant they only arrived if this device stayed
+    // alive, and required every payload to expose recipients' FCM tokens.
+    finalUsers.clear();
   }
 
   List<int> _extractMentionUserIds(String description) {
@@ -253,87 +254,6 @@ class CommentHelper {
         return match.group(0)!; // fallback to original @username
       }
     });
-  }
-
-  void _sendCommentNotification(
-      Post reel, Comment comment, bool isReply, Comment? replyComment) {
-    if (isReply) {
-      final reply = replyComment;
-      if (reply != null &&
-          reply.userId != myUser?.id &&
-          reply.user?.notifyPostComment == 1) {
-        FirebaseNotificationManager.instance.sendLocalisationNotification(
-          LKey.activityReplyingToComment,
-          keyParams: {
-            'username': myUser?.username ?? '',
-            'comment_description': comment.commentDescription,
-          },
-          deviceToken: reply.user?.deviceToken ?? '',
-          deviceType: reply.user?.device ?? 0,
-          languageCode: reply.user?.appLanguage,
-          body: NotificationInfo(
-              id: reel.id,
-              commentId: comment.commentId,
-              replyCommentId: comment.id),
-          type: NotificationType.post,
-        );
-      }
-    }
-
-    if (reel.userId != myUser?.id && reel.user?.notifyPostComment == 1) {
-      if (isReply && replyComment?.userId == reel.userId) return;
-      FirebaseNotificationManager.instance.sendLocalisationNotification(
-        LKey.activityCommentedPost,
-        keyParams: {'comment_description': comment.commentDescription},
-        deviceToken: reel.user?.deviceToken ?? '',
-        deviceType: reel.user?.device ?? 0,
-        languageCode: reel.user?.appLanguage,
-        body: NotificationInfo(
-            id: reel.id,
-            commentId: isReply ? comment.commentId : comment.id,
-            replyCommentId: isReply ? comment.id : null),
-        type: NotificationType.post,
-      );
-    }
-  }
-
-  Future<void> _notifyMentionedUsers(
-      Post reel, Comment comment, bool isReply) async {
-    const int batchSize = 5;
-    List<Future> batch = [];
-
-    int? commentId = isReply ? comment.commentId : comment.id;
-    int? replyCommentId = isReply ? comment.id : null;
-
-    if (commentId == null || (isReply && replyCommentId == null)) {
-      return Loggers.error('Comment Id not found');
-    }
-
-    for (final user in finalUsers) {
-      if (user.notifyMention == 1 && user.id != myUser?.id) {
-        batch.add(FirebaseNotificationManager.instance
-            .sendLocalisationNotification(LKey.notifyMentionedInComment,
-                deviceToken: user.deviceToken ?? '',
-                deviceType: user.device ?? 0,
-                languageCode: user.appLanguage,
-                body: NotificationInfo(
-                    id: reel.id,
-                    commentId: commentId,
-                    replyCommentId: replyCommentId),
-                type: NotificationType.post));
-
-        if (batch.length >= batchSize) {
-          await Future.wait(batch);
-          batch.clear();
-        }
-      }
-    }
-
-    if (batch.isNotEmpty) {
-      await Future.wait(batch);
-    }
-
-    finalUsers.clear();
   }
 
   Future<Comment?> handleAddComment(

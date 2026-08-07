@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/service/api/api_service.dart';
 import 'package:shortzz/common/service/utils/params.dart';
@@ -38,6 +39,21 @@ class LivestreamService {
       }
     }
     return streams;
+  }
+
+  /// Uploads the still frame retained after the stream ends.
+  ///
+  /// Best-effort by design: the broadcast must not depend on it, so failures
+  /// are returned rather than thrown at the caller.
+  Future<StatusModel> uploadLivestreamSnapshot(
+      {required String roomId, required XFile snapshot}) async {
+    return ApiService.instance.multiPartCallApi(
+        url: WebService.livestream.uploadLivestreamSnapshot,
+        param: {Params.roomId: roomId},
+        filesMap: {
+          Params.snapshot: [snapshot]
+        },
+        fromJson: StatusModel.fromJson);
   }
 
   Future<StreamStateResult> createLivestream(

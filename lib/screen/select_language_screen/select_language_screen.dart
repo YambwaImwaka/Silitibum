@@ -84,6 +84,7 @@ class SelectLanguageScreen extends StatelessWidget {
                     ),
                   LanguageNavigationType.fromSetting => CustomAppBar(
                       title: LKey.languages.tr,
+                      showSearch: false,
                       titleStyle: TextStyleCustom.unboundedSemiBold600(
                           fontSize: 15, color: whitePure(context)),
                       bgColor: Colors.transparent,

@@ -4,6 +4,14 @@ import 'package:shortzz/languages/languages_keys.dart';
 class AppRes {
   static String appName = 'Silitibum';
 
+  /// The language the UI strings are authored in.
+  ///
+  /// Every LKey constant is its own English text and GetX's `.tr` falls back
+  /// to the key when a language has no entry, so English needs no translation
+  /// file at all — downloading one just produces an identity map. Anything
+  /// added later (the Zambian local languages) does get downloaded normally.
+  static const String baseLanguageCode = 'en';
+
   static String gifBrandName = 'GIPHY';
 
   static String languageAdd =

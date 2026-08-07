@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/common/widget/custom_tab_switcher.dart';
 import 'package:shortzz/common/widget/gradient_text.dart';
@@ -61,6 +64,7 @@ class RegistrationScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+                  _ProfileImagePicker(controller: controller),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),
                     child: CustomTabSwitcher(
@@ -98,6 +102,32 @@ class RegistrationScreen extends StatelessWidget {
                     title: LKey.reTypePassword.tr,
                     isPasswordField: true,
                   ),
+                  // Phone signups only. There is no SMS gateway, so without a
+                  // recovery address this account can never reset its own
+                  // password — and it cannot be added later while locked out.
+                  Obx(
+                    () => controller.authMethodIndex.value == 0
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              TextFieldCustom(
+                                controller: controller.recoveryEmailController,
+                                title: LKey.recoveryEmail.tr,
+                                keyboardType: TextInputType.emailAddress,
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
+                                child: Text(
+                                  LKey.recoveryEmailHint.tr,
+                                  style: TextStyleCustom.outFitLight300(
+                                      fontSize: 13,
+                                      color: textLightGrey(context)),
+                                ),
+                              ),
+                            ],
+                          )
+                        : const SizedBox(),
+                  ),
                 ],
               ),
             )),
@@ -123,6 +153,72 @@ class RegistrationScreen extends StatelessWidget {
                 child: PrivacyPolicyText()),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Optional avatar chosen at signup. Skippable by design — an account must
+/// never be blocked on picking a photo, so there is no validation tied to it.
+class _ProfileImagePicker extends StatelessWidget {
+  const _ProfileImagePicker({required this.controller});
+
+  final AuthScreenController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 10),
+      child: Row(
+        spacing: 14,
+        children: [
+          Obx(() {
+            final XFile? picked = controller.signUpProfileImage.value;
+            return InkWell(
+              onTap: controller.onPickSignUpProfileImage,
+              customBorder: const CircleBorder(),
+              child: Container(
+                height: 76,
+                width: 76,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: bgLightGrey(context),
+                  border: Border.all(color: bgGrey(context)),
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: picked != null
+                    ? Image.file(File(picked.path), fit: BoxFit.cover)
+                    : Icon(Icons.add_a_photo_outlined,
+                        color: textLightGrey(context), size: 26),
+              ),
+            );
+          }),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 2,
+              children: [
+                Text(LKey.profileImage.tr,
+                    style: TextStyleCustom.outFitRegular400(
+                        fontSize: 16, color: textDarkGrey(context))),
+                Obx(() {
+                  final bool hasImage =
+                      controller.signUpProfileImage.value != null;
+                  return InkWell(
+                    onTap: hasImage
+                        ? controller.onRemoveSignUpProfileImage
+                        : controller.onPickSignUpProfileImage,
+                    child: Text(
+                      hasImage ? LKey.remove.tr : LKey.optional.tr,
+                      style: TextStyleCustom.outFitLight300(
+                          fontSize: 14, color: textLightGrey(context)),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

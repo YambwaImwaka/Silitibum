@@ -56,7 +56,7 @@ class _ReelAnimationLikeState extends State<ReelAnimationLike>
         setState(() {});
         widget.onLikeCall.call();
 
-        DebounceAction.shared.call(() {
+        DebounceAction.tagged('reel_double_tap_like').call(() {
           widget.onCompleteAnimation?.call();
         }, milliseconds: 500);
       } else {

@@ -37,7 +37,7 @@ class _MentionSheetState extends State<MentionSheet> {
 
   Future<void> searchUsers({bool reset = false}) async {
     isLoading.value = true;
-    DebounceAction.shared.call(() async {
+    DebounceAction.tagged('mention_sheet_search').call(() async {
       final data = await UserService.instance.searchUsers(
           keyWord: textEditingController.text.trim(),
           lastItemId: reset

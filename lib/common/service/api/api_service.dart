@@ -96,7 +96,7 @@ class ApiService {
         final decodedResponse = _decodeJsonBody(response.body, url);
 
         if (decodedResponse['message'] == 'this user is freezed!') {
-          DebounceAction.shared.call(() {
+          DebounceAction.tagged('account_frozen').call(() {
             Get.offAll(
                 () => const SessionExpiredScreen(type: SessionType.freeze));
           });
@@ -127,7 +127,7 @@ class ApiService {
         // Only a logged-in user has a session that can expire. A guest hitting
         // an auth-only endpoint just gets the error; callers show empty states.
         if (SessionManager.instance.isLogin()) {
-          DebounceAction.shared.call(() {
+          DebounceAction.tagged('session_expired').call(() {
             Get.offAll(() =>
                 const SessionExpiredScreen(type: SessionType.unauthorized));
           });
@@ -293,7 +293,7 @@ class ApiService {
       Loggers.error('Unauthorized Error 401: $url');
       // Mirrors call(): only a logged-in user has a session that can expire.
       if (SessionManager.instance.isLogin()) {
-        DebounceAction.shared.call(() {
+        DebounceAction.tagged('session_expired').call(() {
           Get.offAll(
               () => const SessionExpiredScreen(type: SessionType.unauthorized));
         });

@@ -41,8 +41,23 @@ class VideoCacheService {
   /// previously duplicated across reels_screen_controller.dart, reel_seek_bar.dart
   /// and video_player_screen.dart. Callers must still call `.initialize()` on
   /// the returned controller.
-  static Future<VideoPlayerController> createController(String url) async {
-    final cachedFile = await getCachedFile(url);
+  ///
+  /// [cacheUrl] exists because for a transcoded post the url we *stream* and the
+  /// url we can *cache* are not the same file. Once ffmpeg finishes,
+  /// `Post.playbackVideoPath` points at an HLS master playlist — a manifest
+  /// referencing dozens of `.ts` segments that ExoPlayer/AVPlayer fetch
+  /// themselves, over which this Dart-side cache has no reach. Only the original
+  /// MP4 (`Post.video`, which the backend keeps: PollTranscodeStatus adds
+  /// `hls_path` but never deletes `video`) is a single file we can store and
+  /// hand to `VideoPlayerController.file()`.
+  ///
+  /// So: prefetch the MP4, and if it landed, play *that* rather than streaming
+  /// the HLS. A fully-downloaded fixed-bitrate file beats adaptive bitrate for a
+  /// clip that is already on disk — ABR exists to survive a varying network, and
+  /// there is no network left in the path. Without this the prefetcher spent
+  /// bandwidth on MP4s that the player then ignored in favour of the HLS url.
+  static Future<VideoPlayerController> createController(String url, {String? cacheUrl}) async {
+    final cachedFile = await getCachedFile(cacheUrl ?? url);
     return cachedFile != null
         ? VideoPlayerController.file(cachedFile)
         : VideoPlayerController.networkUrl(Uri.parse(url));

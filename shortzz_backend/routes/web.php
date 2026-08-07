@@ -262,6 +262,15 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('listTextPosts', [PostsController::class, 'listTextPosts'])->name('listTextPosts');
     Route::post('fetchFormattedPostDesc', [PostsController::class, 'fetchFormattedPostDesc'])->name('fetchFormattedPostDesc');
 
+    // Deleted content — retained takedowns, kept for the retention window so
+    // a removal can still be reviewed if it is disputed.
+    Route::get('deletedPosts', [PostsController::class, 'deletedPosts'])->name('deletedPosts');
+    Route::post('listDeletedPosts', [PostsController::class, 'listDeletedPosts'])->name('listDeletedPosts');
+    Route::post('restorePost', [PostsController::class, 'restorePost'])->name('restorePost');
+    Route::post('purgePost', [PostsController::class, 'purgePost'])->name('purgePost');
+    Route::post('listDeletedComments', [PostsController::class, 'listDeletedComments'])->name('listDeletedComments');
+    Route::post('restoreComment', [PostsController::class, 'restoreComment'])->name('restoreComment');
+
     // Post Details
     Route::get('postDetails/{id}', [PostsController::class, 'postDetails'])->name('postDetails');
     Route::post('listPostComments', [CommentController::class, 'listPostComments'])->name('listPostComments');

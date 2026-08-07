@@ -26,7 +26,7 @@ class EditProfileScreen extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          CustomAppBar(title: LKey.editProfile.tr),
+          CustomAppBar(title: LKey.editProfile.tr, showSearch: false),
           Expanded(
             child: SingleChildScrollView(
               child: Column(

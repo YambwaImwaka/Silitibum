@@ -18,6 +18,7 @@ class WebService {
 class _Livestream {
   String fetchLivestreams = "${apiURL}livestream/fetchLivestreams";
   String createLivestream = "${apiURL}livestream/createLivestream";
+  String uploadLivestreamSnapshot = "${apiURL}livestream/uploadLivestreamSnapshot";
   String joinLivestream = "${apiURL}livestream/joinLivestream";
   String leaveLivestream = "${apiURL}livestream/leaveLivestream";
   String fetchStreamState = "${apiURL}livestream/fetchStreamState";
@@ -146,6 +147,7 @@ class _Post {
   String fetchStory = "${apiURL}post/fetchStory";
   String fetchStoryByID = "${apiURL}post/fetchStoryByID";
   String fetchExplorePageData = "${apiURL}post/fetchExplorePageData";
+  String fetchTrendingPosts = "${apiURL}post/fetchTrendingPosts";
 }
 
 class _Setting {

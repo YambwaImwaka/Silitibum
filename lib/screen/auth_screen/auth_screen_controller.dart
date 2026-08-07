@@ -1,9 +1,12 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
+import 'package:shortzz/common/functions/media_picker_helper.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -48,10 +51,38 @@ class AuthScreenController extends BaseController {
   TextEditingController phoneController = TextEditingController();
   TextEditingController codeController = TextEditingController();
 
+  /// Recovery address collected on phone signup. Optional, but without it a
+  /// phone-only account can never reset its password: there is no SMS
+  /// gateway, so the reset code has nowhere to go, and adding an address
+  /// later requires signing in — which is precisely what a locked-out user
+  /// cannot do.
+  TextEditingController recoveryEmailController = TextEditingController();
+
   /// Phone | Email mode on LoginScreen / RegistrationScreen (0 = phone, 1 = email).
   RxInt authMethodIndex = 0.obs;
 
   bool get isPhoneMode => authMethodIndex.value == 0;
+
+  /// Optional avatar picked on the signup screen, sent with registerUser as
+  /// multipart. Skippable — signup must never depend on it.
+  final Rx<XFile?> signUpProfileImage = Rx<XFile?>(null);
+
+  /// Picks and compresses a signup avatar, reusing the same helper path the
+  /// edit-profile screen already uses for this.
+  Future<void> onPickSignUpProfileImage() async {
+    try {
+      final XFile? image =
+          await MediaPickerHelper.shared.pickImage(source: ImageSource.gallery);
+      if (image == null) return;
+      final XFile? compressed =
+          await MediaPickerHelper.shared.compressProfileImage(image.path);
+      signUpProfileImage.value = compressed ?? image;
+    } on PlatformException catch (e) {
+      Loggers.error('Signup avatar pick failed: ${e.message}');
+    }
+  }
+
+  void onRemoveSignUpProfileImage() => signUpProfileImage.value = null;
 
   @override
   void onInit() {
@@ -73,13 +104,22 @@ class AuthScreenController extends BaseController {
     final String? password = _validatedNewPassword();
     if (password == null) return;
 
+    // Optional, but validated when supplied — a typo here would silently
+    // leave the account with no working way to reset its password.
+    final String recoveryEmail = recoveryEmailController.text.trim();
+    if (recoveryEmail.isNotEmpty && !GetUtils.isEmail(recoveryEmail)) {
+      return showSnackBar(LKey.invalidEmail.tr);
+    }
+
     await _authenticate(
         (deviceToken) => UserService.instance.registerUser(
             identity: fullPhone,
             password: password,
             loginMethod: LoginMethod.phone,
             fullName: fullNameController.text.trim(),
-            deviceToken: deviceToken),
+            deviceToken: deviceToken,
+            profilePhoto: signUpProfileImage.value,
+            recoveryEmail: recoveryEmail.isEmpty ? null : recoveryEmail),
         password: password);
   }
 
@@ -183,7 +223,8 @@ class AuthScreenController extends BaseController {
             password: password,
             loginMethod: LoginMethod.email,
             fullName: fullNameController.text.trim(),
-            deviceToken: deviceToken),
+            deviceToken: deviceToken,
+            profilePhoto: signUpProfileImage.value),
         password: password,
         successMessage: LKey.verificationCodeSentTo.tr);
   }
@@ -243,6 +284,13 @@ class AuthScreenController extends BaseController {
     }
     stopLoader();
     if (res.status != true) {
+      // Name the support address when the server supplies one — telling a
+      // locked-out user to "contact support" without saying how is a dead end.
+      if (res.message == 'no_recovery_email' &&
+          (res.helpMail ?? '').isNotEmpty) {
+        return showSnackBar(LKey.noRecoveryEmailWithContact.tr
+            .replaceAll('@email', res.helpMail!));
+      }
       return showSnackBar(_friendlyAuthMessage(res.message));
     }
     codeController.clear();
@@ -566,7 +614,7 @@ class AuthScreenController extends BaseController {
     // Session (user, auth token, login flag) is already fully persisted by
     // this point — see _authenticate above. This only debounces the actual
     // route change.
-    DebounceAction.shared.call(() async {
+    DebounceAction.tagged('auth_navigate').call(() async {
       Get.offAll(() => DashboardScreen(myUser: data));
     }, milliseconds: 250);
   }

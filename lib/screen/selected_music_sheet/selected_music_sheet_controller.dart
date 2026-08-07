@@ -19,6 +19,7 @@ class SelectedMusicSheetController extends BaseController {
   RxBool isPlaying = false.obs;
   Timer? _timer;
   StreamSubscription? positionSubscription;
+  StreamSubscription? _completionSubscription;
 
   SelectedMusicSheetController(this.videoDurationInMs,
       this.selectedMusic); // Function(SelectedMusic? music)? onMusicAdd;
@@ -55,6 +56,7 @@ class SelectedMusicSheetController extends BaseController {
     _timer?.cancel();
     audioPlayer.dispose();
     positionSubscription?.cancel();
+    _completionSubscription?.cancel();
   }
 
   void initPlayer() async {
@@ -74,7 +76,7 @@ class SelectedMusicSheetController extends BaseController {
         waves.add(i);
       }
       scrollController.addListener(_onScroll);
-      DebounceAction.shared.call(() {
+      DebounceAction.tagged('music_trim_autoplay').call(() {
         scrollController.animateTo(
             ((selectedMusic.audioStartMS ?? 0) / 1000) *
                 barTotalWidth *
@@ -93,7 +95,7 @@ class SelectedMusicSheetController extends BaseController {
     if (isPlaying.value == true) {
       onPause();
     } else {
-      DebounceAction.shared.call(() async {
+      DebounceAction.tagged('music_trim_scrub').call(() async {
         int scrollOffset = scrollController.offset.toInt();
         int startDuration =
             ((scrollOffset / barTotalWidth) / oneBarValue).toInt();
@@ -110,16 +112,17 @@ class SelectedMusicSheetController extends BaseController {
 
   void _listenPlayer() {
     currentProgress.value = 0.0;
+    // Both subscriptions are re-created on every play, so drop the previous
+    // ones first — otherwise each replay stacked another listener.
+    positionSubscription?.cancel();
     positionSubscription = audioPlayer.onCurrentDurationChanged.listen((event) {
       int relativePosition = (event.milliseconds.inMilliseconds + 100) -
           audioStartInMilliSec.value;
       currentProgress.value = (relativePosition / videoDurationInMs);
-
-      Loggers.info('Current Progress : $currentProgress');
     });
-    audioPlayer.onCompletion.listen(
+    _completionSubscription?.cancel();
+    _completionSubscription = audioPlayer.onCompletion.listen(
       (event) {
-        Loggers.success('DONE');
         currentProgress.value = 1;
         isPlaying.value = false;
       },
@@ -129,9 +132,11 @@ class SelectedMusicSheetController extends BaseController {
   Future<void> onPlayAudio() async {
     _listenPlayer();
     try {
-      await audioPlayer.seekTo(audioStartInMilliSec.value);
-      // await Future.delayed(const Duration(milliseconds: 500));
+      // start, then seek. audio_waveforms ignores a seek issued while the
+      // player is still idle on Android, so seeking first left every preview
+      // playing from 0:00 regardless of the chosen trim offset.
       await audioPlayer.startPlayer();
+      await audioPlayer.seekTo(audioStartInMilliSec.value);
       audioPlayer.setFinishMode(finishMode: FinishMode.pause);
 
       int endTime =

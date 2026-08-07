@@ -90,15 +90,31 @@ class LivestreamApiController extends Controller
         return GlobalFunction::sendDataResponse(true, 'livestreams fetched successfully', $items);
     }
 
+    // Guest-open: anyone can watch a stream, matching the Live tab that
+    // already lists them without a session. A signed-out viewer gets no
+    // participant row and no "joined" line — there is no account to attribute
+    // either to — only the watching count and the read-only stream state.
+    // Everything that writes into the room (comment, gift, like, co-host)
+    // stays behind authorizeUser.
     public function joinLivestream(Request $request)
     {
-        $user = $this->me($request);
+        $user = GlobalFunction::getUserOrGuest($request->header('authtoken'));
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
+        }
+
+        if ($user->id == 0) {
+            $stream->watching_count = $stream->watching_count + 1;
+            $stream->save();
+
+            BaseBroadcastEvent::fire('livestream.updated',
+                ['livestream' => $stream->serialize(false)], $this->channel($stream->room_id));
+
+            return $this->fullState($stream, null);
         }
 
         $participant = LivestreamUser::where('livestream_id', $stream->id)
@@ -136,15 +152,73 @@ class LivestreamApiController extends Controller
         return $this->fullState($stream, null);
     }
 
+    /**
+     * Stores a single still frame for a live room.
+     *
+     * The stream media is never recorded — Zego carries it and it is gone the
+     * moment the room closes — so this frame is the only thing that outlives
+     * the broadcast. Captured by the host shortly after publishing starts,
+     * while the camera is definitely running; capturing at end would race the
+     * teardown of the very surface being captured.
+     *
+     * Only the host may set it, and only once: a later call would let a host
+     * swap the retained image for something unrelated to what was broadcast.
+     */
+    public function uploadLivestreamSnapshot(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'room_id' => 'required',
+            'snapshot' => 'required|image|mimes:jpeg,jpg,png,webp|max:4096',
+        ]);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+
+        $user = $this->me($request);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
+
+        // Not liveStream(): a snapshot arriving just after the host ends the
+        // room should still be kept rather than discarded.
+        $stream = Livestream::where('room_id', $request->room_id)->first();
+        if ($stream == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'livestream not found');
+        }
+        if ($stream->host_id != $user->id) {
+            return GlobalFunction::sendSimpleResponse(false, 'only the host can set the snapshot');
+        }
+        if (!empty($stream->snapshot)) {
+            return GlobalFunction::sendSimpleResponse(true, 'snapshot already set');
+        }
+
+        $stream->snapshot = GlobalFunction::saveFileAndGivePath($request->file('snapshot'));
+        $stream->save();
+
+        return GlobalFunction::sendSimpleResponse(true, 'snapshot saved successfully');
+    }
+
     public function leaveLivestream(Request $request)
     {
-        $user = $this->me($request);
+        $user = GlobalFunction::getUserOrGuest($request->header('authtoken'));
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
         }
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(true, 'livestream already ended');
+        }
+
+        // Mirror of the guest branch in joinLivestream: a signed-out viewer
+        // only ever contributed to the watching count.
+        if ($user->id == 0) {
+            $stream->watching_count = max(0, $stream->watching_count - 1);
+            $stream->save();
+
+            BaseBroadcastEvent::fire('livestream.updated',
+                ['livestream' => $stream->serialize(false)], $this->channel($stream->room_id));
+
+            return GlobalFunction::sendSimpleResponse(true, 'left livestream');
         }
 
         LivestreamUser::where('livestream_id', $stream->id)

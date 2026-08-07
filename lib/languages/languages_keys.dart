@@ -129,6 +129,9 @@ class LKey {
       "The subscription renews automatically as per the plan unless cancelled within 24 hours before the end of the current period. You can manage and cancel subscriptions anytime from the app store/play store settings.";
   static const String userId = "User ID";
   static const String profileImage = "Profile Image";
+  static const String optional = "Optional";
+  static const String remove = "Remove";
+  static const String trending = "Trending";
   static const String username = "Username";
   static const String bio = "Bio";
   static const String phoneNumber = "Phone Number";
@@ -633,8 +636,19 @@ class LKey {
       "A verification code has been sent. Please check your inbox.";
   static const String verifyEmailReminderCode =
       "Your email isn't verified yet. Enter the code we emailed you.";
+  /// Shown to someone already locked out, so it must NOT tell them to go to
+  /// Edit Profile — reaching that requires signing in, which is exactly what
+  /// they cannot do. Support is the only route back in.
   static const String noRecoveryEmail =
-      "No recovery email is linked to this account. Add one in Edit Profile, or contact support.";
+      "This account has no recovery email, so we can't send a reset code. Please contact support to get back in.";
+  static const String noRecoveryEmailWithContact =
+      "This account has no recovery email, so we can't send a reset code. Please contact @email to get back in.";
+  static const String recoveryEmail = "Recovery Email";
+  static const String recoveryEmailHint =
+      "Used to reset your password if you forget it. Without one you'll need to contact support.";
+  static const String addRecoveryEmail = "Add a recovery email";
+  static const String addRecoveryEmailDescription =
+      "You signed up with a phone number. Add an email so you can reset your password yourself if you forget it.";
   static const String resetPasswordViaRecoveryEmail =
       "We'll email a code to your recovery address to reset your password.";
   static const String emailVerifiedSuccessfully =

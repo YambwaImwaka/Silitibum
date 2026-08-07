@@ -17,6 +17,7 @@ use App\Models\PostSaves;
 use App\Models\Users;
 use App\Services\FeedRankingService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
@@ -174,6 +175,189 @@ class PostsController extends Controller
 
         return response()->json($json_data);
     }
+    /**
+     * Admin "Deleted content" view — the retained record of every takedown.
+     *
+     * Posts are soft-deleted so a removal can still be evidenced if it is
+     * later disputed; this is where an admin reads who removed what, why, and
+     * how long is left before it is permanently purged.
+     */
+    public function deletedPosts()
+    {
+        return view('deleted_posts');
+    }
+
+    public function listDeletedPosts(Request $request)
+    {
+        $query = Posts::onlyTrashed();
+        $totalData = $query->count();
+
+        $limit = $request->input('length');
+        $start = $request->input('start');
+        $searchValue = $request->input('search.value');
+
+        if (!empty($searchValue)) {
+            $query->where(function ($q) use ($searchValue) {
+                $q->where('description', 'LIKE', "%{$searchValue}%")
+                  ->orWhere('deletion_reason', 'LIKE', "%{$searchValue}%");
+            });
+        }
+        $totalFiltered = $query->count();
+
+        $result = $query->offset($start)
+                        ->limit($limit)
+                        ->orderBy('deleted_at', 'DESC')
+                        ->get();
+
+        $data = $result->map(function ($post) {
+            $restore = "<a href='#' rel='{$post->id}'
+                            class='action-btn restore d-flex align-items-center justify-content-center btn border rounded-2 text-success ms-1'
+                            title='Restore'><i class='uil-history'></i></a>";
+            $purge = "<a href='#' rel='{$post->id}'
+                            class='action-btn purge d-flex align-items-center justify-content-center btn border rounded-2 text-danger ms-1'
+                            title='Delete permanently'><i class='uil-trash-alt'></i></a>";
+            $action = "<span class='d-flex justify-content-end align-items-center'>{$restore}{$purge}</span>";
+
+            $postUser = GlobalFunction::createUserDetailsColumn($post->user_id);
+            $formattedDesc = GlobalFunction::formatDescription($post->description);
+
+            $sourceLabel = GlobalFunction::deletionSourceLabel($post->deletion_source);
+            $reason = $post->deletion_reason
+                ? '<div class="text-muted small">' . e($post->deletion_reason) . '</div>'
+                : '';
+            $removal = '<div class="itemDescription">' . $sourceLabel . $reason . $formattedDesc . '</div>';
+
+            $purgeAfter = $post->purge_after
+                ? GlobalFunction::formateDatabaseTime($post->purge_after)
+                : '<span class="text-muted">—</span>';
+
+            return [
+                GlobalFunction::createViewContentButton($post),
+                $postUser,
+                $removal,
+                GlobalFunction::formateDatabaseTime($post->deleted_at),
+                $purgeAfter,
+                $action,
+            ];
+        });
+
+        return response()->json([
+            "draw" => intval($request->input('draw')),
+            "recordsTotal" => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data" => $data,
+        ]);
+    }
+
+    /**
+     * Deleted comments and replies, listed alongside deleted posts — removed
+     * from the app but retained here for the same reason.
+     */
+    public function listDeletedComments(Request $request)
+    {
+        $query = PostComments::onlyTrashed();
+        $totalData = $query->count();
+
+        $limit = $request->input('length');
+        $start = $request->input('start');
+        $searchValue = $request->input('search.value');
+
+        if (!empty($searchValue)) {
+            $query->where('comment', 'LIKE', "%{$searchValue}%");
+        }
+        $totalFiltered = $query->count();
+
+        $result = $query->offset($start)
+                        ->limit($limit)
+                        ->orderBy('deleted_at', 'DESC')
+                        ->get();
+
+        $data = $result->map(function ($comment) {
+            $restore = "<a href='#' rel='{$comment->id}'
+                            class='action-btn restore-comment d-flex align-items-center justify-content-center btn border rounded-2 text-success ms-1'
+                            title='Restore'><i class='uil-history'></i></a>";
+            $action = "<span class='d-flex justify-content-end align-items-center'>{$restore}</span>";
+
+            $body = '<div class="itemDescription">'
+                . GlobalFunction::deletionSourceLabel($comment->deletion_source)
+                . '<div>' . e($comment->comment) . '</div></div>';
+
+            return [
+                GlobalFunction::createUserDetailsColumn($comment->user_id),
+                $body,
+                GlobalFunction::formateDatabaseTime($comment->deleted_at),
+                $comment->purge_after
+                    ? GlobalFunction::formateDatabaseTime($comment->purge_after)
+                    : '<span class="text-muted">—</span>',
+                $action,
+            ];
+        });
+
+        return response()->json([
+            "draw" => intval($request->input('draw')),
+            "recordsTotal" => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data" => $data,
+        ]);
+    }
+
+    public function restoreComment(Request $request)
+    {
+        $comment = PostComments::onlyTrashed()->find($request->id);
+        if ($comment == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'comment not found in deleted content!');
+        }
+
+        $comment->restore();
+        $comment->deleted_by = null;
+        $comment->deletion_source = null;
+        $comment->purge_after = null;
+        $comment->save();
+
+        GlobalFunction::settlePostCommentCount($comment->post_id);
+
+        return GlobalFunction::sendSimpleResponse(true, 'comment restored successfully!');
+    }
+
+    public function restorePost(Request $request)
+    {
+        $post = Posts::onlyTrashed()->find($request->id);
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'post not found in deleted content!');
+        }
+
+        $post->restore();
+        $post->deleted_by = null;
+        $post->deletion_source = null;
+        $post->deletion_reason = null;
+        $post->purge_after = null;
+        $post->save();
+
+        // Counters are recount queries, so restoring puts the post back into
+        // the hashtag/sound totals it was removed from.
+        GlobalFunction::detachPostFromFeeds($post);
+
+        return GlobalFunction::sendSimpleResponse(true, 'post restored successfully!');
+    }
+
+    /**
+     * Immediate permanent removal, ahead of the retention window. Separate
+     * from the scheduled sweep because it discards evidence early — the admin
+     * has to ask for it explicitly.
+     */
+    public function purgePost(Request $request)
+    {
+        $post = Posts::onlyTrashed()->find($request->id);
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'post not found in deleted content!');
+        }
+
+        GlobalFunction::deleteAllPostData($post);
+        $post->forceDelete();
+
+        return GlobalFunction::sendSimpleResponse(true, 'post permanently deleted!');
+    }
+
     public function listAllPosts(Request $request)
     {
         $query = Posts::query();
@@ -485,9 +669,17 @@ class PostsController extends Controller
     public function deletePost_Admin(Request $request){
 
         $post = Posts::find($request->id);
-        $post->delete();
+        // exists: validation and find() both ignore the SoftDeletes scope
+        // differently, so guard rather than fatal on an already-removed post.
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        }
 
-        GlobalFunction::deleteAllPostData($post);
+        GlobalFunction::softDeletePost(
+            $post,
+            GlobalFunction::DELETED_BY_ADMIN,
+            session('userId')
+        );
 
         return GlobalFunction::sendSimpleResponse(true, 'post deleted successfully!');
 
@@ -507,10 +699,18 @@ class PostsController extends Controller
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' =>  $validator->errors()->first()]);
         }
+        // `exists:tbl_post,id` is a raw DB query and does NOT respect the
+        // SoftDeletes scope, so a soft-deleted id passes validation and then
+        // find() returns null — which used to be a fatal on ->delete().
         $post = Posts::find($request->post_id);
-        $post->delete();
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        }
+        if ($post->user_id != $user->id) {
+            return GlobalFunction::sendSimpleResponse(false, 'you can not delete this post');
+        }
 
-        GlobalFunction::deleteAllPostData($post);
+        GlobalFunction::softDeletePost($post, GlobalFunction::DELETED_BY_AUTHOR, $user->id);
 
         return GlobalFunction::sendSimpleResponse(true, 'post deleted successfully!');
 
@@ -1145,7 +1345,18 @@ class PostsController extends Controller
         GlobalFunction::settleUserTotalPostLikesCount($post->user_id);
 
         // Insert Notification Data : Like Post
-        $notificationData = GlobalFunction::insertUserNotification(Constants::notify_like_post,$user->id, $post->user_id, $post->id);
+        GlobalFunction::insertUserNotification(Constants::notify_like_post,$user->id, $post->user_id, $post->id);
+        // Pushed from here rather than from the liker's phone, so the author
+        // is notified even if the liker closes the app immediately.
+        if ($post->user_id != $user->id) {
+            GlobalFunction::pushToUser(
+                $post->user_id,
+                $user->fullname ?: $user->username,
+                'liked your post',
+                ['type' => (string) Constants::notify_like_post, 'id' => (string) $post->id],
+                'notify_post_like'
+            );
+        }
 
         return GlobalFunction::sendSimpleResponse(true, 'post liked successfully');
 
@@ -1165,7 +1376,12 @@ class PostsController extends Controller
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
+        // `exists:tbl_post,id` is a raw query that ignores the SoftDeletes
+        // scope, so a removed post_id passes validation and find() is null.
         $post = Posts::find($request->post_id);
+        if($post == null){
+            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        }
         if($post->user_id != $user->id){
             return GlobalFunction::sendSimpleResponse(false, 'this post is not owned by you!');
         }
@@ -1194,7 +1410,12 @@ class PostsController extends Controller
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
+        // `exists:tbl_post,id` is a raw query that ignores the SoftDeletes
+        // scope, so a removed post_id passes validation and find() is null.
         $post = Posts::find($request->post_id);
+        if($post == null){
+            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        }
         if($post->user_id != $user->id){
             return GlobalFunction::sendSimpleResponse(false, 'this post is not owned by you!');
         }
@@ -1217,49 +1438,132 @@ class PostsController extends Controller
         return GlobalFunction::sendSimpleResponse(true, 'post pinned successfully');
 
     }
-    public function increaseShareCount(Request $request){
-        $rules = [
-            'post_id' => 'required',
-        ];
-
-        $validator = Validator::make($request->all(), $rules);
-        if ($validator->fails()) {
-            $messages = $validator->errors()->all();
-            $msg = $messages[0];
-            return response()->json(['status' => false, 'message' => $msg]);
+    /**
+     * Paginated trending feed, backed by the hourly posts:compute-trending
+     * ranking.
+     *
+     * Explore previously showed 15 random hashtags with up to 5 posts each and
+     * no pagination, so "trending" was really just a shuffled sample. This is
+     * the full ranked list.
+     *
+     * Paginates on rank_position rather than the usual `id < last_item_id`
+     * keyset: a score order cannot be expressed as an id comparison, and
+     * offset pagination would duplicate and skip rows across each hourly
+     * recompute. last_item_id is still accepted so existing app builds work
+     * unchanged — its rank is resolved in one primary-key lookup.
+     */
+    public function fetchTrendingPosts(Request $request)
+    {
+        $token = $request->header('authtoken');
+        $user = GlobalFunction::getUserOrGuest($token);
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
         }
-        $post =  Posts::find($request->post_id);
 
-        if($post == null){
-            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        $limit = (int) ($request->limit ?? 20);
+
+        $afterRank = 0;
+        if ($request->filled('last_rank')) {
+            $afterRank = (int) $request->last_rank;
+        } elseif ($request->filled('last_item_id')) {
+            $afterRank = (int) (DB::table('post_trending_scores')
+                ->where('post_id', $request->last_item_id)
+                ->value('rank_position') ?? 0);
         }
 
-        $post->increment('shares');
+        $query = DB::table('post_trending_scores')
+            ->where('rank_position', '>', $afterRank);
 
-        return GlobalFunction::sendSimpleResponse(true, 'post share count increased successfully');
+        if ($request->filled('types')) {
+            $query->whereIn('post_type', explode(',', $request->types));
+        }
 
+        $ranked = $query->orderBy('rank_position')
+            ->limit($limit)
+            ->get(['post_id', 'rank_position']);
+
+        if ($ranked->isEmpty()) {
+            return GlobalFunction::sendDataResponse(true, 'trending posts fetched successfully', []);
+        }
+
+        $ids = $ranked->pluck('post_id')->all();
+        $rankById = $ranked->pluck('rank_position', 'post_id');
+
+        // Soft-deleted and frozen-author posts drop out here rather than in
+        // the ranking table, so a takedown takes effect immediately instead of
+        // waiting for the next hourly recompute.
+        $posts = Posts::whereIn('id', $ids)
+            ->whereHas('user', function ($q) { $q->where('is_freez', 0); })
+            ->with(Constants::postsWithArray)
+            ->get();
+
+        // Restore ranking order, which whereIn does not preserve.
+        $posts = $posts->sortBy(fn ($post) => $rankById[$post->id] ?? PHP_INT_MAX)->values();
+        foreach ($posts as $post) {
+            $post->rank_position = $rankById[$post->id] ?? null;
+        }
+
+        return GlobalFunction::sendDataResponse(
+            true,
+            'trending posts fetched successfully',
+            GlobalFunction::processPostsListData($posts, $user)
+        );
     }
+
+    public function increaseShareCount(Request $request){
+        return $this->recordEngagement($request, 'post_shares', 'post share count increased successfully');
+    }
+
     public function increaseViewsCount(Request $request){
-        $rules = [
-            'post_id' => 'required',
-        ];
+        return $this->recordEngagement($request, 'post_views', 'post view increased successfully');
+    }
 
-        $validator = Validator::make($request->all(), $rules);
+    /**
+     * Records one deduplicated view/share for the caller.
+     *
+     * Deliberately does NOT touch tbl_post. An increment() here took an
+     * exclusive lock on a single row per event, so every concurrent viewer of
+     * a popular reel serialised behind it; posts:rollup-views folds these rows
+     * into the counter in batches instead.
+     *
+     * insertOrIgnore against the (post_id, viewer_key, view_date) unique index
+     * does the dedupe in one statement — no SELECT-then-INSERT race — so the
+     * same viewer re-watching the same reel all day counts once.
+     *
+     * The response shape is unchanged on purpose: shipped app builds only
+     * check `status == true`, and a released client must not start failing
+     * because the server got stricter.
+     */
+    private function recordEngagement(Request $request, string $table, string $message)
+    {
+        $validator = Validator::make($request->all(), ['post_id' => 'required']);
         if ($validator->fails()) {
-            $messages = $validator->errors()->all();
-            $msg = $messages[0];
-            return response()->json(['status' => false, 'message' => $msg]);
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
-        $post =  Posts::find($request->post_id);
 
-        if($post == null){
+        $post = Posts::find($request->post_id);
+        if ($post == null) {
             return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
         }
 
-        $post->increment('views');
+        // Tracked for signed-in and signed-out viewers alike. The route is
+        // public, but the app sends authtoken whenever a session exists, so a
+        // logged-in viewer is identified exactly; only true guests fall back
+        // to a fingerprint, salted with APP_KEY so this is not an IP log.
+        $user = GlobalFunction::getUserOrGuest($request->header('authtoken'));
+        $viewerKey = $user->id > 0
+            ? sha1('u:' . $user->id)
+            : sha1('g:' . $request->ip() . '|' . $request->userAgent() . '|' . config('app.key'));
 
-        return GlobalFunction::sendSimpleResponse(true, 'post view increased successfully');
+        DB::table($table)->insertOrIgnore([
+            'post_id' => $post->id,
+            'user_id' => $user->id,
+            'viewer_key' => $viewerKey,
+            'view_date' => now()->toDateString(),
+            'created_at' => now(),
+        ]);
 
+        return GlobalFunction::sendSimpleResponse(true, $message);
     }
 
     public function addPost_Feed_Text(Request $request){

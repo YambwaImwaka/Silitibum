@@ -1,6 +1,8 @@
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/service/api/notification_service.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
@@ -9,6 +11,7 @@ import 'package:shortzz/model/misc/admin_notification_model.dart';
 import 'package:shortzz/model/post_story/post_by_id.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
+import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/screen/notification_screen/widget/activity_notification_page.dart';
 import 'package:shortzz/screen/post_screen/single_post_screen.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen.dart';
@@ -42,27 +45,68 @@ class NotificationScreenController extends BaseController {
     fetchAdminNotification();
   }
 
+  /// Set when a fetch fails so the screen can offer a retry. Without this a
+  /// failed request left the loading flag stuck true and the screen showed a
+  /// spinner forever, with the re-entrancy guard below making retry
+  /// impossible.
+  RxnString activityError = RxnString();
+  RxnString adminError = RxnString();
+
   Future<void> fetchAdminNotification() async {
     if (isAdminNotification.value) return;
     isAdminNotification.value = true;
-    List<AdminNotificationData> items = await NotificationService.instance
-        .fetchAdminNotifications(lastItemId: adminNotifications.lastOrNull?.id);
-    isAdminNotification.value = false;
-    if (items.isNotEmpty) {
-      adminNotifications.addAll(items);
+    try {
+      List<AdminNotificationData> items = await NotificationService.instance
+          .fetchAdminNotifications(
+              lastItemId: adminNotifications.lastOrNull?.id);
+      if (items.isNotEmpty) {
+        adminNotifications.addAll(items);
+      }
+      adminError.value = null;
+    } catch (e, st) {
+      Loggers.error('fetchAdminNotifications failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
+      if (adminNotifications.isEmpty) {
+        adminError.value = LKey.somethingWentWrong.tr;
+      }
+    } finally {
+      // Must clear in a finally: the await above can throw (a single stale
+      // notification row used to 500 the whole endpoint), and the early
+      // return at the top of this method then made the state unrecoverable.
+      isAdminNotification.value = false;
     }
   }
 
   Future<void> fetchActivityNotifications() async {
     if (isActivityNotification.value) return;
     isActivityNotification.value = true;
-    List<ActivityNotification> items = await NotificationService.instance
-        .fetchActivityNotifications(
-            lastItemId: activityNotifications.lastOrNull?.id);
-    isActivityNotification.value = false;
-    if (items.isNotEmpty) {
-      activityNotifications.addAll(items);
+    try {
+      List<ActivityNotification> items = await NotificationService.instance
+          .fetchActivityNotifications(
+              lastItemId: activityNotifications.lastOrNull?.id);
+      if (items.isNotEmpty) {
+        activityNotifications.addAll(items);
+      }
+      activityError.value = null;
+    } catch (e, st) {
+      Loggers.error('fetchActivityNotifications failed: $e');
+      FirebaseCrashlytics.instance.recordError(e, st, fatal: false);
+      if (activityNotifications.isEmpty) {
+        activityError.value = LKey.somethingWentWrong.tr;
+      }
+    } finally {
+      isActivityNotification.value = false;
     }
+  }
+
+  Future<void> retryActivityNotifications() async {
+    activityError.value = null;
+    await fetchActivityNotifications();
+  }
+
+  Future<void> retryAdminNotifications() async {
+    adminError.value = null;
+    await fetchAdminNotification();
   }
 
 

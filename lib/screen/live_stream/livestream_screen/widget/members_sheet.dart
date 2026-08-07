@@ -75,7 +75,7 @@ class _MembersSheetState extends State<MembersSheet> {
                 : CustomSearchTextField(
                     backgroundColor: bgLightGrey(context),
                     onChanged: (value) {
-                      DebounceAction.shared.call(() {
+                      DebounceAction.tagged('live_members_search').call(() {
                         List<LivestreamUserState> itemList = [];
                         itemList =
                             controller.liveUsersStates.search(value, (p0) {

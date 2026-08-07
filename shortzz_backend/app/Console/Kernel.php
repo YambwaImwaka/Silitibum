@@ -34,6 +34,41 @@ class Kernel extends ConsoleKernel
             ->everyMinute()
             ->withoutOverlapping()
             ->runInBackground();
+
+        // Views/shares are written as deduplicated rows per viewer per day and
+        // folded into the tbl_post counters here, so a viral post takes one
+        // row lock per run instead of one per viewer. Five minutes of
+        // staleness is invisible: FeedRankingService only reads these as a
+        // normalised ratio.
+        $schedule->command('posts:rollup-engagement')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // Deleted posts are retained (see the retention migration) so a
+        // takedown can still be evidenced if challenged. This is what finally
+        // discards them once that window expires, and the only scheduled path
+        // that removes anything permanently.
+        $schedule->command('posts:purge-retention')
+            ->daily()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // "Someone you follow posted" notifications. Enqueued as a single row
+        // by the upload so posting stays O(1); this walks the follower list in
+        // chunks across ticks, bounded by a wall-clock budget per run.
+        $schedule->command('posts:fanout')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // Trending ranking. Four windowed aggregates over the engagement
+        // tables — far too expensive to run per Explore open, so it is
+        // precomputed and the read path becomes one indexed join.
+        $schedule->command('posts:compute-trending')
+            ->hourly()
+            ->withoutOverlapping()
+            ->runInBackground();
     }
 
     /**

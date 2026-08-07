@@ -2,10 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/widget/custom_search_text_field.dart';
 import 'package:shortzz/common/widget/custom_tab_switcher.dart';
+import 'package:shortzz/common/widget/error_retry_view.dart';
 import 'package:shortzz/common/widget/loader_widget.dart';
 import 'package:shortzz/common/widget/no_data_widget.dart';
 import 'package:shortzz/languages/languages_keys.dart';
-import 'package:shortzz/model/chat/chat_thread.dart';
 import 'package:shortzz/screen/message_screen/message_screen_controller.dart';
 import 'package:shortzz/screen/message_screen/widget/chat_conversation_user_card.dart';
 import 'package:shortzz/utilities/color_res.dart';
@@ -67,23 +67,34 @@ class MessageScreen extends StatelessWidget {
             ),
           ),
         ),
-        const CustomSearchTextField(),
+        CustomSearchTextField(
+          controller: controller.searchController,
+          onChanged: controller.onSearchChanged,
+        ),
         Expanded(
-          child: Obx(
-            () => controller.isLoading.value &&
-                    (controller.selectedChatCategory.value == 0
-                        ? controller.chatsUsers.isEmpty
-                        : controller.requestsUsers.isEmpty)
-                ? const LoaderWidget()
-                : PageView(
-                    controller: controller.pageController,
-                    onPageChanged: controller.onPageChanged,
-                    children: const [
-                      ChatsListView(),
-                      RequestsListView(),
-                    ],
-                  ),
-          ),
+          child: Obx(() {
+            final bool isEmpty = controller.selectedChatCategory.value == 0
+                ? controller.chatsUsers.isEmpty
+                : controller.requestsUsers.isEmpty;
+            if (controller.isThreadsLoading.value && isEmpty) {
+              return const LoaderWidget();
+            }
+            // A failed fetch used to render as "no chats yet", which reads as
+            // an empty inbox rather than an error the user can retry.
+            final String? error = controller.threadsError.value;
+            if (error != null && isEmpty) {
+              return ErrorRetryView(
+                  message: error, onRetry: controller.retryFetchThreads);
+            }
+            return PageView(
+              controller: controller.pageController,
+              onPageChanged: controller.onPageChanged,
+              children: const [
+                ChatsListView(),
+                RequestsListView(),
+              ],
+            );
+          }),
         )
       ],
     );
@@ -97,17 +108,18 @@ class ChatsListView extends StatelessWidget {
   Widget build(BuildContext context) {
     final MessageScreenController controller = Get.find();
     return Obx(() {
+      final threads = controller.visibleThreads(requests: false);
       return NoDataView(
-        showShow: controller.chatsUsers.isEmpty,
+        showShow: threads.isEmpty,
         title: LKey.chatListEmptyTitle.tr,
         description: LKey.chatListEmptyDescription.tr,
         child: ListView.builder(
-          itemCount: controller.chatsUsers.length,
+          itemCount: threads.length,
           padding: EdgeInsets.zero,
           itemBuilder: (context, index) {
-            ChatThread chatConversation = controller.chatsUsers[index];
-            chatConversation.bindChatUser();
-            return ChatConversationUserCard(chatConversation: chatConversation);
+            // Binding happens once in the controller's _upsertThread, not here
+            // — this runs on every rebuild and scroll frame.
+            return ChatConversationUserCard(chatConversation: threads[index]);
           },
         ),
       );
@@ -122,21 +134,20 @@ class RequestsListView extends StatelessWidget {
   Widget build(BuildContext context) {
     final MessageScreenController controller = Get.find();
 
-    return Obx(
-      () => NoDataView(
-        showShow: controller.requestsUsers.isEmpty,
+    return Obx(() {
+      final threads = controller.visibleThreads(requests: true);
+      return NoDataView(
+        showShow: threads.isEmpty,
         title: LKey.chatRequestEmptyTitle.tr,
         description: LKey.chatRequestEmptyDescription.tr,
         child: ListView.builder(
-          itemCount: controller.requestsUsers.length,
+          itemCount: threads.length,
           padding: EdgeInsets.zero,
           itemBuilder: (context, index) {
-            ChatThread chatConversation = controller.requestsUsers[index];
-            chatConversation.bindChatUser();
-            return ChatConversationUserCard(chatConversation: chatConversation);
+            return ChatConversationUserCard(chatConversation: threads[index]);
           },
         ),
-      ),
-    );
+      );
+    });
   }
 }

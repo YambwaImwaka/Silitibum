@@ -30,6 +30,11 @@ class ColorRes {
   static const Color textDarkGrey = Color(0xFF292524); // 15.2:1
   static const Color textLightGrey = Color(0xFF78716C); // 4.8:1
 
+  /// Unselected bottom-bar icons. The bar is always [blackPure], so the
+  /// theme-resolved [textDarkGrey] (#292524) rendered them near-invisible.
+  /// Same stone family, two steps lighter — 9.1:1 against black.
+  static const Color bottomBarInactive = Color(0xFFA8A29E);
+
   /// Pending / warning. Amber, not orange — it has to stay distinguishable
   /// from the burnt-orange brand colour when both sit in the same status list.
   static const Color orange = Color(0xFFF59E0B);

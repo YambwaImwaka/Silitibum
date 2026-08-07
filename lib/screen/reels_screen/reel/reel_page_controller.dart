@@ -5,14 +5,12 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/manager/share_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
-import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/status_model.dart';
 import 'package:shortzz/model/post_story/music/music_model.dart';
 import 'package:shortzz/model/post_story/post_by_id.dart';
@@ -101,18 +99,8 @@ class ReelController extends BaseController {
   }
 
   Future<void> _likePostApi(int id) async {
-    StatusModel result = await PostService.instance.likePost(postId: id);
-    if (result.status == true) {
-      Post? reel = reelData.value;
-      if (reel.user?.notifyPostLike == 1 && myUser?.id != reel.userId) {
-        FirebaseNotificationManager.instance.sendLocalisationNotification(LKey.activityLikedPost,
-            type: NotificationType.post,
-            body: NotificationInfo(id: reel.id),
-            deviceType: reel.user?.device ?? 0,
-            deviceToken: reel.user?.deviceToken ?? '',
-            languageCode: reel.user?.appLanguage);
-      }
-    }
+    // Notification is sent server-side by PostsController::likePost.
+    await PostService.instance.likePost(postId: id);
   }
 
   Future<void> _disLikePostApi(int id) async {
@@ -121,7 +109,6 @@ class ReelController extends BaseController {
 
   Future<void> onCommentTap({PostByIdData? postByIdData, bool isFromNotification = false}) async {
     FocusManager.instance.primaryFocus?.unfocus();
-    print("Ahiya avu");
     await Get.bottomSheet(
         CommentSheet(
           replyComment: postByIdData?.reply,
@@ -150,7 +137,7 @@ class ReelController extends BaseController {
       val?.saveToggle(val.isSaved == true ? false : true);
     });
 
-    DebounceAction.shared.call(() async {
+    DebounceAction.tagged('reel_save').call(() async {
       if (reelData.value.id == null) {
         return Loggers.error('Reel value not found');
       }

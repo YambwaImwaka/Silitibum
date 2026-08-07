@@ -1,13 +1,17 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -55,6 +59,17 @@ class LivestreamScreenController extends BaseController {
   int get timeoutMinutes => setting?.liveTimeout ?? 0;
 
   int get myUserId => SessionManager.instance.getUserID();
+
+  /// Signed-out viewer. A guest can watch, but has no participant row on the
+  /// server and no account to attribute a comment, gift, like or co-host slot
+  /// to — every write path checks this and prompts for sign-in instead.
+  bool get isGuest => !AuthGate.isLoggedIn;
+
+  /// Zego identity for this session. Guests get a stable per-install id
+  /// because Zego evicts duplicate user ids from a room, and every signed-out
+  /// viewer would otherwise log in as user "0".
+  String get zegoUserId =>
+      isGuest ? SessionManager.instance.getGuestStreamId() : '$myUserId';
 
   RxBool isMinViewerTimeout = false.obs;
   RxBool isTextEmpty = true.obs;
@@ -128,8 +143,11 @@ class LivestreamScreenController extends BaseController {
     }
 
     WakelockPlus.enable();
-    FirebaseNotificationManager.instance
-        .unsubscribeToTopic(topic: myUserId.toString());
+    // Guests have no per-user topic subscription to suppress.
+    if (!isGuest) {
+      FirebaseNotificationManager.instance
+          .unsubscribeToTopic(topic: myUserId.toString());
+    }
   }
 
   @override
@@ -402,7 +420,7 @@ class LivestreamScreenController extends BaseController {
   }
 
   Future<ZegoRoomLoginResult> loginRoom() async {
-    final user = ZegoUser('$myUserId', myUser.value?.username ?? '');
+    final user = ZegoUser(zegoUserId, myUser.value?.username ?? 'Guest');
 
     final roomConfig = ZegoRoomConfig.defaultConfig()
       ..isUserStatusNotify = true;
@@ -559,7 +577,41 @@ class LivestreamScreenController extends BaseController {
     await zegoEngine.mutePublishStreamAudio(false); // Ensure audio is not muted
     startMinViewerTimeoutCheck(); //  Check time to Min. Viewers Required to continue live
     pushNotificationToFollowers(liveData.value);
-    return zegoEngine.startPublishingStream(streamID);
+    await zegoEngine.startPublishingStream(streamID);
+    _captureRetentionSnapshot();
+  }
+
+  /// Captures the one frame that outlives the broadcast.
+  ///
+  /// The stream itself is never recorded — Zego carries the media and it is
+  /// gone once the room closes — so this still is all that remains of an ended
+  /// live. Taken a few seconds after publishing starts rather than at the end:
+  /// by then the encoder has real frames, whereas at end-of-stream the capture
+  /// would race the teardown of the surface being captured.
+  ///
+  /// Entirely best-effort. A failure here must never disturb a live broadcast,
+  /// so every path swallows its error.
+  void _captureRetentionSnapshot() {
+    Future.delayed(const Duration(seconds: 5), () async {
+      if (isClosed || roomId.isEmpty) return;
+      try {
+        final result = await zegoEngine.takePublishStreamSnapshot();
+        final bytes = result.image?.bytes;
+        if (result.errorCode != 0 || bytes == null || bytes.isEmpty) {
+          Loggers.error('Livestream snapshot capture failed: ${result.errorCode}');
+          return;
+        }
+
+        final dir = await getTemporaryDirectory();
+        final file = File('${dir.path}/live_${roomId.replaceAll('/', '_')}.jpg');
+        await file.writeAsBytes(bytes, flush: true);
+
+        await LivestreamService.instance
+            .uploadLivestreamSnapshot(roomId: roomId, snapshot: XFile(file.path));
+      } catch (e) {
+        Loggers.error('Livestream snapshot upload failed: $e');
+      }
+    });
   }
 
   Future<void> stopPublish() async {
@@ -747,6 +799,8 @@ class LivestreamScreenController extends BaseController {
   /// Hearts: instant local animation, batched server flush (one addLikes call
   /// per few seconds instead of one write per tap).
   void onLikeButtonTap() async {
+    // Guests watch read-only; every write into the room needs an account.
+    if (!AuthGate.check()) return;
     HapticManager.shared.light();
     _pendingLikes++;
     _knownLikeCount++;
@@ -768,6 +822,7 @@ class LivestreamScreenController extends BaseController {
   }
 
   void onTextCommentSend() {
+    if (!AuthGate.check()) return;
     String comment = textCommentController.text.trim();
     textCommentController.clear();
     isTextEmpty.value = true;
@@ -778,6 +833,7 @@ class LivestreamScreenController extends BaseController {
   void onGiftTap(GiftType type,
       {BattleView battleViewType = BattleView.red,
       List<AppUser> users = const []}) {
+    if (!AuthGate.check()) return;
     users.removeWhere((element) => element.userId == myUserId);
     if (liveData.value.type == LivestreamType.battle &&
         liveData.value.battleType == BattleType.end) {
@@ -1149,7 +1205,10 @@ class LivestreamScreenController extends BaseController {
     if (isHost) {
       Get.back();
       Get.off(() => LiveStreamEndScreen(
-          userState: userState, isHost: isHost, viewers: viewers));
+          userState: userState,
+          isHost: isHost,
+          viewers: viewers,
+          snapshot: liveData.value.snapshot));
     } else {
       if (userState?.type == LivestreamUserType.coHost) {
         Get.bottomSheet(

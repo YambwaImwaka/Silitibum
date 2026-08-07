@@ -11,6 +11,7 @@ import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/media/video_cache_service.dart';
+import 'package:shortzz/common/service/media/video_stall_watcher.dart';
 import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/comment_sheet/helper/comment_helper.dart';
@@ -158,6 +159,12 @@ class ReelsScreenController extends BaseController {
   /// made playback stall mid-reel. Now the two never overlap: indices inside
   /// the window stream, indices beyond it download, and by the time the user
   /// swipes that far the file is already local.
+  ///
+  /// Always targets `video` (the MP4), never `playbackVideoPath` — an HLS
+  /// master playlist is a manifest, so "downloading" it stores a few hundred
+  /// bytes of text and none of the media. _initializeControllerAtIndex looks
+  /// the cache up under this same key, which is what makes the download worth
+  /// making.
   void _prefetchBeyondLookahead(int index) {
     for (final i in [index + 3, index + 4]) {
       if (i < 0 || i >= reels.length) continue;
@@ -190,6 +197,10 @@ class ReelsScreenController extends BaseController {
     if (entry.status == PlayerStatus.disposed || entry.status == PlayerStatus.none) return;
 
     final controller = entry.controller;
+
+    // Before the controller: the watcher polls it on a timer and can rebuild
+    // it, so leaving it running would resurrect a slot we are tearing down.
+    entry.disposeWatcher();
 
     if (controller != null) {
       if (entry.listener != null) {
@@ -235,20 +246,23 @@ class ReelsScreenController extends BaseController {
           File(reel.video ?? ''),
         );
       } else {
-        // Prefers the HLS master playlist once transcoding has finished
+        // Streams the HLS master playlist once transcoding has finished
         // (adaptive bitrate), falling back to the raw MP4 otherwise — see
-        // Post.playbackVideoPath. VideoCacheService's disk cache only ever
-        // holds MP4s (prefetch() below always targets `video`, never
-        // `hlsPath`), so an HLS url simply misses the cache lookup and falls
-        // through to networkUrl(), which is the correct behavior: ExoPlayer/
-        // AVPlayer do their own internal HLS segment handling.
+        // Post.playbackVideoPath.
         final videoUrl = reel.playbackVideoPath?.addBaseURL() ?? '';
-        // Play straight from disk when _prefetchBeyondLookahead already landed
-        // the file (or this is a rewatch) — zero network cost. Otherwise
-        // stream it. Note we deliberately do *not* also kick off a cache
-        // download for this url here: doing both meant downloading the same
-        // video twice at once and starving the playing stream.
-        controller = await VideoCacheService.createController(videoUrl);
+        // ...but play straight from disk when _prefetchBeyondLookahead already
+        // landed the MP4 (or this is a rewatch): zero network cost, and no
+        // stall is possible. The cache is keyed on `video`, never `hlsPath`,
+        // because only the MP4 is a single cacheable file — see
+        // VideoCacheService.createController.
+        //
+        // We deliberately do *not* also kick off a cache download for this url
+        // here: doing both meant downloading the same video twice at once and
+        // starving the playing stream.
+        controller = await VideoCacheService.createController(
+          videoUrl,
+          cacheUrl: reel.video?.addBaseURL(),
+        );
       }
 
       await controller.initialize();
@@ -264,10 +278,37 @@ class ReelsScreenController extends BaseController {
 
       controller.setLooping(true);
 
-      players[index] = ReelPlayerEntry(
+      final playerEntry = ReelPlayerEntry(
         controller: controller,
         status: PlayerStatus.initialized,
       );
+      players[index] = playerEntry;
+
+      // Recover this slot if playback stalls. Only for streamed reels — a
+      // local file (id == -1 above) cannot stall on the network, and its url
+      // is not something the watcher could rebuild from.
+      if (reel.id != -1) {
+        final videoUrl = reel.playbackVideoPath?.addBaseURL() ?? '';
+        if (videoUrl.isNotEmpty) {
+          final watcher = VideoStallWatcher(
+            url: videoUrl,
+            cacheUrl: reel.video?.addBaseURL(),
+            onControllerReplaced: (fresh) {
+              // The slot may have been recycled while the retry was in flight.
+              if (players[index] != playerEntry) {
+                fresh.dispose();
+                return;
+              }
+              playerEntry.controller = fresh;
+              _publishSlot(index);
+            },
+            onGiveUp: () => Loggers.error('Reel $index stalled and could not recover'),
+          );
+          playerEntry.stallWatcher = watcher;
+          watcher.watch(controller);
+        }
+      }
+
       _publishSlot(index);
 
       Loggers.info("🚀 INITIALIZED $index");
@@ -302,20 +343,35 @@ class ReelsScreenController extends BaseController {
 
     controller.play();
 
-    DebounceAction.shared.call(milliseconds: 3000, () {
+    DebounceAction.tagged('reel_view_count').call(milliseconds: 3000, () {
       _increaseViewsCount(reels[index]);
     });
     Loggers.info('🚀🚀🚀 PLAYING $index');
   }
 
+  /// Posts whose view we have already reported this session. The server
+  /// dedupes per viewer per day regardless, so this is purely to avoid
+  /// re-POSTing every time the user swipes back onto a reel they have already
+  /// watched.
+  final Set<int> _countedViewPostIds = {};
+
   void _increaseViewsCount(Post reelData) {
-    PostService.instance.increaseViewsCount(postId: reelData.id).then((value) {
+    final int? postId = reelData.id;
+    if (postId == null) return;
+    if (!_countedViewPostIds.add(postId)) return;
+
+    PostService.instance.increaseViewsCount(postId: postId).then((value) {
       if (value.status == true) {
-        if (Get.isRegistered<ReelController>(tag: reelData.id.toString())) {
-          Get.find<ReelController>(tag: reelData.id.toString())
+        if (Get.isRegistered<ReelController>(tag: postId.toString())) {
+          Get.find<ReelController>(tag: postId.toString())
               .updateReelData(reel: reelData, isIncreaseCoin: true);
         }
+      } else {
+        // Let a genuine failure be retried on the next pass.
+        _countedViewPostIds.remove(postId);
       }
+    }).catchError((_) {
+      _countedViewPostIds.remove(postId);
     });
   }
 
@@ -446,7 +502,17 @@ class ReelPlayerEntry {
   VoidCallback? listener;
   PlayerStatus status;
 
+  /// Recovers this slot from a stall. The reels feed had no stall handling at
+  /// all — a video that stopped buffering just hung until the user swiped
+  /// away, which is a large part of "takes too long to load".
+  VideoStallWatcher? stallWatcher;
+
   ReelPlayerEntry({this.controller, this.listener, this.status = PlayerStatus.none});
+
+  void disposeWatcher() {
+    stallWatcher?.dispose();
+    stallWatcher = null;
+  }
 }
 
 enum PlayerStatus { none, initializing, initialized, disposed }

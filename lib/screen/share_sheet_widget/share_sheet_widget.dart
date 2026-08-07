@@ -92,7 +92,7 @@ class ShareSheetWidget extends StatelessWidget {
                               Get.back();
                               await link.copyText;
 
-                              DebounceAction.shared.call(() {
+                              DebounceAction.tagged('share_copy_link').call(() {
                                 controller.increaseShareCount(post?.id);
                               }, milliseconds: 1000);
                             })

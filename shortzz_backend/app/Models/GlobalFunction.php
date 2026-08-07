@@ -14,6 +14,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -42,11 +43,16 @@ class GlobalFunction extends Model
             $following->delete();
             GlobalFunction::settleFollowCount($following->from_user_id);
         }
-        // Comments
+        // Comments. Retained like the user's posts: deleting your account
+        // should not be a way to erase what you said on someone else's
+        // content. They age out on the normal retention clock.
         $comments = PostComments::where('user_id', $user->id)->get();
         foreach ($comments as $comment) {
-            $comment->delete();
-            GlobalFunction::settlePostCommentCount($comment->post_id);
+            GlobalFunction::softDeleteComment(
+                $comment,
+                GlobalFunction::DELETED_BY_ACCOUNT_REMOVAL,
+                $user->id
+            );
         }
         // Comment Likes
         $commentLikes = CommentLikes::where('user_id', $user->id)->get();
@@ -64,11 +70,17 @@ class GlobalFunction extends Model
             $postLike->delete();
             GlobalFunction::settlePostLikesCount($postLike->post_id);
         }
-        // Self Posts
+        // Self Posts. Soft-deleted like every other removal path: "delete my
+        // account" used to hard-delete the user's entire posting history,
+        // which destroyed the record of anything they had been reported for
+        // at the exact moment they walked away from it.
         $posts = Posts::where('user_id', $user->id)->get();
         foreach ($posts as $post) {
-            $post->delete();
-            GlobalFunction::deleteAllPostData($post);
+            GlobalFunction::softDeletePost(
+                $post,
+                GlobalFunction::DELETED_BY_ACCOUNT_REMOVAL,
+                $user->id
+            );
         }
 
         // Other Data
@@ -81,51 +93,69 @@ class GlobalFunction extends Model
         UserLinks::where('user_id', $user->id)->delete();
     }
 
+    /// Hydrates the payload a single activity-feed row renders from.
+    ///
+    /// Every lookup here is null-guarded on purpose. Notification rows outlive
+    /// the things they point at — an admin deleting a comment purges nothing,
+    /// and the user-facing delete only purges rows whose from_user_id matches
+    /// the deleter — so `find()` routinely returns null for stale rows. This
+    /// used to assign straight onto that null (`$comment->mentionedUsers = …`),
+    /// which is a fatal on PHP 8, so ONE stale row 500'd the entire Activity
+    /// response and the app was left spinning forever. Missing data now
+    /// degrades to null and the caller drops the row.
     public static function getNotificationItemData($notifyItem, $user)
     {
         $data = null;
         switch ($notifyItem->type) {
             case Constants::notify_like_post:
+            case Constants::notify_mention_post:
+            case Constants::notify_new_post_from_following:
                 $post = GlobalFunction::preparePostFullData($notifyItem->data_id);
+                if ($post == null) {
+                    return null;
+                }
                 $data['post'] = $post;
                 break;
             case Constants::notify_comment_post:
-                $comment = PostComments::find($notifyItem->data_id);
-                $comment->mentionedUsers = Users::whereIn('id', explode(',', $comment->mentioned_user_ids))
-                    ->select(explode(',', Constants::userPublicFields))
-                    ->get();
-                $data['comment'] = $comment;
-                $data['post'] = GlobalFunction::preparePostFullData($comment->post_id);
-                break;
-            case Constants::notify_mention_post:
-                $post = GlobalFunction::preparePostFullData($notifyItem->data_id);
-                $data['post'] = $post;
-                break;
             case Constants::notify_mention_comment:
                 $comment = PostComments::find($notifyItem->data_id);
+                if ($comment == null) {
+                    return null;
+                }
                 $comment->mentionedUsers = Users::whereIn('id', explode(',', $comment->mentioned_user_ids))
                     ->select(explode(',', Constants::userPublicFields))
                     ->get();
+                $post = GlobalFunction::preparePostFullData($comment->post_id);
+                if ($post == null) {
+                    return null;
+                }
                 $data['comment'] = $comment;
-                $data['post'] = GlobalFunction::preparePostFullData($comment->post_id);
+                $data['post'] = $post;
                 break;
             case Constants::notify_gift_user:
                 $gift = Gifts::find($notifyItem->data_id);
+                if ($gift == null) {
+                    return null;
+                }
                 $data['gift'] = $gift;
                 break;
             case Constants::notify_reply_comment:
-                $reply = CommentReplies::find($notifyItem->data_id);
-                $comment = PostComments::find($reply->comment_id);
-                $data['reply'] = $reply;
-                $data['comment'] = $comment;
-                $data['post'] = GlobalFunction::preparePostFullData($comment->post_id);
-                break;
             case Constants::notify_mention_reply:
                 $reply = CommentReplies::find($notifyItem->data_id);
+                if ($reply == null) {
+                    return null;
+                }
                 $comment = PostComments::find($reply->comment_id);
+                if ($comment == null) {
+                    return null;
+                }
+                $post = GlobalFunction::preparePostFullData($comment->post_id);
+                if ($post == null) {
+                    return null;
+                }
                 $data['reply'] = $reply;
                 $data['comment'] = $comment;
-                $data['post'] = GlobalFunction::preparePostFullData($comment->post_id);
+                $data['post'] = $post;
                 break;
         }
 
@@ -134,7 +164,11 @@ class GlobalFunction extends Model
 
             $post->is_liked = PostLikes::where('post_id', $post->id)->where('user_id', $user->id)->exists();
             $post->is_saved = PostSaves::where('post_id', $post->id)->where('user_id', $user->id)->exists();
-            $post->user->is_following = Followers::where('from_user_id', $user->id)->where('to_user_id', $post->user_id)->exists();
+            // The author row can be gone (deleted account) while the post is
+            // still hydrated — same fatal-on-null hazard as above.
+            if ($post->user != null) {
+                $post->user->is_following = Followers::where('from_user_id', $user->id)->where('to_user_id', $post->user_id)->exists();
+            }
             $post->mentionedUsers = Users::whereIn('id', explode(',', $post->mentioned_user_ids))
                 ->select(explode(',', Constants::userPublicFields))
                 ->get();
@@ -179,7 +213,11 @@ class GlobalFunction extends Model
     public static function regenerateGoogleAPIToken()
     {
         $client = new Client();
-        $client->setAuthConfig('googleCredentials.json');
+        // base_path(), not a bare relative name: under PHP-FPM/LiteSpeed the
+        // working directory is the docroot (public/), so the relative form
+        // never resolved and token regeneration failed even on hosts where
+        // sendPushNotification() could read the same file fine.
+        $client->setAuthConfig(base_path('googleCredentials.json'));
         $client->addScope('https://www.googleapis.com/auth/firebase.messaging');
         $client->addScope('https://www.googleapis.com/auth/cloud-platform');
         $client->fetchAccessTokenWithAssertion();
@@ -211,6 +249,49 @@ class GlobalFunction extends Model
         if ($notifyON && $notSelfPost) {
             $notifyPayload = GlobalFunction::generatePushNotificationPayload($toUser->device, Constants::pushTypeToken, $toUser->device_token, $title, $description, null, $notificationData);
             GlobalFunction::sendPushNotification($notifyPayload);
+        }
+    }
+
+    /**
+     * Sends a push for a notification the server has already recorded.
+     *
+     * Server-originated on purpose. Every push except chat used to be built
+     * and fired by the SENDER's device through
+     * misc/pushNotificationToSingleUser, which meant a notification only
+     * arrived if the sender's app was still alive, and it happened to hold the
+     * recipient's FCM token — which in turn required device_token to be
+     * published in every user payload. Doing it here removes both the
+     * reliability problem and the reason to leak the token.
+     *
+     * Never throws: a failed push must not fail the like/comment/follow that
+     * triggered it.
+     */
+    public static function pushToUser($toUserId, $title, $body, array $data = [], $preferenceColumn = null)
+    {
+        try {
+            $toUser = Users::find($toUserId);
+            if ($toUser == null || empty($toUser->device_token) || $toUser->is_freez == 1) {
+                return false;
+            }
+            // Per-type opt-out (notify_post_like, notify_follow, ...).
+            if ($preferenceColumn !== null && isset($toUser->$preferenceColumn) && $toUser->$preferenceColumn != 1) {
+                return false;
+            }
+
+            $payload = GlobalFunction::generatePushNotificationPayload(
+                $toUser->device,
+                Constants::pushTypeToken,
+                $toUser->device_token,
+                $title,
+                $body,
+                null,
+                $data
+            );
+
+            return GlobalFunction::sendPushNotification($payload);
+        } catch (\Throwable $e) {
+            Log::error('pushToUser failed for user ' . $toUserId . ': ' . $e->getMessage());
+            return false;
         }
     }
 
@@ -253,35 +334,79 @@ class GlobalFunction extends Model
         return ['message' => $messagePayload];
     }
 
+    /// Per-process cache of the FCM project id. sendPushNotification() used to
+    /// re-read googleCredentials.json from disk on EVERY call; a follower
+    /// fan-out of 300 recipients meant 300 file reads for one unchanging value.
+    private static $fcmProjectId = null;
+
     public static function sendPushNotification($payload)
     {
-        // Load Google credentials and fetch the access token
-        $googleCredentialsPath = base_path('googleCredentials.json');
-        $googleCredentials = json_decode(File::get($googleCredentialsPath), true);
-
-        $settings = GlobalSettings::first();
-        $accessToken = $settings->place_api_access_token;
-
-        // FCM endpoint
-        $url = 'https://fcm.googleapis.com/v1/projects/' . $googleCredentials['project_id'] . '/messages:send';
-
-        $response = Http::withToken($accessToken)
-            ->withHeaders(['Content-Type' => 'application/json'])
-            ->post($url, $payload);
-
-        // Check if token is expired or not
-        // Log::debug('Notification Response:', [$response->body()]);
-        $responseBody = json_decode($response->body(), true);
-        if (isset($responseBody['error']['code'])) {
-            $errorCode = $responseBody['error']['code'];
-            // Log::debug('iOS Notification Error Code:', $errorCode);
-            if ($errorCode == 401) {
-                // Regenerate Token
-                GlobalFunction::regenerateGoogleAPIToken();
-            }
-            return;
+        $projectId = self::fcmProjectId();
+        if ($projectId === null) {
+            // Missing/unreadable service-account file. Log once per call site
+            // rather than throwing: a broken push must never take down the
+            // request that triggered it (posting, commenting, following).
+            Log::error('sendPushNotification: googleCredentials.json missing or unreadable at ' . base_path('googleCredentials.json'));
+            return false;
         }
+
+        $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
+
+        $response = self::postToFcm($url, $payload);
+        $responseBody = json_decode($response->body(), true);
+
+        if (isset($responseBody['error']['code']) && $responseBody['error']['code'] == 401) {
+            // Access tokens expire hourly. The old code regenerated and then
+            // returned, so the FIRST push after every expiry was silently
+            // dropped — retry once with the fresh token instead.
+            try {
+                GlobalFunction::regenerateGoogleAPIToken();
+            } catch (\Throwable $e) {
+                Log::error('regenerateGoogleAPIToken failed: ' . $e->getMessage());
+                return false;
+            }
+
+            $response = self::postToFcm($url, $payload);
+            $responseBody = json_decode($response->body(), true);
+        }
+
+        if (isset($responseBody['error'])) {
+            Log::warning('FCM send failed: ' . ($responseBody['error']['message'] ?? 'unknown error'));
+            return false;
+        }
+
         return $response->successful();
+    }
+
+    private static function postToFcm($url, $payload)
+    {
+        // Read fresh each attempt: regenerateGoogleAPIToken() writes the new
+        // token to settings, and the retry above depends on picking it up.
+        $accessToken = optional(GlobalSettings::first())->place_api_access_token;
+
+        return Http::withToken($accessToken)
+            ->withHeaders(['Content-Type' => 'application/json'])
+            ->timeout(10)
+            ->post($url, $payload);
+    }
+
+    private static function fcmProjectId()
+    {
+        if (self::$fcmProjectId !== null) {
+            return self::$fcmProjectId;
+        }
+
+        $path = base_path('googleCredentials.json');
+        if (!File::exists($path)) {
+            return null;
+        }
+
+        $credentials = json_decode(File::get($path), true);
+        if (!is_array($credentials) || empty($credentials['project_id'])) {
+            return null;
+        }
+
+        return self::$fcmProjectId = $credentials['project_id'];
     }
 
     public static function determineUserLevel($userId)
@@ -614,6 +739,182 @@ class GlobalFunction extends Model
         return $number;
     }
 
+    /// Badge for the admin "Deleted content" list, so who removed a post is
+    /// readable at a glance rather than a bare integer.
+    public static function deletionSourceLabel($source)
+    {
+        [$text, $class] = match ((int) $source) {
+            self::DELETED_BY_AUTHOR => ['Author', 'bg-secondary'],
+            self::DELETED_BY_ADMIN => ['Admin', 'bg-primary'],
+            self::DELETED_BY_MODERATOR => ['Moderator', 'bg-info'],
+            self::DELETED_BY_REPORT => ['Report accepted', 'bg-danger'],
+            self::DELETED_BY_ACCOUNT_REMOVAL => ['Account deleted', 'bg-dark'],
+            default => ['Unknown', 'bg-secondary'],
+        };
+
+        return "<span class='badge {$class} mb-1'>{$text}</span>";
+    }
+
+    // Deletion sources for tbl_post.deletion_source.
+    const DELETED_BY_AUTHOR = 0;
+    const DELETED_BY_ADMIN = 1;
+    const DELETED_BY_MODERATOR = 2;
+    const DELETED_BY_REPORT = 3;
+    const DELETED_BY_ACCOUNT_REMOVAL = 4;
+
+    /**
+     * Soft-deletes a post, stamping who removed it, why, and when it becomes
+     * eligible for permanent purge.
+     *
+     * Replaces the old `$post->delete(); deleteAllPostData($post);` pairing at
+     * every delete site. That combination destroyed the likes, comments and —
+     * critically — the report_posts row recording WHY the content was taken
+     * down, at exactly the moment that record matters most. Everything of
+     * evidentiary value is now kept until purge_after passes; only the
+     * notification rows pointing at the post are cleared, because a
+     * notification that opens a post the user can no longer see is a dead tap
+     * (and those self-prune after 7 days anyway).
+     */
+    public static function softDeletePost($post, int $source, $deletedBy = null, ?string $reason = null)
+    {
+        if ($post == null) {
+            return;
+        }
+
+        $settings = GlobalSettings::first();
+        // Report-driven removals get the longer clock: that is the case with
+        // real legal exposure, so the evidence has to outlive a routine
+        // self-delete.
+        $days = $source === self::DELETED_BY_REPORT
+            ? (int) ($settings->report_retention_days ?? 365)
+            : (int) ($settings->post_retention_days ?? 90);
+
+        $post->deleted_by = $deletedBy;
+        $post->deletion_source = $source;
+        $post->deletion_reason = $reason;
+        $post->purge_after = Carbon::now()->addDays($days);
+        $post->save();
+
+        $post->delete(); // soft
+
+        self::detachPostFromFeeds($post);
+    }
+
+    /**
+     * Soft-deletes a comment (and its replies), stamping attribution and the
+     * purge deadline — the comment equivalent of softDeletePost().
+     *
+     * Replies go with the parent: a reply thread read without the comment it
+     * answers is not a usable record of what was said.
+     */
+    public static function softDeleteComment($comment, int $source, $deletedBy = null)
+    {
+        if ($comment == null) {
+            return;
+        }
+
+        $settings = GlobalSettings::first();
+        $purgeAfter = Carbon::now()->addDays((int) ($settings->post_retention_days ?? 90));
+
+        CommentReplies::where('comment_id', $comment->id)
+            ->update([
+                'deleted_at' => Carbon::now(),
+                'deleted_by' => $deletedBy,
+                'deletion_source' => $source,
+                'purge_after' => $purgeAfter,
+            ]);
+
+        $comment->deleted_by = $deletedBy;
+        $comment->deletion_source = $source;
+        $comment->purge_after = $purgeAfter;
+        $comment->save();
+        $comment->delete(); // soft
+
+        GlobalFunction::settlePostCommentCount($comment->post_id);
+
+        // The notification pointing at it must go — tapping through to a
+        // comment the user can no longer see is a dead end. Not filtered by
+        // from_user_id: an admin or moderator removing someone else's comment
+        // has to clear it too, which the old call site did not do.
+        UserNotification::whereIn('type', [
+            Constants::notify_comment_post,
+            Constants::notify_mention_comment,
+        ])->where('data_id', $comment->id)->delete();
+    }
+
+    /**
+     * Soft-deletes a single reply.
+     */
+    public static function softDeleteCommentReply($reply, int $source, $deletedBy = null)
+    {
+        if ($reply == null) {
+            return;
+        }
+
+        $settings = GlobalSettings::first();
+
+        $reply->deleted_by = $deletedBy;
+        $reply->deletion_source = $source;
+        $reply->purge_after = Carbon::now()->addDays((int) ($settings->post_retention_days ?? 90));
+        $reply->save();
+        $reply->delete(); // soft
+
+        GlobalFunction::settleCommentsRepliesCount($reply->comment_id);
+
+        UserNotification::whereIn('type', [
+            Constants::notify_reply_comment,
+            Constants::notify_mention_reply,
+        ])->where('data_id', $reply->id)->delete();
+    }
+
+    /**
+     * Clears the derived/UI state that must not outlive a removed post, while
+     * leaving the post row, its media and all engagement history intact.
+     */
+    public static function detachPostFromFeeds($post)
+    {
+        UserNotification::whereIn('type', [
+            Constants::notify_like_post,
+            Constants::notify_mention_post,
+            Constants::notify_new_post_from_following,
+        ])->where('data_id', $post->id)->delete();
+
+        $commentIds = PostComments::where('post_id', $post->id)->pluck('id');
+        $replyIds = CommentReplies::whereIn('comment_id', $commentIds)->pluck('id');
+
+        UserNotification::whereIn('type', [Constants::notify_reply_comment, Constants::notify_mention_reply])
+            ->whereIn('data_id', $replyIds)
+            ->delete();
+        UserNotification::whereIn('type', [Constants::notify_comment_post, Constants::notify_mention_comment])
+            ->whereIn('data_id', $commentIds)
+            ->delete();
+
+        // The counters below are recount queries against Posts::, so with the
+        // SoftDeletes scope in place they self-correct — a removed post stops
+        // being counted with no extra bookkeeping here.
+        if ($post->hashtags != null) {
+            foreach (explode(',', $post->hashtags) as $tag) {
+                $hashtag = Hashtags::where('hashtag', $tag)->first();
+                if ($hashtag != null) {
+                    GlobalFunction::settleHashtagPostCounts($hashtag->id);
+                }
+            }
+        }
+        if ($post->sound_id != null) {
+            $sound = Musics::find($post->sound_id);
+            if ($sound != null) {
+                GlobalFunction::settleSoundPostCounts($sound->id);
+            }
+        }
+        if ($post->user_id != null) {
+            GlobalFunction::settleUserTotalPostLikesCount($post->user_id);
+        }
+    }
+
+    /**
+     * Permanent removal. Only the retention sweep (posts:purge-retention) and
+     * an explicit admin purge should call this — it is the point of no return.
+     */
     public static function deleteAllPostData($post)
     {
         PostLikes::where('post_id', $post->id)->delete();
@@ -640,11 +941,15 @@ class GlobalFunction extends Model
 
         // ***** End : Delete notifications attached with that post
 
-        $comments = PostComments::where('post_id', $post->id)->get();
+        // withTrashed()/forceDelete(): comments and replies are soft-deletable
+        // now, so a plain get()+delete() here would skip already-removed rows
+        // and only soft-delete the rest — leaving orphans behind a purge whose
+        // whole purpose is permanent removal.
+        $comments = PostComments::withTrashed()->where('post_id', $post->id)->get();
         foreach ($comments as $comment) {
-            CommentReplies::where('comment_id', $comment->id)->delete();
+            CommentReplies::withTrashed()->where('comment_id', $comment->id)->forceDelete();
             CommentLikes::where('comment_id', $comment->id)->delete();
-            $comment->delete();
+            $comment->forceDelete();
         }
 
         // Deleting Images
@@ -653,6 +958,24 @@ class GlobalFunction extends Model
                 GlobalFunction::deleteFile($image->image);
                 $image->delete();
             }
+        }
+
+        // Video posts leaked their media on every delete: only the images
+        // above were ever cleaned up, so each removed reel left its source
+        // MP4, poster frame, HLS ladder and ffmpeg scratch directory on disk
+        // forever.
+        if (!empty($post->video)) {
+            GlobalFunction::deleteFile($post->video);
+        }
+        if (!empty($post->thumbnail)) {
+            GlobalFunction::deleteFile($post->thumbnail);
+        }
+        if (!empty($post->hls_path)) {
+            GlobalFunction::deleteHlsDirectory($post->hls_path);
+        }
+        $scratchDir = storage_path('app/transcode/' . $post->id);
+        if (is_dir($scratchDir)) {
+            File::deleteDirectory($scratchDir);
         }
 
         // Minusing video count on hashtag
@@ -968,13 +1291,51 @@ class GlobalFunction extends Model
         if ($request->has('mentioned_user_ids')) {
             $mentionedUsers = Users::whereIn('id', explode(',', $post->mentioned_user_ids))->get();
             foreach ($mentionedUsers as $mUser) {
-                $notificationData = GlobalFunction::insertUserNotification(Constants::notify_mention_post, $user->id, $mUser->id, $post->id);
+                GlobalFunction::insertUserNotification(Constants::notify_mention_post, $user->id, $mUser->id, $post->id);
+                GlobalFunction::pushToUser(
+                    $mUser->id,
+                    $user->fullname ?? $user->username,
+                    'mentioned you in a post',
+                    ['type' => (string) Constants::notify_mention_post, 'id' => (string) $post->id],
+                    'notify_mention'
+                );
             }
         }
+
+        GlobalFunction::publishPost($post, $user);
 
         $post = GlobalFunction::preparePostFullData($post->id);
 
         return $post;
+    }
+
+    /**
+     * Single hook for "this post is now visible to other people".
+     *
+     * Enqueues the follower fan-out — one INSERT, so the upload response never
+     * waits on it no matter how many followers the author has. posts:fanout
+     * does the actual walking.
+     */
+    public static function publishPost($post, $author = null)
+    {
+        try {
+            $authorId = $author->id ?? $post->user_id;
+
+            // Unique post_id makes this idempotent, so a republish or retry
+            // cannot notify the same followers twice.
+            DB::table('post_fanout_queue')->insertOrIgnore([
+                'post_id' => $post->id,
+                'cursor_user_id' => 0,
+                'total_sent' => 0,
+                'status' => 0,
+                'attempts' => 0,
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Never let notification bookkeeping fail an upload.
+            Log::error('publishPost fan-out enqueue failed for post ' . $post->id . ': ' . $e->getMessage());
+        }
     }
 
     public static function checkIfUserCanPost($user)
@@ -1058,20 +1419,40 @@ class GlobalFunction extends Model
 
         return $first;
     }
+    /// Builds a handle from the user's display name.
+    ///
+    /// The clean name is tried first and digits are appended only on a real
+    /// collision. This used to unconditionally append rand(1, 9999), so EVERY
+    /// account ended up looking like "JaneDoe4821" even when "JaneDoe" was
+    /// free — the "serial number in front of the user name" the client
+    /// reported, since lists show the username as the primary line.
     public static function generateUsername($fullname)
     {
-        // Remove spaces and prepare the base username
-        $fullname = str_replace(' ', '', $fullname);
+        // Strip anything that isn't safe in a handle, not just spaces.
+        $base = preg_replace('/[^A-Za-z0-9._]/', '', (string) $fullname);
+        $base = trim($base, '._');
 
-        do {
-            // Generate a random token and append it to the base username
-            $username = $fullname . rand(1, 9999);
+        // Nothing usable left (e.g. a name written entirely in a non-Latin
+        // script) — fall back to the random identity generator.
+        if (strlen($base) < 3) {
+            return GlobalFunction::generateDummyUserIdentity();
+        }
 
-            // Check if the generated username already exists
-            $exists = Users::where('username', $username)->exists();
-        } while ($exists); // Repeat until a unique username is found
+        $base = substr($base, 0, 25);
 
-        return $username;
+        if (!Users::where('username', $base)->exists()) {
+            return $base;
+        }
+
+        // Taken: walk a short counter before giving up on a readable handle.
+        for ($suffix = 1; $suffix <= 999; $suffix++) {
+            $candidate = $base . $suffix;
+            if (!Users::where('username', $candidate)->exists()) {
+                return $candidate;
+            }
+        }
+
+        return GlobalFunction::generateDummyUserIdentity();
     }
     // Per-request memo: the authorizeUser middleware and the controller
     // action it guards both resolve the same token, which used to mean 2-3
@@ -1272,6 +1653,13 @@ class GlobalFunction extends Model
         $receiver->save();
 
         self::insertUserNotification(Constants::notify_gift_user, $sender->id, $receiver->id, $gift->id);
+        self::pushToUser(
+            $receiver->id,
+            $sender->fullname ?: $sender->username,
+            'sent you a gift',
+            ['type' => (string) Constants::notify_gift_user, 'id' => (string) $gift->id],
+            'notify_gift_received'
+        );
         return null;
     }
 
@@ -1350,6 +1738,15 @@ class GlobalFunction extends Model
             case 'PUBLIC':
                 Storage::disk('public')->put($filePath, file_get_contents($file), 'public');
                 break;
+            default:
+                // No default branch here meant an unset or misspelled
+                // FILES_STORAGE_LOCATION wrote nothing at all, yet still
+                // returned a path — leaving rows pointing at files that were
+                // never created, with no error anywhere. Fail loudly instead.
+                throw new \RuntimeException(
+                    'FILES_STORAGE_LOCATION is not set to a supported value ' .
+                    '(expected AWSS3, DOSPACE or PUBLIC); got: ' . var_export($storageType, true)
+                );
         }
 
         return $filePath;
@@ -1378,6 +1775,40 @@ class GlobalFunction extends Model
                     Storage::disk('local')->delete('public/' . $filePath);
                 }
                 break;
+        }
+    }
+
+    /**
+     * Removes a whole HLS ladder given its master playlist path.
+     *
+     * hls_path is "hls/{postId}/master.m3u8" (PollTranscodeStatus), and the
+     * segments and variant playlists sit alongside it — deleting just the
+     * master would strand every .ts file, which is most of the bytes.
+     */
+    public static function deleteHlsDirectory($hlsPath)
+    {
+        if (empty($hlsPath)) {
+            return;
+        }
+
+        $directory = dirname($hlsPath);
+        if ($directory === '' || $directory === '.' || $directory === '/') {
+            return;
+        }
+
+        // Same disk mapping PollTranscodeStatus uploads the ladder to.
+        $disk = GlobalFunction::resolveStorageDisk();
+        if ($disk === null) {
+            return;
+        }
+
+        try {
+            if (Storage::disk($disk)->exists($directory)) {
+                Storage::disk($disk)->deleteDirectory($directory);
+            }
+        } catch (\Throwable $e) {
+            // Never let orphaned media block a purge run.
+            Log::error('deleteHlsDirectory failed for ' . $directory . ': ' . $e->getMessage());
         }
     }
 

@@ -67,5 +67,16 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('auth', function (Request $request) {
             return Limit::perMinute(10)->by($request->ip());
         });
+
+        // View/share recording is guest-open (signed-out watching still
+        // counts) and now writes a row per event, so it needs a ceiling of its
+        // own. Generous enough for real scrolling — a viewer swiping steadily
+        // through the reel feed fires roughly one every three seconds — but
+        // low enough that the endpoint is not a free write amplifier. The
+        // per-viewer-per-day unique index already caps what any of this can
+        // actually change.
+        RateLimiter::for('engagement', function (Request $request) {
+            return Limit::perMinute(120)->by($request->header('authtoken') ?: $request->ip());
+        });
     }
 }

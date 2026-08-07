@@ -38,23 +38,101 @@ class ExploreScreen extends StatelessWidget {
             final exploreData = controller.explorePageData.value;
             final hasData = exploreData?.highPostHashtags?.isNotEmpty ?? false;
 
+            final hasTrending = controller.trendingPosts.isNotEmpty;
+
             return MyRefreshIndicator(
-              onRefresh: controller.fetchExplorePageData,
-              child: isLoading && exploreData == null
+              onRefresh: controller.onRefresh,
+              child: isLoading && exploreData == null && !hasTrending
                   ? const LoaderWidget()
                   : NoDataView(
-                      showShow: !isLoading && !hasData,
+                      showShow: !isLoading && !hasData && !hasTrending,
                       title: LKey.searchPageEmptyTitle.tr,
                       description: LKey.searchPageEmptyDescription.tr,
-                      child: SearchScreenGridView(
-                          postList: exploreData?.highPostHashtags ?? [],
-                          controller: controller),
+                      child: CustomScrollView(
+                        slivers: [
+                          // The real trending feed, ranked and paginated. The
+                          // hashtag rails below stay as a browsing aid.
+                          if (hasTrending) ...[
+                            SliverToBoxAdapter(
+                                child: _TrendingHeader(
+                                    title: LKey.trending.tr)),
+                            TrendingPostGrid(controller: controller),
+                          ],
+                          SliverToBoxAdapter(
+                            child: SearchScreenGridView(
+                                postList: exploreData?.highPostHashtags ?? [],
+                                controller: controller),
+                          ),
+                        ],
+                      ),
                     ),
             );
           }),
         ),
       ],
     );
+  }
+}
+
+class _TrendingHeader extends StatelessWidget {
+  const _TrendingHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyleCustom.unboundedBold700(
+            fontSize: 14, color: textDarkGrey(context)),
+      ),
+    );
+  }
+}
+
+/// The ranked trending grid. Paginates as the user scrolls, which the hashtag
+/// rails never did — they were capped at five tiles each with no load-more.
+class TrendingPostGrid extends StatelessWidget {
+  const TrendingPostGrid({super.key, required this.controller});
+
+  final ExploreScreenController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final posts = controller.trendingPosts;
+      return SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          crossAxisSpacing: 2,
+          mainAxisSpacing: 2,
+          childAspectRatio: 0.66,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, index) {
+            // Fetch the next page a little before the end so scrolling stays
+            // continuous rather than pausing at the boundary.
+            if (index >= posts.length - 6) {
+              controller.fetchTrendingPosts();
+            }
+            final post = posts[index];
+            return InkWell(
+              onTap: () => controller.onPostTap(post),
+              child: CustomImage(
+                size: const Size(double.infinity, double.infinity),
+                image: post.getThumbnail.addBaseURL(),
+                radius: 0,
+                fit: BoxFit.cover,
+                isShowPlaceHolder: true,
+              ),
+            );
+          },
+          childCount: posts.length,
+        ),
+      );
+    });
   }
 }
 

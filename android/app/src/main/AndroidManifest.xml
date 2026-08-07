@@ -19,6 +19,12 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
 
+    <!-- Notifications. Required from Android 13 (API 33) upward: with
+         targetSdk 36 and this permission absent, the runtime prompt never
+         appears and the app cannot post ANY notification, so every push was
+         silently dropped on modern devices. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Location Permission -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />

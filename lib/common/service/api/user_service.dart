@@ -81,18 +81,36 @@ class UserService {
     required String password,
     required LoginMethod loginMethod,
     String? deviceToken,
+    XFile? profilePhoto,
+    String? recoveryEmail,
   }) async {
-    UserModel model = await ApiService.instance.call(
-        url: WebService.user.registerUser,
-        param: {
-          Params.fullname: fullName,
-          Params.identity: identity,
-          Params.password: password,
-          Params.deviceToken: deviceToken,
-          Params.device: Platform.isAndroid ? 0 : 1,
-          Params.loginMethod: loginMethod.title(),
-        },
-        fromJson: UserModel.fromJson);
+    final Map<String, dynamic> param = {
+      Params.fullname: fullName,
+      Params.identity: identity,
+      Params.password: password,
+      Params.deviceToken: deviceToken,
+      Params.device: Platform.isAndroid ? 0 : 1,
+      Params.loginMethod: loginMethod.title(),
+      // Phone signups only — an email signup's identity already serves as the
+      // recovery address, and the server falls back to it.
+      Params.userEmail: recoveryEmail,
+    };
+
+    // Only take the multipart path when there is actually a file to send, so
+    // the far more common no-avatar signup keeps the plain JSON request and
+    // its error handling.
+    final UserModel model = profilePhoto == null
+        ? await ApiService.instance.call(
+            url: WebService.user.registerUser,
+            param: param,
+            fromJson: UserModel.fromJson)
+        : await ApiService.instance.multiPartCallApi(
+            url: WebService.user.registerUser,
+            param: param,
+            filesMap: {
+              Params.profilePhoto: [profilePhoto]
+            },
+            fromJson: UserModel.fromJson);
 
     _storeSession(model);
     return model;

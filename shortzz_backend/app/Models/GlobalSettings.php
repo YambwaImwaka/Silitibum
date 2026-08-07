@@ -28,6 +28,10 @@ class GlobalSettings extends Model
         'lenco_api_key',
         'paystack_secret_key',
         'flutterwave_secret_key',
+        // Internal watermarks for posts:rollup-engagement. Not secret, just
+        // noise the app has no use for.
+        'views_rollup_cursor',
+        'shares_rollup_cursor',
     ];
 
     // fetchSettings() caches its payload under this key (SettingsController).

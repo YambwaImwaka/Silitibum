@@ -146,8 +146,15 @@ class ChatThread {
   /// Expose Rx version for reactive UI (`Obx`)
   Rx<AppUser?> get chatUserRx => _chatUser;
 
-  /// Initialize and auto-sync with the user cache.
+  /// Worker kept so repeat [bindChatUser] calls are no-ops. The thread list
+  /// used to bind inside `itemBuilder`, which registered a fresh `ever()`
+  /// listener — and could fire a `fetchUserDetails` — on every rebuild and
+  /// every scroll frame.
+  Worker? _cacheWorker;
+
+  /// Initialize and auto-sync with the user cache. Idempotent.
   void bindChatUser() {
+    if (_cacheWorker != null) return;
     if (!Get.isRegistered<AppUserCacheController>()) return;
     final controller = Get.find<AppUserCacheController>();
 
@@ -173,10 +180,16 @@ class ChatThread {
     }
 
     // React when users list changes
-    ever(controller.users, (_) => updateUser());
+    _cacheWorker = ever(controller.users, (_) => updateUser());
 
     // Initial call
     updateUser();
+  }
+
+  /// Drop the cache listener when the thread leaves the list.
+  void disposeChatUserBinding() {
+    _cacheWorker?.dispose();
+    _cacheWorker = null;
   }
 }
 

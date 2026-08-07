@@ -254,6 +254,24 @@ class DashboardController extends Controller
                     ->orderByDesc('coins')
                     ->limit(10)
                     ->get(),
+                // Ended streams keep a single captured frame — the broadcast
+                // itself is never recorded — so this is the only record of
+                // what actually went out.
+                'recentStreams' => Livestream::orderByDesc('id')
+                    ->limit(12)
+                    ->get(['id', 'host_id', 'description', 'snapshot', 'status', 'watching_count', 'created_at'])
+                    ->map(function ($stream) {
+                        $host = Users::find($stream->host_id);
+                        $stream->host_username = $host->username ?? '';
+                        $stream->host_fullname = $host->fullname ?? '';
+                        // Formatted here rather than in the view: compiled
+                        // Blade runs in the global namespace and there is no
+                        // GlobalFunction alias registered, so calling it from
+                        // the template would not resolve.
+                        $stream->created_at_label =
+                            GlobalFunction::formateDatabaseTime($stream->created_at);
+                        return $stream;
+                    }),
             ];
         });
 

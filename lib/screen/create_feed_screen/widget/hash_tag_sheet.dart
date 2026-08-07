@@ -73,7 +73,7 @@ class _HashTagSheetState extends State<HashTagSheet> {
   Future<void> searchHashTag({bool reset = false}) async {
     if (isLoading.value) return;
     isLoading.value = true;
-    DebounceAction.shared.call(() async {
+    DebounceAction.tagged('hashtag_sheet_search').call(() async {
       final data = await SearchService.instance.searchHashtags(
         keyword: textEditingController.text.trim(),
         lastItemId: reset

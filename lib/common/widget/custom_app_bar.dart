@@ -1,5 +1,9 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
+import 'package:shortzz/screen/search_screen/search_screen.dart';
+import 'package:shortzz/utilities/asset_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
@@ -13,6 +17,12 @@ class CustomAppBar extends StatelessWidget {
   final Color? iconColor;
   final bool isLoading;
 
+  /// Renders a search action in the trailing slot. On by default so search is
+  /// reachable from every screen; pass false on composer/form screens where
+  /// navigating away would discard input, and on screens that already carry
+  /// their own search field. Ignored when [rowWidget] is supplied.
+  final bool showSearch;
+
   const CustomAppBar(
       {super.key,
       required this.title,
@@ -22,6 +32,7 @@ class CustomAppBar extends StatelessWidget {
       this.bgColor,
       this.iconColor,
       this.rowWidget,
+      this.showSearch = true,
       this.isLoading = false});
 
   @override
@@ -68,11 +79,41 @@ class CustomAppBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                rowWidget ?? const SizedBox(width: 48)
+                rowWidget ??
+                    (showSearch
+                        ? AppBarSearchButton(iconColor: iconColor)
+                        : const SizedBox(width: 48))
               ],
             ),
             widget ?? const SizedBox(height: 10),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Trailing search action. Sized to match the 48pt back-button slot so the
+/// title stays optically centred whether or not it is shown.
+class AppBarSearchButton extends StatelessWidget {
+  const AppBarSearchButton({super.key, this.iconColor});
+
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => Get.to(() => const SearchScreen()),
+      child: SizedBox(
+        width: 48,
+        height: 48,
+        child: Center(
+          child: Image.asset(
+            AssetRes.icSearch,
+            width: 20,
+            height: 20,
+            color: iconColor ?? textDarkGrey(context),
+          ),
         ),
       ),
     );

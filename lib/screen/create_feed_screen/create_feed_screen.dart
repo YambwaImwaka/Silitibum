@@ -36,7 +36,7 @@ class CreateFeedScreen extends StatelessWidget {
     return Scaffold(
       body: Column(
         children: [
-          CustomAppBar(title: LKey.createFeed.tr),
+          CustomAppBar(title: LKey.createFeed.tr, showSearch: false),
           Expanded(
             child: GestureDetector(
               onTap: () =>

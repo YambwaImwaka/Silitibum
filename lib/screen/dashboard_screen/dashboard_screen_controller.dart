@@ -14,7 +14,6 @@ import 'package:shortzz/common/service/api/chat_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
-import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
@@ -75,8 +74,10 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   @override
   void onReady() async {
     super.onReady();
-    // Session-independent setup (Live tab content works for guests too)
-    _createZegoEngine();
+    // Zego is NOT created here any more. Building the engine allocates
+    // native audio/video resources on every cold start, for every user,
+    // including the majority who never open the Live tab in that session.
+    // ensureZegoEngine() is called lazily when Live is actually opened.
 
     // Everything below needs a logged-in user: realtime channels keyed on
     // the user id, auth-only APIs, FCM topic subscriptions.
@@ -109,6 +110,8 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   onChanged(int index) {
     // Messages (4) and Profile (5) need a session — prompt guests to sign in.
     if ((index == 4 || index == 5) && !AuthGate.check()) return;
+    // Live (2): build the Zego engine on first visit rather than at startup.
+    if (index == 2) ensureZegoEngine();
     SystemChrome.setSystemUIOverlayStyle(
         SystemUiOverlayStyle(statusBarBrightness: index == 0 || index == 2 ? Brightness.dark : Brightness.light));
     if (index == 1) {
@@ -161,7 +164,19 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     }
   }
 
-  Future<void> _createZegoEngine() async {
+  /// True once the Zego engine has been built for this app session.
+  bool _isZegoEngineReady = false;
+
+  /// Creates the Zego engine on first use.
+  ///
+  /// This used to run for everyone during dashboard startup, allocating native
+  /// A/V resources on every cold launch even though most sessions never open
+  /// the Live tab. Called from onChanged() when Live is selected, and again
+  /// defensively before going live, so it is ready by the time a room is
+  /// joined without costing anything to users who never go there.
+  Future<void> ensureZegoEngine() async {
+    if (_isZegoEngineReady) return;
+
     Setting? appSetting = SessionManager.instance.getSettings();
     int appId = int.parse(appSetting?.zegoAppId ?? '0');
     if (appId == 0) {
@@ -170,6 +185,7 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     try {
       await ZegoExpressEngine.createEngineWithProfile(
           ZegoEngineProfile(appId, ZegoScenario.Default, appSign: appSetting?.zegoAppSign));
+      _isZegoEngineReady = true;
     } on MissingPluginException catch (e) {
       Loggers.error('Create Zego Engine : ${e.message}');
     }
@@ -180,8 +196,11 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     String userLanguage = user?.appLanguage ?? 'en';
     if (userLanguage != savedLanguage) {
       SessionManager.instance.setLang(userLanguage);
+      // updateLocale rebuilds translated widgets in place. This used to tear
+      // down and rebuild the entire widget tree via RestartWidget, which threw
+      // away every controller and cached screen just to change a language.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        RestartWidget.restartApp(Get.context!);
+        Get.updateLocale(Locale(userLanguage));
       });
     }
   }

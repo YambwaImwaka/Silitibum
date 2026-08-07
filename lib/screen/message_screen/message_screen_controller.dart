@@ -30,6 +30,40 @@ class MessageScreenController extends BaseController {
   Timer? _pollTimer;
   RxBool hasMore = true.obs;
 
+  /// Drives the list's initial spinner. Deliberately NOT [isLoading]: that
+  /// flag belongs to `BaseController`'s modal loader, so a delete-thread
+  /// confirmation in flight used to make the concurrent 15s poll a no-op and
+  /// the spinner flicker on every long-press.
+  RxBool isThreadsLoading = false.obs;
+
+  /// Set when a fetch fails so the UI can offer a retry instead of silently
+  /// rendering the "no chats yet" empty state — a timed-out or 500 response
+  /// used to be indistinguishable from an genuinely empty inbox.
+  RxnString threadsError = RxnString();
+
+  /// Re-entrancy guard for [fetchThreads] alone.
+  bool _isFetchingThreads = false;
+
+  /// Local filter over the loaded threads. The search field above the list was
+  /// previously a `const CustomSearchTextField()` with no controller and no
+  /// `onChanged` — it looked functional but filtered nothing.
+  final TextEditingController searchController = TextEditingController();
+  final RxString searchQuery = ''.obs;
+
+  /// Threads for the given tab, narrowed by [searchQuery].
+  List<ChatThread> visibleThreads({required bool requests}) {
+    final source = requests ? requestsUsers : chatsUsers;
+    final query = searchQuery.value.trim().toLowerCase();
+    if (query.isEmpty) return source;
+    return source.where((thread) {
+      final user = thread.chatUser;
+      return (user?.username ?? '').toLowerCase().contains(query) ||
+          (user?.fullname ?? '').toLowerCase().contains(query);
+    }).toList();
+  }
+
+  void onSearchChanged(String value) => searchQuery.value = value;
+
   @override
   void onInit() {
     super.onInit();
@@ -45,6 +79,8 @@ class MessageScreenController extends BaseController {
   void onClose() {
     _realtimeSub?.cancel();
     _pollTimer?.cancel();
+    _releaseThreadBindings();
+    searchController.dispose();
     super.onClose();
   }
 
@@ -53,12 +89,14 @@ class MessageScreenController extends BaseController {
   }
 
   Future<void> fetchThreads({bool refresh = false}) async {
-    if (isLoading.value) return;
-    isLoading.value = true;
+    if (_isFetchingThreads) return;
+    _isFetchingThreads = true;
+    isThreadsLoading.value = true;
     try {
       final page = await ChatService.instance.fetchThreads(
           lastMsgAt: refresh ? null : _oldestLastMsgAt());
       if (refresh) {
+        _releaseThreadBindings();
         chatsUsers.clear();
         requestsUsers.clear();
       }
@@ -66,10 +104,29 @@ class MessageScreenController extends BaseController {
         _upsertThread(thread);
       }
       hasMore.value = page.threads.length >= 20;
+      threadsError.value = null;
     } catch (e) {
       Loggers.error('fetchThreads failed: $e');
+      // Only surface the failure when there is nothing on screen. A failed
+      // background poll must not blow away a list the user is reading.
+      if (chatsUsers.isEmpty && requestsUsers.isEmpty) {
+        threadsError.value = LKey.somethingWentWrong.tr;
+      }
     } finally {
-      isLoading.value = false;
+      isThreadsLoading.value = false;
+      _isFetchingThreads = false;
+    }
+  }
+
+  /// Retry entry point for the error state.
+  Future<void> retryFetchThreads() async {
+    threadsError.value = null;
+    await fetchThreads(refresh: true);
+  }
+
+  void _releaseThreadBindings() {
+    for (final thread in [...chatsUsers, ...requestsUsers]) {
+      thread.disposeChatUserBinding();
     }
   }
 
@@ -81,12 +138,24 @@ class MessageScreenController extends BaseController {
   }
 
   void _upsertThread(ChatThread thread) {
-    chatsUsers.removeWhere((element) => element.userId == thread.userId);
-    requestsUsers.removeWhere((element) => element.userId == thread.userId);
+    _removeThreadWhere((element) => element.userId == thread.userId);
+    // Bound once here rather than in the list's itemBuilder, where it ran on
+    // every rebuild and scroll frame.
+    thread.bindChatUser();
     (thread.chatType == ChatType.approved ? chatsUsers : requestsUsers)
         .add(thread);
     _sort(chatsUsers);
     _sort(requestsUsers);
+  }
+
+  /// Removes matching threads from both tabs, releasing their cache listeners.
+  void _removeThreadWhere(bool Function(ChatThread) test) {
+    for (final list in [chatsUsers, requestsUsers]) {
+      for (final thread in list.where(test)) {
+        thread.disposeChatUserBinding();
+      }
+      list.removeWhere(test);
+    }
   }
 
   void _sort(RxList<ChatThread> list) {
@@ -108,8 +177,7 @@ class MessageScreenController extends BaseController {
         break;
       case 'thread.deleted':
         final int? threadId = event.data['thread_id'];
-        chatsUsers.removeWhere((element) => element.threadId == threadId);
-        requestsUsers.removeWhere((element) => element.threadId == threadId);
+        _removeThreadWhere((element) => element.threadId == threadId);
         break;
     }
   }
@@ -124,9 +192,7 @@ class MessageScreenController extends BaseController {
         await withLoader(() async {
           await ChatService.instance
               .deleteThread(threadId: chatConversation.threadId!);
-          chatsUsers.removeWhere(
-              (element) => element.threadId == chatConversation.threadId);
-          requestsUsers.removeWhere(
+          _removeThreadWhere(
               (element) => element.threadId == chatConversation.threadId);
           dashboardController.refreshUnreadCounts();
         });

@@ -73,10 +73,25 @@ class ReportController extends Controller
     public function acceptPostReport(Request $request){
 
         $report = ReportPosts::find($request->id);
+        if ($report == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'Report not found!');
+        }
 
         $post = Posts::find($report->post_id);
-        $post->delete();
-        GlobalFunction::deleteAllPostData($post);
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'Post not found!');
+        }
+
+        // Report-driven removal: the report row itself is deliberately kept
+        // (it used to be destroyed here by deleteAllPostData) and the post
+        // gets the longer retention clock, because this is the takedown most
+        // likely to be challenged later.
+        GlobalFunction::softDeletePost(
+            $post,
+            GlobalFunction::DELETED_BY_REPORT,
+            session('userId'),
+            $report->reason
+        );
 
         return GlobalFunction::sendSimpleResponse(true,'Post deleted successfully!');
     }

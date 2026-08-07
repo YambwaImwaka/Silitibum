@@ -1,5 +1,6 @@
 import 'package:figma_squircle_updated/figma_squircle.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/duration_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
@@ -39,6 +40,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   void initState() {
     super.initState();
     post = widget.post;
+    // Long-form video is usually widescreen, so let the device rotate into
+    // landscape here. The rest of the app is portrait-locked; the lock is
+    // restored in dispose().
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     _initPlayer();
   }
 
@@ -53,7 +62,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     // downloaded elsewhere in the app (e.g. seen earlier in the reels feed),
     // otherwise falls back to streaming — same helper the reels feed uses,
     // so this screen is no longer the one video surface with zero caching.
-    final controller = await VideoCacheService.createController(url);
+    // Keyed on the MP4 rather than `url`, which may be an HLS playlist the
+    // cache can never hold — see VideoCacheService.createController.
+    final controller = await VideoCacheService.createController(
+      url,
+      cacheUrl: post?.video?.addBaseURL(),
+    );
     await controller.initialize();
     if (!mounted) {
       controller.dispose();
@@ -67,6 +81,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     _stallWatcher?.dispose();
     _stallWatcher = VideoStallWatcher(
       url: url,
+      cacheUrl: post?.video?.addBaseURL(),
       onControllerReplaced: (fresh) {
         if (!mounted) {
           fresh.dispose();
@@ -88,6 +103,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
       _videoPlayerController.value?.dispose();
       _videoPlayerController.value = null; // Set to null after disposing
     }
+    // Restore the app-wide portrait lock this screen opted out of.
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     super.dispose();
   }
 
@@ -167,7 +184,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                           key: Key(post?.video?.addBaseURL() ?? ''),
                           child: SizedBox.expand(
                             child: FittedBox(
-                                fit: width < height ? BoxFit.cover : BoxFit.fitWidth,
+                                // contain, not fitWidth: a widescreen clip
+                                // letterboxes into the frame instead of
+                                // overflowing it, and it stays correct when
+                                // the device rotates into landscape. Portrait
+                                // clips still fill the frame.
+                                fit: width < height
+                                    ? BoxFit.cover
+                                    : BoxFit.contain,
                                 child: SizedBox(
                                     width: width,
                                     height: height,
@@ -215,9 +239,17 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
                                             PlayerActionView(
                                                 value: value,
                                                 videoPlayerController: _videoPlayerController),
-                                            // UserInfoData(
-                                            //     post: post,
-                                            //     videoPlayerController: _videoPlayerController)
+                                            // Author + caption. Kept out of
+                                            // landscape, where the frame is
+                                            // already edge to edge and the
+                                            // overlay would cover the video.
+                                            if (MediaQuery.of(context)
+                                                    .orientation ==
+                                                Orientation.portrait)
+                                              UserInfoData(
+                                                  post: post,
+                                                  videoPlayerController:
+                                                      _videoPlayerController),
                                           ],
                                         ),
                                       ),

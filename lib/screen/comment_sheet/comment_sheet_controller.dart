@@ -6,7 +6,6 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
@@ -117,7 +116,7 @@ class CommentSheetController extends BaseController {
   initData() {
     myUser.value = SessionManager.instance.getUser();
     settingData.value = SessionManager.instance.getSettings();
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('comment_sheet_init').call(() {
       fetchComments();
     }, milliseconds: 100);
   }
@@ -258,18 +257,8 @@ class CommentSheetController extends BaseController {
   }
 
   void likeComment(Comment? comment) async {
-    await _handleCommentLikeDislike(comment, true, onCompletion: (comment) {
-      print(comment?.user?.notifyPostComment);
-      print(myUser.value?.id != comment?.userId);
-      if (myUser.value?.id != comment?.userId && comment?.user?.notifyPostComment == 1) {
-        FirebaseNotificationManager.instance.sendLocalisationNotification(LKey.commentHasBeenLiked,
-            type: NotificationType.post,
-            deviceToken: comment?.user?.deviceToken,
-            languageCode: comment?.user?.appLanguage,
-            body: NotificationInfo(id: comment?.postId, commentId: comment?.id),
-            deviceType: comment?.user?.device);
-      }
-    });
+    // Notification is sent server-side by CommentController::likeComment.
+    await _handleCommentLikeDislike(comment, true);
   }
 
   void unlikeComment(Comment? comment) async {
@@ -395,16 +384,8 @@ class CommentSheetController extends BaseController {
                 val?.updateCommentCount(0);
               });
             }
-            Post? _post = post.value;
-            if (_post?.user?.notifyPostComment == 1 && _post?.user?.id != myUser.value?.id) {
-              FirebaseNotificationManager.instance.sendLocalisationNotification(
-                  LKey.activityGIFComment,
-                  type: NotificationType.post,
-                  languageCode: _post?.user?.appLanguage,
-                  deviceToken: _post?.user?.deviceToken,
-                  deviceType: _post?.user?.device,
-                  body: NotificationInfo(id: _post?.id, commentId: value.id));
-            }
+            // Comment notification is sent server-side by
+            // CommentController::addPostComment.
           }
         });
       }

@@ -192,6 +192,13 @@
                             <span> {{ __('Posts')}} </span>
                         </a>
                     </li>
+                    {{-- Deleted Content --}}
+                    <li class="side-nav-item deletedPosts">
+                        <a href="{{ url('deletedPosts')}}" class="side-nav-link">
+                            <i class="uil-trash-alt"></i>
+                            <span> {{ __('Deleted Content')}} </span>
+                        </a>
+                    </li>
                     {{-- Hashtags --}}
                     <li class="side-nav-item hashtags">
                         <a href="{{ url('hashtags')}}" class="side-nav-link">

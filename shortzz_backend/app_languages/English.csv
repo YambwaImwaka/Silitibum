@@ -461,3 +461,12 @@ Oops!! Battle Ended Please wait for a while..,Oops!! Battle Ended Please wait fo
 "Hey, @name is now live","Hey, @name is now live"
 Hurry up and join before it ends.,Hurry up and join before it ends.
 Livestream has ended.,Livestream has ended.
+Optional,Optional
+Remove,Remove
+Trending,Trending
+Recovery Email,Recovery Email
+Add a recovery email,Add a recovery email
+"Used to reset your password if you forget it. Without one you'll need to contact support.","Used to reset your password if you forget it. Without one you'll need to contact support."
+"You signed up with a phone number. Add an email so you can reset your password yourself if you forget it.","You signed up with a phone number. Add an email so you can reset your password yourself if you forget it."
+"This account has no recovery email, so we can't send a reset code. Please contact support to get back in.","This account has no recovery email, so we can't send a reset code. Please contact support to get back in."
+"This account has no recovery email, so we can't send a reset code. Please contact @email to get back in.","This account has no recovery email, so we can't send a reset code. Please contact @email to get back in."

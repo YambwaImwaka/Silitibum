@@ -21,6 +21,10 @@ class Livestream {
   int? createdAt;
   int? battleCreatedAt;
 
+  /// Still frame retained after the stream ends — the live media itself is
+  /// never recorded. Absolute URL, already resolved server-side.
+  String? snapshot;
+
   Livestream(
       {this.watchingCount,
       this.description,
@@ -53,6 +57,7 @@ class Livestream {
         [];
     createdAt = asIntOrNull(json['created_at']);
     battleCreatedAt = asIntOrNull(json['battle_created_at']);
+    snapshot = asStringOrNull(json['snapshot']);
     battleDuration =
         asIntOrNull(json['battle_duration']) ?? AppRes.battleDurationInMinutes;
   }
@@ -71,6 +76,7 @@ class Livestream {
     data['co-host_ids'] = coHostIds;
     data['created_at'] = createdAt;
     data['battle_created_at'] = battleCreatedAt;
+    data['snapshot'] = snapshot;
     data['battle_duration'] = battleDuration;
     return data;
   }

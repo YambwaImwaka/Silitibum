@@ -54,11 +54,20 @@ final class Constants
     const notify_gift_user = 6;
     const notify_reply_comment = 7;
     const notify_mention_reply = 8;
+    /// Fired to every follower when someone they follow publishes a post.
+    const notify_new_post_from_following = 9;
 
     const userDummy = 1;
     const userReal = 0;
 
-    const userPublicFields= 'id,username,fullname,bio,profile_photo,is_verify,device,device_token,app_language,notify_post_like,notify_post_comment,notify_follow,notify_mention,notify_gift_received,notify_chat,coin_collected_lifetime,total_post_likes_count,following_count,follower_count,receive_message';
+    // NOTE: device_token is still published here because a few client-driven
+    // pushes remain (livestream invites, the post-signup welcome) and build
+    // their payload from the recipient's token. Every other notification —
+    // like, comment, reply, mention, follow, gift, new-post-from-following —
+    // is now sent server-side, so once those last two move across, this field
+    // should be dropped: exposing it lets any authenticated user send anyone
+    // an arbitrary push through misc/pushNotificationToSingleUser.
+    const userPublicFields= 'id,username,fullname,bio,profile_photo,is_verify,device,device_token,app_language,notify_post_like,notify_post_comment,notify_follow,notify_mention,notify_gift_received,notify_chat,notify_new_post,coin_collected_lifetime,total_post_likes_count,following_count,follower_count,receive_message';
 
     const postsWithArray = ['images','music','user.links','user.stories','user:'.Constants::userPublicFields];
 

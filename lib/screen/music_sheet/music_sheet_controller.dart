@@ -186,7 +186,7 @@ class MusicSheetController extends BaseController {
       searchMusicList.clear();
     }
     isLoading.value = true;
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('music_search').call(() {
       searchMusic(searchController.text.trim(), isEmpty: true);
     });
   }

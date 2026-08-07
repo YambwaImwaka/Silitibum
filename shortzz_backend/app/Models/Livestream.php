@@ -47,6 +47,10 @@ class Livestream extends Model
             'like_count' => (int) $this->like_count,
             'host_id' => (int) $this->host_id,
             'co-host_ids' => $this->coHostIdsArray(),
+            // Still frame captured shortly after the host goes live. The
+            // stream media itself is never stored, so this is all that
+            // survives once the room closes.
+            'snapshot' => GlobalFunction::generateFileUrl($this->snapshot),
             'created_at' => $this->created_at ? (int) $this->created_at->valueOf() : 0,
             'battle_created_at' => $this->battle_created_at !== null ? (int) $this->battle_created_at : null,
             'is_dummy_live' => 0,

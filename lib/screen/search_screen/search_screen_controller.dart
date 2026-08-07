@@ -62,7 +62,7 @@ class SearchScreenController extends BaseController {
     } else {
       isTextEmpty.value = false;
     }
-    DebounceAction.shared.call(() {
+    DebounceAction.tagged('global_search').call(() {
       switch (selectedTabIndex.value) {
         case SearchTabs.feed:
           searchPosts(reset: true);

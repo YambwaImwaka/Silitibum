@@ -58,7 +58,7 @@ class _PostAnimationLikeState extends State<PostAnimationLike>
         _opacity = 0.0;
         setState(() {});
         widget._onLikeCalled.call();
-        DebounceAction.shared.call(() {
+        DebounceAction.tagged('post_double_tap_like').call(() {
           widget._overlayEntry.remove();
         }, milliseconds: 100);
       } else {

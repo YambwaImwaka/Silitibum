@@ -14,7 +14,6 @@ import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/network_helper/network_helper.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/common/widget/no_internet_sheet.dart';
-import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
@@ -67,16 +66,13 @@ class SplashScreenController extends BaseController {
   }
 
   Future<void> fetchSettings() async {
-    // The 1s minimum splash and the settings call used to run back to back,
-    // so the network request didn't even start until a second of dead time
-    // had already elapsed. Starting it first and awaiting the delay
-    // afterwards keeps the same minimum splash duration while overlapping it
-    // with the request — on any connection slower than 1s this is a straight
-    // second off cold start.
-    final settingsRequest = CommonService.instance.fetchGlobalSettings();
-    await Future.delayed(const Duration(milliseconds: 1000));
-
-    bool showNavigate = await settingsRequest;
+    // No artificial minimum splash any more. The old flow held the screen for
+    // a fixed second, then downloaded and parsed EVERY enabled language file,
+    // then restarted the whole widget tree — all before the user saw anything.
+    // Translations are now restored from a local cache synchronously (see
+    // DynamicTranslations) and refreshed in the background, so the splash
+    // lasts exactly as long as the settings call and nothing more.
+    bool showNavigate = await CommonService.instance.fetchGlobalSettings();
 
     // FIX: previously, if showNavigate was false, nothing happened and the
     // app was stuck on the splash screen forever. Now it falls back to login.
@@ -121,22 +117,48 @@ class SplashScreenController extends BaseController {
       });
     }
 
-    if (downloadLanguages.isEmpty) {
-      // FIX: previously returned here with only a snackbar shown, leaving
-      // the user stuck on the splash screen. Now it still warns, but also
-      // continues on to navigation instead of dead-ending.
-      showSnackBar(AppRes.languageAdd, second: 5);
-    } else {
-      var downloadedFiles = await downloadAndParseLanguages(downloadLanguages);
-      translations.addTranslations(downloadedFiles);
+    var defaultLang = languages.firstWhereOrNull((element) => element.isDefault == 1);
+    if (defaultLang != null) {
+      SessionManager.instance.setFallbackLang(defaultLang.code ?? AppRes.baseLanguageCode);
+    }
 
-      var defaultLang = languages.firstWhereOrNull((element) => element.isDefault == 1);
-      if (defaultLang != null) {
-        SessionManager.instance.setFallbackLang(defaultLang.code ?? 'en');
+    // English is never downloaded. The LKey constants ARE the English strings
+    // and GetX's `.tr` returns the key unchanged when a language has no entry
+    // for it, so English.csv only ever produced an identity map — a network
+    // round trip and a CSV parse to learn that "Snaps" translates to "Snaps".
+    // The app is English-only for now, so in practice this skips language
+    // loading entirely; the paths below stay in place for the local languages
+    // coming in the next release.
+    final translatableLanguages = downloadLanguages
+        .where((e) => e.code != AppRes.baseLanguageCode)
+        .toList();
+
+    final String activeLang = SessionManager.instance.getLang();
+
+    if (activeLang == AppRes.baseLanguageCode) {
+      // Nothing to fetch and nothing to wait for. Any other enabled languages
+      // are only needed once the user actually switches to one, which goes
+      // through SelectLanguageScreen.
+    } else if (translations.hasLanguage(activeLang)) {
+      // Cache hit for the language being displayed — render from it now and
+      // refresh quietly afterwards.
+      _refreshLanguagesInBackground(translatableLanguages, translations);
+    } else {
+      // Cold cache: fetch only the language needed to render, and let any
+      // others follow in the background. The old code awaited all of them.
+      final needed =
+          translatableLanguages.where((e) => e.code == activeLang).toList();
+      if (needed.isNotEmpty) {
+        translations.addTranslations(await downloadAndParseLanguages(needed));
+      }
+      if (translatableLanguages.length > needed.length) {
+        _refreshLanguagesInBackground(translatableLanguages, translations);
       }
     }
 
-    RestartWidget.restartApp(Get.context!);
+    // RestartWidget.restartApp() used to run here — a full widget-tree
+    // teardown and rebuild on every single launch, purely to make new
+    // translations visible. Get.forceAppUpdate() rebuilds in place instead.
 
     if (userRequest != null) {
       // Already in flight since before the translation downloads — by now it
@@ -159,6 +181,26 @@ class SplashScreenController extends BaseController {
         Get.off(() => const DashboardScreen());
       }
     }
+  }
+
+  /// Refreshes the translation files without blocking navigation.
+  ///
+  /// Deliberately un-awaited by the caller: the app is already rendering from
+  /// the cached table, so a slow CDN delays nothing the user can see. When
+  /// fresh strings land, Get.forceAppUpdate() rebuilds the tree in place —
+  /// far cheaper than the RestartWidget teardown this replaced.
+  void _refreshLanguagesInBackground(
+      List<Language> languages, DynamicTranslations translations) {
+    () async {
+      try {
+        final files = await downloadAndParseLanguages(languages);
+        if (files.isEmpty) return;
+        translations.addTranslations(files);
+        await Get.forceAppUpdate();
+      } catch (e) {
+        Loggers.error('Background language refresh failed: $e');
+      }
+    }();
   }
 
   Future<Map<String, Map<String, String>>> downloadAndParseLanguages(List<Language> languages) async {

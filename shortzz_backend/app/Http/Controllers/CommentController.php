@@ -24,22 +24,23 @@ class CommentController extends Controller
 
     public function deleteComment_Admin(Request $request){
         $item = PostComments::find($request->id);
-        $commentId = $item->id;
-        $postId = $item->post_id;
-        $item->delete();
+        if ($item == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'comment does not exists!');
+        }
 
-        CommentReplies::where('comment_id', $commentId)->delete();
-        GlobalFunction::settlePostCommentCount($postId);
+        GlobalFunction::softDeleteComment($item, GlobalFunction::DELETED_BY_ADMIN, session('userId'));
 
         return GlobalFunction::sendSimpleResponse(true, 'comment deleted successfully');
     }
 
     public function deleteCommentReply_Admin(Request $request){
         $item = CommentReplies::find($request->id);
-        $commentId = $item->comment_id;
-        $item->delete();
+        if ($item == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'comment reply does not exists!');
+        }
 
-        GlobalFunction::settleCommentsRepliesCount($commentId);
+        GlobalFunction::softDeleteCommentReply($item, GlobalFunction::DELETED_BY_ADMIN, session('userId'));
+
         return GlobalFunction::sendSimpleResponse(true, 'comment reply deleted successfully');
     }
 
@@ -185,16 +186,28 @@ class CommentController extends Controller
             return response()->json(['status' => false, 'message' => $msg]);
         }
 
+        // Null check BEFORE dereferencing — this read $reply->comment_id on
+        // the line above its own existence guard.
         $reply = CommentReplies::find($request->reply_id);
-        $commentId = $reply->comment_id;
-
         if($reply == null){
             return GlobalFunction::sendSimpleResponse(false, 'reply does not exists!');
         }
-        $reply->delete();
 
-        GlobalFunction::settleCommentsRepliesCount($commentId);
-        GlobalFunction::deleteNotifications(Constants::notify_reply_comment, $reply->id, $user->id);
+        // Same gap as deleteComment(): no ownership check at all, so any
+        // authenticated user could delete any reply by id.
+        $isReplyAuthor = $reply->user_id == $user->id;
+        $parentComment = PostComments::withTrashed()->find($reply->comment_id);
+        $isPostAuthor = $parentComment != null
+            && optional(Posts::withTrashed()->find($parentComment->post_id))->user_id == $user->id;
+        if (!$isReplyAuthor && !$isPostAuthor && $user->is_moderator != 1) {
+            return GlobalFunction::sendSimpleResponse(false, 'you can not delete this reply');
+        }
+
+        GlobalFunction::softDeleteCommentReply(
+            $reply,
+            $isReplyAuthor ? GlobalFunction::DELETED_BY_AUTHOR : GlobalFunction::DELETED_BY_MODERATOR,
+            $user->id
+        );
 
         return GlobalFunction::sendSimpleResponse(true, 'reply deleted successfully');
 
@@ -217,17 +230,27 @@ class CommentController extends Controller
             return response()->json(['status' => false, 'message' => $msg]);
         }
 
+        // Null check BEFORE dereferencing: this used to read $comment->post_id
+        // on the line above its own "does this exist" guard.
         $comment = PostComments::find($request->comment_id);
-        $postId = $comment->post_id;
-
         if($comment == null){
             return GlobalFunction::sendSimpleResponse(false, 'comment does not exists!');
         }
-        CommentReplies::where('comment_id', $comment->id)->delete();
-        $comment->delete();
 
-        GlobalFunction::settlePostCommentCount($postId);
-        GlobalFunction::deleteNotifications(Constants::notify_comment_post,$comment->id,$user->id);
+        // There was NO ownership check here at all — any authenticated user
+        // could delete any comment on the platform just by passing its id.
+        // The post's author may also remove comments on their own post.
+        $isCommentAuthor = $comment->user_id == $user->id;
+        $isPostAuthor = optional(Posts::find($comment->post_id))->user_id == $user->id;
+        if (!$isCommentAuthor && !$isPostAuthor && $user->is_moderator != 1) {
+            return GlobalFunction::sendSimpleResponse(false, 'you can not delete this comment');
+        }
+
+        GlobalFunction::softDeleteComment(
+            $comment,
+            $isCommentAuthor ? GlobalFunction::DELETED_BY_AUTHOR : GlobalFunction::DELETED_BY_MODERATOR,
+            $user->id
+        );
 
         return GlobalFunction::sendSimpleResponse(true, 'comment deleted successfully');
 
@@ -443,11 +466,20 @@ class CommentController extends Controller
             $reply->mentioned_user_ids = GlobalFunction::cleanString($request->mentioned_user_ids);
         }
          $reply->save();
+         $senderName = $user->fullname ?: $user->username;
+
          // Insert Notification Data : Mention In Reply Of Comment
         if ($request->has('mentioned_user_ids')) {
             $mentionedUsers = Users::whereIn('id', explode(',',$reply->mentioned_user_ids))->get();
             foreach($mentionedUsers as $mUser){
-                $notificationData = GlobalFunction::insertUserNotification(Constants::notify_mention_reply,$user->id, $mUser->id, $reply->id);
+                GlobalFunction::insertUserNotification(Constants::notify_mention_reply,$user->id, $mUser->id, $reply->id);
+                GlobalFunction::pushToUser(
+                    $mUser->id,
+                    $senderName,
+                    'mentioned you in a reply',
+                    ['type' => (string) Constants::notify_mention_reply, 'id' => (string) $reply->id],
+                    'notify_mention'
+                );
             }
         }
 
@@ -456,7 +488,16 @@ class CommentController extends Controller
          GlobalFunction::settleCommentsRepliesCount($comment->id);
 
          // Insert Notification Data : Reply Added
-        $notificationData = GlobalFunction::insertUserNotification(Constants::notify_reply_comment,$user->id, $comment->user_id, $reply->id);
+        GlobalFunction::insertUserNotification(Constants::notify_reply_comment,$user->id, $comment->user_id, $reply->id);
+        if ($comment->user_id != $user->id) {
+            GlobalFunction::pushToUser(
+                $comment->user_id,
+                $senderName,
+                'replied to your comment',
+                ['type' => (string) Constants::notify_reply_comment, 'id' => (string) $reply->id],
+                'notify_post_comment'
+            );
+        }
 
          return GlobalFunction::sendDataResponse(true, 'reply added successfully', $reply);
 
@@ -619,6 +660,19 @@ class CommentController extends Controller
 
         GlobalFunction::settleCommentsLikesCount($comment->id);
 
+        // Comment likes had no server-side notification at all — it was sent
+        // only from the liker's device. There is no notification TYPE for it
+        // (so no Activity row), but the push at least reaches the author.
+        if ($comment->user_id != $user->id) {
+            GlobalFunction::pushToUser(
+                $comment->user_id,
+                $user->fullname ?: $user->username,
+                'liked your comment',
+                ['type' => (string) Constants::notify_comment_post, 'id' => (string) $comment->id],
+                'notify_post_comment'
+            );
+        }
+
         return GlobalFunction::sendSimpleResponse(true, 'comment liked successfully');
     }
 
@@ -666,16 +720,34 @@ class CommentController extends Controller
         $commentItem->save();
         GlobalFunction::settlePostCommentCount($post->id);
 
+        $senderName = $user->fullname ?: $user->username;
+
         // Insert Notification Data : Mention In Comment
         if ($request->has('mentioned_user_ids')) {
             $mentionedUsers = Users::whereIn('id', explode(',',$commentItem->mentioned_user_ids))->get();
             foreach($mentionedUsers as $mUser){
-                $notificationData = GlobalFunction::insertUserNotification(Constants::notify_mention_comment,$user->id, $mUser->id, $commentItem->id);
+                GlobalFunction::insertUserNotification(Constants::notify_mention_comment,$user->id, $mUser->id, $commentItem->id);
+                GlobalFunction::pushToUser(
+                    $mUser->id,
+                    $senderName,
+                    'mentioned you in a comment',
+                    ['type' => (string) Constants::notify_mention_comment, 'id' => (string) $commentItem->id],
+                    'notify_mention'
+                );
             }
         }
 
         // Insert Notification Data : Comment
-        $notificationData = GlobalFunction::insertUserNotification(Constants::notify_comment_post,$user->id, $post->user_id, $commentItem->id);
+        GlobalFunction::insertUserNotification(Constants::notify_comment_post,$user->id, $post->user_id, $commentItem->id);
+        if ($post->user_id != $user->id) {
+            GlobalFunction::pushToUser(
+                $post->user_id,
+                $senderName,
+                'commented on your post',
+                ['type' => (string) Constants::notify_comment_post, 'id' => (string) $commentItem->id],
+                'notify_post_comment'
+            );
+        }
 
         $comment = PostComments::where('id', $commentItem->id)->with(['user:'.Constants::userPublicFields])->first();
         return GlobalFunction::sendDataResponse(true, 'comment added successfully', $comment);

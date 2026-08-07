@@ -61,22 +61,6 @@ Future<void> main() async {
 
     await GetStorage.init('shortzz');
 
-    // Init RevenueCat (handle errors gracefully). Timeout guards against a
-    // stalled Purchases.configure()/getOfferings() network call blocking
-    // runApp() indefinitely — a cold-launch freeze before the user even
-    // sees a splash screen.
-    try {
-      await SubscriptionManager.shared
-          .initPlatformState()
-          .timeout(const Duration(seconds: 10));
-    } catch (e, st) {
-      Loggers.error('SubscriptionManager init error: $e\n$st');
-    }
-    (await AudioSession.instance).configure(const AudioSessionConfiguration.speech());
-
-    // Init Ads (ignore async wait if needed)
-    MobileAds.instance.initialize();
-
     NetworkHelper().initialize();
 
     // Load Translations
@@ -84,6 +68,13 @@ Future<void> main() async {
 
     // Run app
     runApp(const RestartWidget(child: MyApp()));
+
+    // Everything below is deliberately AFTER runApp and un-awaited: none of it
+    // is needed to paint the first frame, and each was previously blocking it.
+    // RevenueCat in particular was an `await` with a 10s timeout, so a slow or
+    // captive network delayed the splash by up to ten seconds before the user
+    // saw anything at all.
+    _initDeferredServices();
   } catch (e, st) {
     Loggers.error('Fatal crash during app startup $st');
     // Best-effort: Firebase may not have finished initializing yet if the
@@ -91,6 +82,38 @@ Future<void> main() async {
     try {
       await FirebaseCrashlytics.instance.recordError(e, st, fatal: true);
     } catch (_) {}
+  }
+}
+
+/// Third-party SDKs that must not gate the first frame.
+///
+/// Each is independent and failure-tolerant: a purchase SDK or ad network
+/// being unreachable is not a reason for the user to stare at a blank screen,
+/// so these run un-awaited after runApp and log rather than throw.
+Future<void> _initDeferredServices() async {
+  try {
+    // .music(), not .speech(). The speech preset requests transient may-duck
+    // focus with a spoken-audio content type, which is wrong for a media app:
+    // it ducks against the reel player and left the music picker loading a
+    // track that was never audible.
+    (await AudioSession.instance)
+        .configure(const AudioSessionConfiguration.music());
+  } catch (e) {
+    Loggers.error('AudioSession configure error: $e');
+  }
+
+  try {
+    await SubscriptionManager.shared
+        .initPlatformState()
+        .timeout(const Duration(seconds: 10));
+  } catch (e, st) {
+    Loggers.error('SubscriptionManager init error: $e\n$st');
+  }
+
+  try {
+    MobileAds.instance.initialize();
+  } catch (e) {
+    Loggers.error('MobileAds init error: $e');
   }
 }
 

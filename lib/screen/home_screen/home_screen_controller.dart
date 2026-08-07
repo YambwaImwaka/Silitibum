@@ -47,13 +47,32 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
     controller = AnimationController(duration: const Duration(milliseconds: 250), vsync: this);
     animation = CurvedAnimation(parent: controller, curve: Curves.linear);
 
-    // Call both methods concurrently
-    Future.wait([
-      onRefreshPage(),
-      _onNotificationTap(),
-      _fetchLocation(),
-      _readDeepLink(),
-    ]);
+    // Staggered, not concurrent. These four used to launch together in one
+    // Future.wait, so the request the user is actually waiting on — the feed —
+    // competed for a cold server and a cold connection pool with three things
+    // nobody is looking at: _fetchLocation is an IP-geolocation lookup followed
+    // by a profile update POST, and _onNotificationTap hits a platform channel
+    // that is slow precisely during a cold start.
+    onRefreshPage();
+
+    // These two decide *where* the user lands (notification tap, shared link),
+    // so they go as soon as the first frame is up rather than waiting longer.
+    // Deferring by a frame is safe: getInitialMessage() is a pull the plugin
+    // holds until consumed, and ShareManager listens on uriLinkStream, which
+    // only carries links that arrive while running. It is also better — the
+    // navigation now happens with the home screen already built under it.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (isClosed) return;
+      _readDeepLink();
+      _onNotificationTap();
+    });
+
+    // Pure background sync; nothing on screen depends on it. Let the feed
+    // request have a clear run first.
+    Future.delayed(const Duration(seconds: 2), () {
+      if (isClosed) return;
+      _fetchLocation();
+    });
 
     super.onInit();
   }

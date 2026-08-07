@@ -155,4 +155,54 @@
     </div>
 </div>
 
+{{-- Recent streams. Livestreams are not recorded; a single captured frame is
+     retained per stream, so this is the only visual record of one. --}}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex align-items-center border-bottom">
+                <h4 class="card-title mb-0 header-title">{{ __('Recent Streams')}}</h4>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    {{ __('Livestreams are not recorded. A single frame is captured shortly after each broadcast begins and kept here for reference.')}}
+                </p>
+                <div class="row">
+                    @forelse ($recentStreams as $stream)
+                        <div class="col-md-3 col-sm-6 mb-3">
+                            <div class="border rounded-2 overflow-hidden h-100">
+                                @if ($stream->snapshot)
+                                    <img src="{{ $baseUrl . $stream->snapshot }}"
+                                         class="w-100" style="height:130px;object-fit:cover;"
+                                         alt="{{ __('Stream snapshot')}}">
+                                @else
+                                    <div class="d-flex align-items-center justify-content-center bg-light text-muted"
+                                         style="height:130px;">
+                                        {{ __('No snapshot')}}
+                                    </div>
+                                @endif
+                                <div class="p-2">
+                                    <div class="fw-medium text-truncate">{{ $stream->host_fullname }}</div>
+                                    <div class="text-muted fs-6 text-truncate">{{ '@' . $stream->host_username }}</div>
+                                    <div class="text-muted fs-6">
+                                        {{ ucfirst($stream->status) }} &middot;
+                                        {{ number_format($stream->watching_count) }} {{ __('viewers')}}
+                                    </div>
+                                    <div class="text-muted fs-6">
+                                        {{ $stream->created_at_label }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    @empty
+                        <div class="col-12 text-center text-muted py-3">
+                            {{ __('No livestream data yet.')}}
+                        </div>
+                    @endforelse
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 @endsection

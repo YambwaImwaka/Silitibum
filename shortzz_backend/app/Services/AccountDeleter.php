@@ -43,21 +43,21 @@ class AccountDeleter
         $userId = $user->id;
 
         // Collect file paths BEFORE anything is deleted — afterwards there is
-        // no row left to tell us what to unlink. Post *images* are handled by
-        // deleteAllPostData(); video/thumbnail/story/profile media are not.
+        // no row left to tell us what to unlink.
+        //
+        // Post media is deliberately NOT collected here any more. Posts are
+        // soft-deleted and kept for the retention window (see
+        // GlobalFunction::softDeletePost) so a takedown can still be reviewed
+        // if it is disputed — otherwise deleting your account would be the
+        // one way to erase content you had been reported for. Unlinking the
+        // video/thumbnail now would leave those retained rows pointing at
+        // files that no longer exist; posts:purge-retention removes the rows
+        // and their media together once the window expires.
         $files = [];
         if (!empty($user->profile_photo)) {
             $files[] = $user->profile_photo;
         }
-        $posts = Posts::where('user_id', $userId)->get();
-        $postCount = $posts->count();
-        foreach ($posts as $post) {
-            foreach (['video', 'thumbnail'] as $field) {
-                if (!empty($post->$field)) {
-                    $files[] = $post->$field;
-                }
-            }
-        }
+        $postCount = Posts::where('user_id', $userId)->count();
         foreach (Story::where('user_id', $userId)->pluck('content') as $content) {
             if (!empty($content)) {
                 $files[] = $content;

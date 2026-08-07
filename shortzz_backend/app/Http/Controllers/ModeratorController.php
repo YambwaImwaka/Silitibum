@@ -128,10 +128,19 @@ class ModeratorController extends Controller
             return GlobalFunction::sendSimpleResponse(false, 'you are not allowed to make this action!');
         }
 
+        // `exists:` validation does not respect the SoftDeletes scope, so an
+        // already-removed id reaches here and find() returns null.
         $post = Posts::find($request->post_id);
-        $post->delete();
+        if ($post == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'post does not exists!');
+        }
 
-        GlobalFunction::deleteAllPostData($post);
+        GlobalFunction::softDeletePost(
+            $post,
+            GlobalFunction::DELETED_BY_MODERATOR,
+            $user->id,
+            $request->reason
+        );
 
         return GlobalFunction::sendSimpleResponse(true, 'post deleted successfully!');
     }

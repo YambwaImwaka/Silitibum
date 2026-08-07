@@ -38,6 +38,7 @@ class _ScanQrCodeScreenState extends State<ScanQrCodeScreen> {
         children: [
           CustomAppBar(
             title: LKey.scanQrCode.tr,
+            showSearch: false,
             widget: Padding(
               padding: const EdgeInsets.only(bottom: 10.0),
               child: Text(LKey.scanQrProfileSearch.tr,

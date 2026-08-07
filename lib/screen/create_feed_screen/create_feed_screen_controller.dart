@@ -14,7 +14,6 @@ import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/functions/media_picker_helper.dart';
-import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/add_post_story_service.dart';
@@ -327,7 +326,8 @@ class CreateFeedScreenController extends BaseController {
                 Post ID: ${post.id}
                 Mention User IDs: ${post.mentionedUsers?.map((e) => e.id).toList()} 
               ''');
-        _notifyMentionedUsers(post);
+        // Mention notifications are sent server-side by
+        // GlobalFunction::generatePost, together with the follower fan-out.
         _lastUploadType = UploadType.finish;
         updateUploadingProgress(progress: 100);
       } else {
@@ -342,33 +342,6 @@ class CreateFeedScreenController extends BaseController {
     }
   }
 
-  Future<void> _notifyMentionedUsers(Post post) async {
-    const int batchSize = 5;
-    List<Future> batch = [];
-
-    for (final mentionUser in (post.mentionedUsers ?? [])) {
-      if (mentionUser.notifyMention == 1 && mentionUser.id != myUser?.id) {
-        batch.add(
-            FirebaseNotificationManager.instance.sendLocalisationNotification(
-          LKey.notifyMentionedInPost,
-          type: NotificationType.post,
-          body: NotificationInfo(id: post.id),
-          deviceType: mentionUser.device,
-          deviceToken: mentionUser.deviceToken ?? '',
-          languageCode: mentionUser.appLanguage,
-        ));
-
-        if (batch.length >= batchSize) {
-          await Future.wait(batch);
-          batch.clear();
-        }
-      }
-    }
-
-    if (batch.isNotEmpty) {
-      await Future.wait(batch);
-    }
-  }
 
   Future<PostModel?> _handleReelUpload(
       PostStoryContent? content, Map<String, dynamic> params) async {

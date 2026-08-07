@@ -17,11 +17,18 @@ class VideoStallWatcher {
     required this.url,
     required this.onControllerReplaced,
     required this.onGiveUp,
+    this.cacheUrl,
     this.stallThreshold = const Duration(seconds: 8),
     this.checkInterval = const Duration(seconds: 2),
   });
 
   final String url;
+
+  /// Cache key for the retry, when it differs from [url] — see
+  /// VideoCacheService.createController. Worth passing: a stall means the
+  /// network just failed us, so recovering from a local file rather than
+  /// re-opening the stream that stalled is the whole point of the retry.
+  final String? cacheUrl;
   final ValueChanged<VideoPlayerController> onControllerReplaced;
   final VoidCallback onGiveUp;
   final Duration stallThreshold;
@@ -87,7 +94,7 @@ class VideoStallWatcher {
     final position = old?.value.position ?? Duration.zero;
 
     try {
-      final fresh = await VideoCacheService.createController(url);
+      final fresh = await VideoCacheService.createController(url, cacheUrl: cacheUrl);
       await fresh.initialize();
       if (_disposed) {
         fresh.dispose();
