@@ -19,6 +19,13 @@ class Posts extends Model
 
     public $table = "tbl_post";
 
+    // purge_after is read back as a raw string otherwise — only created_at,
+    // updated_at and deleted_at are cast for free — and the admin trash view
+    // formats it as a date. An uncast column there took the whole listing down.
+    protected $casts = [
+        'purge_after' => 'datetime',
+    ];
+
     public function user()
     {
         return $this->hasOne(Users::class, 'id', 'user_id');

@@ -996,6 +996,16 @@ class GlobalFunction extends Model
             }
         }
 
+        // A live recording is published as an ordinary post, so purging it has
+        // to clear the livestream's pointer too — otherwise the stream keeps
+        // advertising a recording_post_id the app cannot open, and a re-upload
+        // would be refused as "already stored".
+        Livestream::where('recording_post_id', $post->id)->update([
+            'recording' => null,
+            'recording_post_id' => null,
+            'recording_status' => 0,
+        ]);
+
         $user = Users::find($post->user_id);
         GlobalFunction::settleUserTotalPostLikesCount($user->id);
     }
@@ -1866,8 +1876,27 @@ class GlobalFunction extends Model
         return response()->json(['status' => $status, 'message' => $msg, 'data' => $data]);
     }
 
+    /**
+     * Every admin DataTable formats its dates through here, and each one runs
+     * inside a ->map() over the whole page of rows — so one column that came
+     * back as a raw string (a model missing a `datetime` cast) threw and took
+     * the entire listing down with a 500, which reads in the browser as an
+     * empty table rather than as an error. Parse instead of assuming Carbon.
+     */
     public static function formateDatabaseTime($time)
     {
+        if ($time === null || $time === '') {
+            return '';
+        }
+
+        if (!$time instanceof \DateTimeInterface) {
+            try {
+                $time = Carbon::parse($time);
+            } catch (\Throwable $e) {
+                return '';
+            }
+        }
+
         return $time->format('d M Y');
     }
 

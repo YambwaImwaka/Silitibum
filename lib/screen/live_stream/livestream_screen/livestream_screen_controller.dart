@@ -14,6 +14,7 @@ import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/haptic_manager.dart';
+import 'package:shortzz/common/manager/live_recording_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/livestream_service.dart';
@@ -405,6 +406,17 @@ class LivestreamScreenController extends BaseController {
   Future<void> logoutRoom() async {
     if (isHost) {
       _endStreamOnServer();
+      // Placed here rather than in hostEndStream() so every way a host can
+      // leave is covered — the stop sheet, the minimum-viewer timeout, and
+      // backing out of the screen all funnel through this method. The call is
+      // a no-op unless a recording is actually running.
+      //
+      // Awaited so the recorder has closed the file before the teardown below
+      // stops publishing and logs out of the room: an MP4 whose engine is
+      // destroyed mid-write never gets its header and is unplayable. Only the
+      // stop is awaited — the upload it starts runs on past this screen.
+      await LiveRecordingManager.instance
+          .stopAndSave(description: liveData.value.description);
     } else if (roomId.isNotEmpty) {
       () async {
         try {
@@ -579,6 +591,11 @@ class LivestreamScreenController extends BaseController {
     pushNotificationToFollowers(liveData.value);
     await zegoEngine.startPublishingStream(streamID);
     _captureRetentionSnapshot();
+    // Records what is being broadcast so the live is not gone when the room
+    // closes. Owned by LiveRecordingManager, not this controller: the upload
+    // runs for minutes after the host is moved to the end screen and this
+    // controller is disposed.
+    LiveRecordingManager.instance.start(roomId: roomId);
   }
 
   /// Captures the one frame that outlives the broadcast.

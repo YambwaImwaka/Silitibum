@@ -14,6 +14,11 @@ class CommentReplies extends Model
 
     public $table = "comment_replies";
 
+    // See Posts::$casts.
+    protected $casts = [
+        'purge_after' => 'datetime',
+    ];
+
     public function comment()
     {
         return $this->hasOne(PostComments::class, 'id', 'comment_id');

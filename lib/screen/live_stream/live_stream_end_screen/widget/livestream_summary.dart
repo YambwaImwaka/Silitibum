@@ -8,6 +8,7 @@ import 'package:shortzz/common/widget/full_name_with_blue_tick.dart';
 import 'package:shortzz/common/widget/gradient_text.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/livestream/livestream_user_state.dart';
+import 'package:shortzz/screen/live_stream/live_stream_end_screen/widget/live_recording_status.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/widget/live_stream_background_blur_image.dart';
 import 'package:shortzz/utilities/style_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
@@ -43,8 +44,9 @@ class LiveStreamSummary extends StatelessWidget {
               Column(
                 children: [
                   if ((snapshot ?? '').isNotEmpty) ...[
-                    // The retained frame, shown in place of a replay — there
-                    // is no recording to play back.
+                    // The frame captured seconds into the broadcast. It stands
+                    // in while the recording of the stream is still uploading,
+                    // and is the thumbnail of the post it becomes.
                     ClipSmoothRect(
                       radius: SmoothBorderRadius(
                           cornerRadius: 12, cornerSmoothing: 1),
@@ -86,6 +88,7 @@ class LiveStreamSummary extends StatelessWidget {
                     style: TextStyleCustom.outFitThin100(
                         fontSize: 17, color: textLightGrey(context)),
                   ),
+                  if (isHost) const LiveRecordingStatus(),
                 ],
               ),
               Column(

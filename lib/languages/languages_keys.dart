@@ -221,6 +221,9 @@ class LKey {
       "Below is the summary of your stream!";
   static const String fromBattle = "From Battle";
   static const String live = "Live";
+  static const String savingYourLive = "Saving your live to your profile...";
+  static const String liveSavedToProfile = "Your live is on your profile";
+  static const String liveCouldNotBeSaved = "Your live could not be saved";
   static const String checkProfile = "Check Profile";
   static const String youAreSendingCoinsTo =
       "You are sending coins to @color Participant";

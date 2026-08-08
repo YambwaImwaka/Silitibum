@@ -654,6 +654,32 @@
                                             </div>
                                         </div>
                                     </div>
+                                    {{-- Recording an ended live spends the host's upload data and
+                                         this server's disk, so both the switch and the ceiling have
+                                         to be reachable without shipping an app build. --}}
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for=""
+                                                class="form-label">{{ __('Save Livestreams to Profile') }}</label>
+                                            <div class="mb-0">
+                                                <input name="livestream_recording_enabled" type="checkbox"
+                                                    id="switchLivestreamRecording"
+                                                    {{ $setting->livestream_recording_enabled == 1 ? 'checked' : '' }}
+                                                    data-switch="primary" />
+                                                <label for="switchLivestreamRecording"></label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="livestream_recording_max_minutes"
+                                                class="form-label">{{ __('Max. Minutes of a Live to Save') }}</label>
+                                            <input type="number" step="1" min="1" class="form-control"
+                                                id="livestream_recording_max_minutes"
+                                                name="livestream_recording_max_minutes"
+                                                value="{{ $setting->livestream_recording_max_minutes }}">
+                                        </div>
+                                    </div>
                                 </div>
                                 {{-- Watermark --}}
                                 <h5>{{ __('ZEGO CLOUD SETTINGS') }}</h5>

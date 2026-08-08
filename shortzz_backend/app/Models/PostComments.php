@@ -16,6 +16,12 @@ class PostComments extends Model
 
     public $table = "tbl_comments";
 
+    // See Posts::$casts — the retention deadline is rendered as a date in the
+    // admin trash view and is not one of the columns Eloquent casts for free.
+    protected $casts = [
+        'purge_after' => 'datetime',
+    ];
+
     public function post()
     {
         return $this->hasOne(Posts::class, 'id', 'post_id');

@@ -886,6 +886,12 @@ class SettingsController extends Controller
         $setting->min_followers_for_live = $request->min_followers_for_live;
         $setting->live_min_viewers = $request->live_min_viewers;
         $setting->live_timeout = $request->live_timeout;
+        $setting->livestream_recording_enabled = (int) $request->livestream_recording_enabled;
+        // Guarded rather than assigned raw: a blank or zero cap would tell every
+        // host's device to stop recording immediately, which reads as the
+        // feature being broken rather than switched off.
+        $maxMinutes = (int) $request->livestream_recording_max_minutes;
+        $setting->livestream_recording_max_minutes = $maxMinutes > 0 ? $maxMinutes : 60;
         $setting->zego_app_sign = $request->zego_app_sign;
         $setting->zego_app_id = $request->zego_app_id;
 

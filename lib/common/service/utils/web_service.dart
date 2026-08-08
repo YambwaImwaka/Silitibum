@@ -19,6 +19,9 @@ class _Livestream {
   String fetchLivestreams = "${apiURL}livestream/fetchLivestreams";
   String createLivestream = "${apiURL}livestream/createLivestream";
   String uploadLivestreamSnapshot = "${apiURL}livestream/uploadLivestreamSnapshot";
+  String uploadRecordingChunk = "${apiURL}livestream/uploadRecordingChunk";
+  String finalizeLivestreamRecording = "${apiURL}livestream/finalizeLivestreamRecording";
+  String discardLivestreamRecording = "${apiURL}livestream/discardLivestreamRecording";
   String joinLivestream = "${apiURL}livestream/joinLivestream";
   String leaveLivestream = "${apiURL}livestream/leaveLivestream";
   String fetchStreamState = "${apiURL}livestream/fetchStreamState";

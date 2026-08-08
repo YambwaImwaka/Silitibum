@@ -215,10 +215,15 @@ class ApiService {
     return jsonDecode(response.body);
   }
 
+  /// [bytesFiles] sends an in-memory part instead of a file on disk. Used by
+  /// the livestream recording uploader, which slices one large local recording
+  /// into chunks: writing each slice out to its own temp file first would
+  /// duplicate the whole recording on the device's storage for no benefit.
   Future<T> multiPartCallApi<T>({
     required String url,
     Map<String, dynamic>? param,
     required Map<String, List<XFile?>> filesMap,
+    Map<String, ({List<int> bytes, String filename})>? bytesFiles,
     Function(double percentage)? onProgress,
     CancelToken? cancelToken,
     T Function(Map<String, dynamic> json)? fromJson,
@@ -256,6 +261,10 @@ class ApiService {
         }
       }
     }
+    bytesFiles?.forEach((field, part) {
+      request.files.add(http.MultipartFile.fromBytes(field, part.bytes,
+          filename: part.filename));
+    });
     Loggers.info("URL : $url");
     Loggers.info("HEADERS : ${request.headers}");
     Loggers.info("FIELDS : ${request.fields}");

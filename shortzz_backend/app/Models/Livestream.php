@@ -51,6 +51,13 @@ class Livestream extends Model
             // stream media itself is never stored, so this is all that
             // survives once the room closes.
             'snapshot' => GlobalFunction::generateFileUrl($this->snapshot),
+            // The recording of the broadcast, once the host's device has
+            // finished uploading it. recording_post_id is what the app opens —
+            // the recording is published as an ordinary video post, so replay
+            // is just the post player.
+            'recording' => GlobalFunction::generateFileUrl($this->recording),
+            'recording_post_id' => $this->recording_post_id !== null ? (int) $this->recording_post_id : null,
+            'recording_status' => (int) $this->recording_status,
             'created_at' => $this->created_at ? (int) $this->created_at->valueOf() : 0,
             'battle_created_at' => $this->battle_created_at !== null ? (int) $this->battle_created_at : null,
             'is_dummy_live' => 0,

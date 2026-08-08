@@ -17,6 +17,7 @@ use App\Http\Controllers\CommentController;
 use App\Http\Controllers\CronsController;
 use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\LivestreamApiController;
+use App\Http\Controllers\LivestreamRecordingController;
 use App\Http\Controllers\ModeratorController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\NotificationController;
@@ -226,8 +227,15 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('leaveLivestream', [LivestreamApiController::class, 'leaveLivestream']);
         Route::post('fetchStreamState', [LivestreamApiController::class, 'fetchStreamState']);
         Route::post('createLivestream', [LivestreamApiController::class, 'createLivestream'])->middleware('authorizeUser');
-        // Host-only still frame; the stream media itself is never recorded.
+        // Host-only still frame, captured seconds into the broadcast; doubles
+        // as the thumbnail for the recording below.
         Route::post('uploadLivestreamSnapshot', [LivestreamApiController::class, 'uploadLivestreamSnapshot'])->middleware('authorizeUser');
+        // Host-only recording of the broadcast, uploaded in slices after the
+        // room closes and published as a video post (see
+        // LivestreamRecordingController for why it is chunked).
+        Route::post('uploadRecordingChunk', [LivestreamRecordingController::class, 'uploadRecordingChunk'])->middleware('authorizeUser');
+        Route::post('finalizeLivestreamRecording', [LivestreamRecordingController::class, 'finalizeLivestreamRecording'])->middleware('authorizeUser');
+        Route::post('discardLivestreamRecording', [LivestreamRecordingController::class, 'discardLivestreamRecording'])->middleware('authorizeUser');
         Route::post('sendComment', [LivestreamApiController::class, 'sendComment'])->middleware('authorizeUser');
         Route::post('addLikes', [LivestreamApiController::class, 'addLikes'])->middleware('authorizeUser');
         Route::post('sendStreamGift', [LivestreamApiController::class, 'sendStreamGift'])->middleware('authorizeUser');

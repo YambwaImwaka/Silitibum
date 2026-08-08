@@ -38,6 +38,10 @@ class Params {
   static const String lastMsgAt = 'last_msg_at';
   static const String roomId = 'room_id';
   static const String snapshot = 'snapshot';
+  static const String chunk = 'chunk';
+  static const String chunkIndex = 'chunk_index';
+  static const String totalChunks = 'total_chunks';
+  static const String durationMs = 'duration_ms';
   static const String count = 'count';
   static const String commentType = 'comment_type';
   static const String receiverUserId = 'receiver_user_id';

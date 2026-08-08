@@ -68,6 +68,17 @@ class Setting {
   int? liveMinViewers;
   int? liveTimeout;
   int? liveBattle;
+
+  /// Whether a host's device records the broadcast and uploads it when the
+  /// stream ends. Server-side kill switch — the feature spends the host's
+  /// upload bandwidth and the server's disk, so it has to be stoppable without
+  /// shipping an app build.
+  int? livestreamRecordingEnabled;
+
+  /// Minutes after which the device stops recording and keeps what it has. A
+  /// recording is uploaded from a phone, so an unbounded live would produce a
+  /// file no host on mobile data could realistically send.
+  int? livestreamRecordingMaxMinutes;
   String? zegoAppId;
   String? zegoAppSign;
   int? isCompress;
@@ -131,6 +142,8 @@ class Setting {
     this.liveMinViewers,
     this.liveTimeout,
     this.liveBattle,
+    this.livestreamRecordingEnabled,
+    this.livestreamRecordingMaxMinutes,
     this.zegoAppId,
     this.zegoAppSign,
     this.isCompress,
@@ -195,6 +208,10 @@ class Setting {
         liveMinViewers: asIntOrNull(json["live_min_viewers"]),
         liveTimeout: asIntOrNull(json["live_timeout"]),
         liveBattle: asIntOrNull(json["live_battle"]),
+        livestreamRecordingEnabled:
+            asIntOrNull(json["livestream_recording_enabled"]),
+        livestreamRecordingMaxMinutes:
+            asIntOrNull(json["livestream_recording_max_minutes"]),
         zegoAppId: asStringOrNull(json["zego_app_id"]),
         zegoAppSign: asStringOrNull(json["zego_app_sign"]),
         isCompress: asIntOrNull(json["is_compress"]),
@@ -291,6 +308,8 @@ class Setting {
         "live_min_viewers": liveMinViewers,
         "live_timeout": liveTimeout,
         "live_battle": liveBattle,
+        "livestream_recording_enabled": livestreamRecordingEnabled,
+        "livestream_recording_max_minutes": livestreamRecordingMaxMinutes,
         "zego_app_id": zegoAppId,
         "zego_app_sign": zegoAppSign,
         "is_compress": isCompress,

@@ -225,8 +225,12 @@ $(document).ready(function () {
             var live_battle = $("#switchPKBattle").prop("checked") == true ? 1 : 0;
             var live_dummy_show = $("#switchDummyLiveShow").prop("checked") == true ? 1 : 0;
 
+            var livestream_recording_enabled =
+                $("#switchLivestreamRecording").prop("checked") == true ? 1 : 0;
+
             formdata.append('live_battle', live_battle);
             formdata.append('live_dummy_show', live_dummy_show);
+            formdata.append('livestream_recording_enabled', livestream_recording_enabled);
 
             var url = `${domainUrl}saveLiveStreamSettings`;
             try {
