@@ -25,7 +25,12 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
-    avoid_print: false  # Uncomment to disable the `avoid_print` rule
+    # ON deliberately. This was `false`, and 27 bare print() calls had built up
+    # behind it — all of which run in release builds, including ones that dumped
+    # full push-notification payloads and whole chat/story objects to logcat.
+    # Use Loggers (lib/common/manager/logger.dart) instead: same call sites,
+    # but kDebugMode-gated so nothing reaches a shipped build.
+    avoid_print: true
   # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
 
 # Additional information about this file can be found at

@@ -125,26 +125,43 @@ extension StringExtention on String {
     return replaceAll('#', '');
   }
 
-  Future<LinearGradient> get getGradientFromImage async {
-    List<Color> colors = [];
-    Uint8List imageBytes = await File(this).readAsBytes();
-    print(imageBytes);
-    try {
-      DominantColors extractor =
-          DominantColors(bytes: imageBytes, dominantColorsCount: 5);
+  /// Neutral fallback when a gradient can't be derived from the image.
+  /// LinearGradient requires at least two colors, so this is always a pair.
+  static const List<Color> _fallbackGradientColors = [
+    Color(0xFF2C2C2C),
+    Color(0xFF000000),
+  ];
 
-      List<Color> dominantColors = extractor.extractDominantColors();
-      colors = dominantColors;
+  Future<LinearGradient> get getGradientFromImage async {
+    // Everything that can throw is inside the try now. readAsBytes() used to
+    // sit outside it, so a missing or unreadable file threw
+    // FileSystemException straight past the handler.
+    //
+    // The old catch called colors.clear() and then fell through to
+    // [colors.first, colors.last] — turning any recoverable extraction
+    // failure into a guaranteed StateError. Empty results from a successful
+    // extraction hit the same line.
+    List<Color> colors = const [];
+    try {
+      final Uint8List imageBytes = await File(this).readAsBytes();
+      final DominantColors extractor =
+          DominantColors(bytes: imageBytes, dominantColorsCount: 5);
+      colors = extractor.extractDominantColors();
     } catch (e) {
-      colors.clear();
-      print(e);
+      Loggers.error('getGradientFromImage failed for $this: $e');
     }
+
+    final List<Color> safeColors = switch (colors.length) {
+      0 => _fallbackGradientColors,
+      1 => [colors.first, colors.first],
+      _ => [colors.first, colors.last],
+    };
 
     return LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       stops: const [0.1, 1],
-      colors: [colors.first, colors.last],
+      colors: safeColors,
     );
   }
 }

@@ -27,14 +27,25 @@ class LocationService {
     permission = await Geolocator.checkPermission();
     switch (permission) {
       case LocationPermission.denied:
-        await Geolocator.requestPermission();
+        // Ask ONCE. This used to call requestPermission() and then, when
+        // isPermissionDialogShow was set, call it a second time — so the user
+        // answered the system dialog and was immediately shown it again.
+        final result = await Geolocator.requestPermission();
+
+        // Granted on the retry: carry on instead of erroring out. The old code
+        // returned Future.error unconditionally, so even an "Allow" here
+        // failed the call and the caller had to ask again.
+        if (result == LocationPermission.whileInUse ||
+            result == LocationPermission.always) {
+          return await getCurrentPosition();
+        }
+
+        // Still refused. The old condition was `value != denied || value !=
+        // deniedForever`, which is true for every possible value — nothing can
+        // equal both — so the "please enable location" dialog fired even when
+        // permission had just been granted.
         if (isPermissionDialogShow) {
-          await Geolocator.requestPermission().then((value) async {
-            if (value != LocationPermission.denied ||
-                value != LocationPermission.deniedForever) {
-              await showPermissionDialog();
-            }
-          });
+          await showPermissionDialog();
         }
         return Future.error('Location permissions are denied');
       case LocationPermission.deniedForever:

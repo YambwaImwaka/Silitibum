@@ -30,38 +30,67 @@ class ShareManager {
     isListenerConfigured = true;
     AppLinks().uriLinkStream.listen((uri) {
       Loggers.info('Share Link Opened: $uri ${uri.pathSegments} ${uri.path}');
-      if (uri.pathSegments.isNotEmpty) {
-        var encoded = uri.pathSegments.last;
-        Loggers.success(encoded);
-        var decoded = safeBase64Decode(encoded);
-
-        var values = decoded.split('_');
-        completion(values.first, int.parse(values.last));
-      }
+      _parseShareUri(uri, completion);
+    }, onError: (e) {
+      // An error on this stream used to go nowhere. Unhandled, it escapes to
+      // PlatformDispatcher.onError and is recorded as a fatal.
+      Loggers.error('uriLinkStream error: $e');
     });
   }
 
   void getValuesFromURL({required String url, required Function(String key, int value) completion}) {
-    var uri = Uri.parse(url);
-    if (uri.pathSegments.isNotEmpty) {
-      var encoded = uri.pathSegments.last;
-      Loggers.success(encoded);
-      var decoded = safeBase64Decode(encoded);
+    _parseShareUri(Uri.tryParse(url), completion);
+  }
 
-      var values = decoded.split('_');
-      completion(values.first, int.parse(values.last));
+  /// Decodes a share link and invokes [completion] only if it is genuinely
+  /// well-formed.
+  ///
+  /// Both call sites previously did `int.parse(values.last)` straight off
+  /// base64 taken from the URL. That input is fully attacker- and
+  /// typo-controllable — a truncated or hand-edited silitibum.com/s/… link is
+  /// enough — and every step could throw: base64.decode on invalid characters,
+  /// utf8.decode on invalid bytes, and int.parse on a non-numeric tail. In
+  /// listen() that throw happened inside a stream callback, so it surfaced as
+  /// an uncaught async fatal rather than a link that simply did not open.
+  ///
+  /// A malformed link should do nothing at all, which is what this does.
+  void _parseShareUri(Uri? uri, Function(String key, int value) completion) {
+    if (uri == null || uri.pathSegments.isEmpty) return;
+
+    try {
+      final decoded = safeBase64Decode(uri.pathSegments.last);
+      final values = decoded.split('_');
+      if (values.length < 2) {
+        Loggers.warning('Share link payload has no id: $decoded');
+        return;
+      }
+
+      final id = int.tryParse(values.last);
+      if (id == null) {
+        Loggers.warning('Share link id is not numeric: ${values.last}');
+        return;
+      }
+
+      completion(values.first, id);
+    } catch (e) {
+      Loggers.error('Could not decode share link $uri: $e');
     }
   }
 
   void shareTheContent({required ShareKeys key, required int value}) {
     final encoded = safeBase64Encode('${key.value}_$value');
     final url = '${baseURL}s/$encoded';
-    final context = Get.context!;
 
-    final box = context.findRenderObject() as RenderBox?;
-    final origin = box!.localToGlobal(Offset.zero) & box.size;
+    // sharePositionOrigin only matters for the iPad popover anchor; on Android
+    // it is ignored. It was computed as `box!.localToGlobal(...)`, which
+    // crashes whenever the context has no RenderBox yet — so a share tap
+    // during a rebuild took the app down instead of opening the sheet.
+    final context = Get.context;
+    final box = context?.findRenderObject() as RenderBox?;
+    final origin = (box != null && box.hasSize)
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
 
-    // Share.share("$url", sharePositionOrigin: box!.localToGlobal(Offset.zero) & box.size);
     SharePlus.instance.share(ShareParams(uri: Uri.parse(url), sharePositionOrigin: origin));
   }
 
@@ -82,7 +111,7 @@ class ShareManager {
   String safeBase64Decode(String input) {
     // Remove all whitespace
     input = input.trim();
-    print(input);
+    Loggers.info(input);
 
     // Remove any invalid padding (> 2 '=' at end)
     input = input.replaceAll(RegExp(r'=+$'), '');

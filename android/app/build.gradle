@@ -8,10 +8,42 @@ plugins {
 
 }
 
+// Upload-key credentials. Kept out of the repo — android/.gitignore already
+// ignores key.properties, *.jks and *.keystore.
+//
+// When the file is absent (a fresh clone, CI without secrets), the release
+// build falls back to debug signing so `flutter run --release` still works
+// locally. That fallback is fine for development and NOT fine for Play: an
+// upload signed with the debug key is rejected. See signingConfigs below.
+def keystorePropertiesFile = rootProject.file("key.properties")
+def keystoreProperties = new Properties()
+def hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.silitibum.app"
     compileSdk = 36
     ndkVersion = "27.0.12077973"
+
+    signingConfigs {
+        release {
+            if (hasReleaseKeystore) {
+                // rootProject.file(), not file(). Inside this module a bare
+                // file() resolves against android/app/, so a storeFile of
+                // "upload-keystore.jks" pointed at android/app/upload-keystore.jks
+                // and the build died with "Error: Missing keystore" while the
+                // keystore sat next to key.properties in android/.
+                // rootProject.file() resolves against android/ and still passes
+                // an absolute path through unchanged.
+                storeFile = rootProject.file(keystoreProperties['storeFile'])
+                storePassword = keystoreProperties['storePassword']
+                keyAlias = keystoreProperties['keyAlias']
+                keyPassword = keystoreProperties['keyPassword']
+            }
+        }
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -47,9 +79,23 @@ android {
             shrinkResources true
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.debug
+
+            // Real upload key when android/key.properties is present; debug key
+            // otherwise so a keyless clone can still build and run.
+            //
+            // Verify what you actually produced before uploading — a
+            // debug-signed AAB is rejected by Play with a message about the
+            // certificate, not about this file:
+            //   keytool -printcert -jarfile build/app/outputs/bundle/release/app-release.aab
+            // The owner must be your CN, not "CN=Android Debug".
+            signingConfig = hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
+
+            // Symbolicates native crashes (DeepAR + Zego ship large .so files,
+            // and without this their stack traces arrive in Play Console as
+            // raw addresses).
+            ndk {
+                debugSymbolLevel = 'SYMBOL_TABLE'
+            }
         }
     }
 

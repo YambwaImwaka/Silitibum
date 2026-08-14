@@ -36,7 +36,6 @@ class ChatMessageView extends StatelessWidget {
             itemBuilder: (context, index) {
               MessageData message = controller.chatList[index];
               bool isMe = message.userId == SessionManager.instance.getUserID();
-              print(isMe);
               return Container(
                 padding: const EdgeInsets.only(
                     left: 10, right: 10, top: 7, bottom: 7),

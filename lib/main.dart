@@ -56,6 +56,18 @@ Future<void> main() async {
       return true;
     };
 
+    // What the user SEES when a widget throws during build. Without this,
+    // release builds show Flutter's default error box — a grey/black panel
+    // with exception text — in place of the offending widget. In a feed that
+    // is per-item, so one malformed post renders a raw stack trace inside the
+    // list. onError above still reports it; this only controls the visuals.
+    //
+    // Debug keeps the default red screen, which is the useful one to develop
+    // against.
+    if (!kDebugMode) {
+      ErrorWidget.builder = (details) => const SizedBox.shrink();
+    }
+
     // Register background handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
@@ -76,7 +88,7 @@ Future<void> main() async {
     // saw anything at all.
     _initDeferredServices();
   } catch (e, st) {
-    Loggers.error('Fatal crash during app startup $st');
+    Loggers.error('Fatal crash during app startup: $e\n$st');
     // Best-effort: Firebase may not have finished initializing yet if the
     // crash happened before/during Firebase.initializeApp() itself.
     try {

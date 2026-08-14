@@ -178,7 +178,12 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     if (_isZegoEngineReady) return;
 
     Setting? appSetting = SessionManager.instance.getSettings();
-    int appId = int.parse(appSetting?.zegoAppId ?? '0');
+    // tryParse, not parse. zego_app_id is a nullable settings column, and an
+    // unconfigured one comes back as "" — which is not null, so `?? '0'` never
+    // fired and int.parse threw FormatException the moment a user opened the
+    // Live tab. The `appId == 0` guard below was written for exactly that case
+    // and was unreachable.
+    int appId = int.tryParse(appSetting?.zegoAppId ?? '') ?? 0;
     if (appId == 0) {
       return Loggers.info('The Zego App ID is not configured.');
     }

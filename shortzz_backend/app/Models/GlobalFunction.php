@@ -210,6 +210,28 @@ class GlobalFunction extends Model
         }
     }
 
+    /// Where the minted FCM access token lives. Cache, not tbl_settings —
+    /// see regenerateGoogleAPIToken() for why.
+    const FCM_TOKEN_CACHE_KEY = 'fcm_access_token';
+
+    /**
+     * Mints a short-lived FCM access token from googleCredentials.json.
+     *
+     * This used to write the token into tbl_settings.place_api_access_token,
+     * a column SettingsController::fetchSettings serializes to every caller
+     * holding the app's hardcoded (therefore public) apikey — so the token
+     * was handed to anyone who asked. It also requested cloud-platform
+     * scope, which covers essentially every GCP API the service account can
+     * reach, not just push.
+     *
+     * Both are fixed here: the token is cached server-side where nothing
+     * serializes it, and the scope is narrowed to firebase.messaging, which
+     * is all the server ever does with it. Google issues these with a
+     * one-hour life; the 50-minute TTL leaves margin so a cached token
+     * cannot expire mid-send.
+     *
+     * Returns the token so callers can use it without a second cache read.
+     */
     public static function regenerateGoogleAPIToken()
     {
         $client = new Client();
@@ -219,14 +241,17 @@ class GlobalFunction extends Model
         // sendPushNotification() could read the same file fine.
         $client->setAuthConfig(base_path('googleCredentials.json'));
         $client->addScope('https://www.googleapis.com/auth/firebase.messaging');
-        $client->addScope('https://www.googleapis.com/auth/cloud-platform');
         $client->fetchAccessTokenWithAssertion();
         $accessToken = $client->getAccessToken();
-        $accessToken = $accessToken['access_token'];
+        $accessToken = $accessToken['access_token'] ?? null;
 
-        $setting = GlobalSettings::first();
-        $setting->place_api_access_token = $accessToken;
-        $setting->save();
+        if (empty($accessToken)) {
+            throw new \RuntimeException('regenerateGoogleAPIToken: no access_token in the assertion response');
+        }
+
+        Cache::put(self::FCM_TOKEN_CACHE_KEY, $accessToken, now()->addMinutes(50));
+
+        return $accessToken;
     }
 
     public static function insertUserNotification($type, $fromUserId, $toUserId, $dataId)
@@ -353,6 +378,9 @@ class GlobalFunction extends Model
         $url = 'https://fcm.googleapis.com/v1/projects/' . $projectId . '/messages:send';
 
         $response = self::postToFcm($url, $payload);
+        if ($response === null) {
+            return false;
+        }
         $responseBody = json_decode($response->body(), true);
 
         if (isset($responseBody['error']['code']) && $responseBody['error']['code'] == 401) {
@@ -367,10 +395,25 @@ class GlobalFunction extends Model
             }
 
             $response = self::postToFcm($url, $payload);
+            if ($response === null) {
+                return false;
+            }
             $responseBody = json_decode($response->body(), true);
         }
 
         if (isset($responseBody['error'])) {
+            // UNREGISTERED / NotRegistered means the app instance that owned
+            // this token is gone (uninstalled, or reinstalled and issued a new
+            // token). The token can never succeed again, so drop it instead of
+            // re-sending to it on every like, comment and follow forever.
+            // 7 of the 15 device tokens on production were in this state when
+            // push was first brought up.
+            $errorCode = $responseBody['error']['details'][0]['errorCode']
+                ?? ($responseBody['error']['status'] ?? '');
+            if ($errorCode === 'UNREGISTERED' || $errorCode === 'NOT_FOUND') {
+                self::forgetDeviceToken($payload['message']['token'] ?? null);
+            }
+
             Log::warning('FCM send failed: ' . ($responseBody['error']['message'] ?? 'unknown error'));
             return false;
         }
@@ -378,11 +421,39 @@ class GlobalFunction extends Model
         return $response->successful();
     }
 
+    /// Clears a device token FCM has told us is dead. Never throws: this runs
+    /// inside a push attempt, which is itself best-effort.
+    private static function forgetDeviceToken($deviceToken)
+    {
+        if (empty($deviceToken)) {
+            return;
+        }
+        try {
+            Users::where('device_token', $deviceToken)->update(['device_token' => null]);
+        } catch (\Throwable $e) {
+            Log::warning('forgetDeviceToken failed: ' . $e->getMessage());
+        }
+    }
+
+    /// Returns the FCM response, or null when no access token could be
+    /// obtained at all (caller treats that as a failed send).
     private static function postToFcm($url, $payload)
     {
         // Read fresh each attempt: regenerateGoogleAPIToken() writes the new
-        // token to settings, and the retry above depends on picking it up.
-        $accessToken = optional(GlobalSettings::first())->place_api_access_token;
+        // token to the cache, and the 401 retry above depends on picking it up.
+        $accessToken = Cache::get(self::FCM_TOKEN_CACHE_KEY);
+
+        // Cold cache (first push after a deploy, a cache clear, or the 50-minute
+        // TTL lapsing with no traffic). Mint one now rather than burning this
+        // send on a guaranteed 401.
+        if (empty($accessToken)) {
+            try {
+                $accessToken = self::regenerateGoogleAPIToken();
+            } catch (\Throwable $e) {
+                Log::error('postToFcm: could not mint an FCM access token: ' . $e->getMessage());
+                return null;
+            }
+        }
 
         return Http::withToken($accessToken)
             ->withHeaders(['Content-Type' => 'application/json'])

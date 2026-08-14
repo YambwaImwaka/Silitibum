@@ -105,7 +105,6 @@ class _PostAnimationLikeState extends State<PostAnimationLike>
     final dy = widget._endPosition.dy - widget._position.dy;
 
     _positionTween.end = Offset(dx, dy); // 🔁 Move from tap to like
-    print(_positionTween.end);
   }
 
   @override

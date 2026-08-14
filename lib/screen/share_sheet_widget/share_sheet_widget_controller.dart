@@ -53,15 +53,29 @@ class ShareSheetWidgetController extends BaseController {
 
   @override
   void onReady() {
-    DefaultCacheManager()
-        .getSingleFile(setting?.watermarkImage?.addBaseURL() ?? '')
-        .then((value) {
+    // Guarded on both counts. watermark_image is nullable in tbl_settings and
+    // is NULL on production right now, so this used to call getSingleFile('')
+    // on every share-sheet open — an unhandled async throw that Crashlytics
+    // records as fatal. And the .then() had no error branch, so a slow or
+    // 404ing watermark URL did the same.
+    final watermarkUrl = setting?.watermarkImage?.addBaseURL() ?? '';
+    if (watermarkUrl.isEmpty) {
+      super.onReady();
+      return;
+    }
+
+    DefaultCacheManager().getSingleFile(watermarkUrl).then((value) {
       waterMarkPath.value = value.path;
       Future.delayed(const Duration(milliseconds: 250), () {
         ScreenshotManager.captureScreenshot(screenShotKey).then((value) {
           waterMarkPath.value = value?.path ?? '';
         });
       });
+    }).catchError((e) {
+      // Leaving waterMarkPath empty is the correct degraded state: the
+      // download path below checks it and refuses rather than shipping an
+      // unwatermarked file when watermarking was asked for.
+      Loggers.error('watermark fetch failed: $e');
     });
     super.onReady();
   }

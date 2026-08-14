@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Replaces a blanket android:usesCleartextTraffic="true" on <application>.
+
+  Exactly one endpoint in the app is not HTTPS: ip-api.com, used by
+  CommonService.getIPPlaceDetail() to guess the user's city from their IP
+  (lib/common/service/utils/web_service.dart). ip-api.com serves HTTPS only on
+  its paid plans, so the call cannot simply be switched to https://.
+
+  Rather than leave cleartext open app-wide — which Play flags and which would
+  silently permit a plaintext downgrade of any other request — cleartext is
+  permitted for that single host and denied everywhere else.
+
+  PlaceDetail (lib/model/general/place_detail.dart) maps ip-api's exact field
+  names (countryCode, regionName, query, ...), so moving to an HTTPS-capable
+  provider means remapping that model too. If that happens, delete this file
+  and drop the networkSecurityConfig attribute from the manifest.
+-->
+<network-security-config>
+    <!-- Everything not listed below: HTTPS only. -->
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">ip-api.com</domain>
+    </domain-config>
+</network-security-config>

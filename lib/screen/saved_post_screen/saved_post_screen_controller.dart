@@ -29,8 +29,6 @@ class SavedPostScreenController extends BaseController {
 
   void initData() async {
     final result = await Future.wait({fetchReel(), fetchPost()});
-    print(result[0]);
-    print(result[1]);
     List<Post> reels = result[0];
     List<Post> posts = result[1];
 

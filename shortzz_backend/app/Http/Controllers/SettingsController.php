@@ -141,10 +141,8 @@ class SettingsController extends Controller
         ]);
     }
 
-    function testingRoute(){
-        $user = Users::find(17);
-        GlobalFunction::deleteUserAccount($user);
-    }
+    // REMOVED: testingRoute() — it called deleteUserAccount() on a hardcoded
+    // user id from an unauthenticated GET route. See the note in routes/web.php.
 
     function editUserLevel(Request $request){
         $item = UserLevels::find($request->id);
@@ -1145,6 +1143,21 @@ class SettingsController extends Controller
 
         return view('terms_of_uses', [
             'data' => $setting->terms_of_uses
+        ]);
+    }
+
+    // Public, no auth: Play's Data safety form wants a URL a user can reach
+    // without the app installed (and possibly without being able to sign in).
+    // help_mail is admin-editable, so the contact address stays correct
+    // without a redeploy.
+    function delete_account()
+    {
+        $setting = GlobalSettings::first();
+
+        return view('delete_account', [
+            'appName' => $setting->app_name ?? 'Silitibum',
+            'helpMail' => $setting->help_mail ?? 'help@silitibum.com',
+            'retentionDays' => $setting->post_retention_days ?? 90,
         ]);
     }
 

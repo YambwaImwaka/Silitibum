@@ -37,9 +37,15 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+// Re-creates public/storage after a deploy overwrites the symlink with the
+// repo's tracked public/storage/.gitignore placeholder (which silently 404s
+// every uploaded image). Behind checkLogin: it was reachable by anyone, and an
+// unauthenticated route that runs an artisan command is not something to leave
+// on a production docroot.
 Route::get('/linkstorage', function () {
     Artisan::call('storage:link');
-});
+    return 'storage:link done';
+})->middleware(['checkLogin']);
 
 Route::get('/', [LoginController::class, 'login'])->name('/');
 Route::post('loginForm', [LoginController::class, 'checkLogin'])->name('loginForm');
@@ -50,8 +56,17 @@ Route::post('forgotPasswordForm', [LoginController::class, 'forgotPasswordForm']
 Route::get('privacy_policy', [SettingsController::class, 'privacy_policy'])->name('privacy_policy');
 Route::get('terms_of_uses', [SettingsController::class, 'terms_of_uses'])->name('terms_of_uses');
 
-// Test
-Route::get('testingRoute', [SettingsController::class, 'testingRoute'])->name('testingRoute');
+// Google Play requires a publicly reachable page describing how to request
+// account+data deletion WITHOUT installing the app, linked from the Data
+// safety form. The in-app path (Settings -> Delete Account) still exists and
+// is the fast route; this page documents it and gives an off-app fallback.
+Route::get('delete_account', [SettingsController::class, 'delete_account'])->name('delete_account');
+
+// REMOVED: Route::get('testingRoute', ...) — an unauthenticated GET that ran
+// GlobalFunction::deleteUserAccount(Users::find(17)). Anyone who requested
+// https://silitibum.com/testingRoute permanently deleted whichever account
+// happened to hold id 17. It survived to production because it 500s when that
+// id does not exist, which reads like a broken route rather than a live one.
 
 // Deeplink
 Route::get('s/{encryptedId}', [ShareLinkController::class, 'encryptedId'])->name('encryptedId');

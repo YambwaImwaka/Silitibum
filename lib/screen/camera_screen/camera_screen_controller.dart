@@ -463,7 +463,7 @@ class CameraScreenController extends BaseController
       XFile file;
       if (isDeepAr) {
         File photo = await deepArControllerPlus.value.takeScreenshot();
-        print(photo.path);
+        Loggers.info(photo.path);
         file = XFile(photo.path);
       } else {
         file = XFile(await RetrytechPlugin.shared.captureImage() ?? '');

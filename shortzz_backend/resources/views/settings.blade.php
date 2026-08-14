@@ -832,6 +832,7 @@
                                                 <option value="lenco" {{ $setting->active_payout_provider == 'lenco' ? 'selected' : '' }}>Lenco</option>
                                                 <option value="paystack" {{ $setting->active_payout_provider == 'paystack' ? 'selected' : '' }}>Paystack</option>
                                                 <option value="flutterwave" {{ $setting->active_payout_provider == 'flutterwave' ? 'selected' : '' }}>Flutterwave</option>
+                                                <option value="manual" {{ $setting->active_payout_provider == 'manual' ? 'selected' : '' }}>{{ __('Manual (admin settles by hand)') }}</option>
                                             </select>
                                             <small class="text-muted">{{ __('Used for creator withdrawals. Not every provider below supports every direction — check the notes on each before switching.') }}</small>
                                         </div>

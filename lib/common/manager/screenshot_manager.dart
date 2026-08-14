@@ -16,7 +16,6 @@ class ScreenshotManager {
       RenderRepaintBoundary? boundary = screenshotKey.currentContext
           ?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) {
-        print('1');
         return null;
       }
 
@@ -24,7 +23,6 @@ class ScreenshotManager {
       final byteData = await image.toByteData(format: ImageByteFormat.png);
       final Uint8List? imageBytes = byteData?.buffer.asUint8List();
       if (imageBytes == null) {
-        print('2');
         return null;
       }
 
@@ -33,7 +31,7 @@ class ScreenshotManager {
       final file = File('${localPath}screenshot.png');
 
       await file.writeAsBytes(imageBytes);
-      print(file.path);
+      Loggers.info(file.path);
       return XFile(file.path);
     } catch (e) {
       Loggers.error('❌ Screenshot failed: $e');

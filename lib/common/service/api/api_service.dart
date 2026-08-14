@@ -87,7 +87,7 @@ class ApiService {
       Loggers.success(response.statusCode);
       if (cancelToken?.isCancelled ?? false) {
         if (kDebugMode) {
-          print("Request cancelled: $url");
+          Loggers.info("Request cancelled: $url");
         }
         throw Exception('Request was cancelled');
       }

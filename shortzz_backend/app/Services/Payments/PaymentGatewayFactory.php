@@ -43,6 +43,10 @@ class PaymentGatewayFactory
             case 'flutterwave':
                 if (empty($settings->flutterwave_secret_key)) return null;
                 return new FlutterwaveGateway($settings->flutterwave_secret_key);
+            // No credentials to check — settlement is a human with a bank app.
+            // Valid for payouts only; see ManualGateway.
+            case 'manual':
+                return new ManualGateway();
             default:
                 return null;
         }

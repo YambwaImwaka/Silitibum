@@ -24,7 +24,7 @@ class InternetConnectionManager {
     _appLifecycleListener?.dispose();
     listener =
         InternetConnection().onStatusChange.listen((InternetStatus status) {
-      print("Internet Status : $status");
+      Loggers.info("Internet Status : $status");
       switch (status) {
         case InternetStatus.connected:
           Get.back();

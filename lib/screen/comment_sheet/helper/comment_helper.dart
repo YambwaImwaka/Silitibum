@@ -189,7 +189,6 @@ class CommentHelper {
 
     bool isReply = replyComment != null;
 
-    print(isReply);
 
     Comment? comment = isReply
         ? await _handleReplyComment(description,

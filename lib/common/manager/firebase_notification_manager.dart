@@ -30,7 +30,7 @@ import 'package:shortzz/utilities/const_res.dart';
 
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse notificationResponse) {
-  print('NOTIFICATION TAP ON BACKGROUND');
+  Loggers.info('NOTIFICATION TAP ON BACKGROUND');
   notificationResponse.data;
   if (notificationResponse.payload != null) {
     FirebaseNotificationManager.instance.handleNotification(notificationResponse.payload!);
@@ -85,7 +85,7 @@ class FirebaseNotificationManager {
     flutterLocalNotificationsPlugin.initialize(
         settings: initializationSettings,
         onDidReceiveNotificationResponse: (NotificationResponse response) {
-          print('onDidReceiveNotificationResponse ${response.payload}');
+          Loggers.info('onDidReceiveNotificationResponse ${response.payload}');
           String? payload = response.payload;
           if (payload != null) {
             notificationPayload.value = payload;
@@ -119,7 +119,7 @@ class FirebaseNotificationManager {
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       Loggers.info('User tapped the notification: ${message.data}');
-      print('FirebaseMessaging.onMessageOpenedApp');
+      Loggers.info('FirebaseMessaging.onMessageOpenedApp');
       if (message.data.isNotEmpty) {
         handleNotification(jsonEncode(message.toMap()));
       }
@@ -154,7 +154,7 @@ class FirebaseNotificationManager {
   }
 
   void showNotification(RemoteMessage message) {
-    print('SHOW MESSAGE : ${message.toMap()}');
+    Loggers.info('SHOW MESSAGE : ${message.toMap()}');
     int notificationId = DateTime.now().millisecondsSinceEpoch.remainder(100000);
 
     flutterLocalNotificationsPlugin.show(
@@ -172,8 +172,8 @@ class FirebaseNotificationManager {
     final RemoteMessage message = RemoteMessage.fromMap(jsonDecode(payload));
     final dataType = message.data['type'];
     final dataString = message.data['notification_data'];
-    print('DATA TYPE : $dataType');
-    print('DATA STRING : $dataString');
+    Loggers.info('DATA TYPE : $dataType');
+    Loggers.info('DATA STRING : $dataString');
     if (dataType == null || dataString == null || dataString.isEmpty) return;
     final controller = Get.put(DashboardScreenController());
     switch (dataType) {

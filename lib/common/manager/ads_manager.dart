@@ -1,7 +1,9 @@
 import 'dart:developer';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 
@@ -107,10 +109,23 @@ class AdsManager {
   }
 
   void requestConsentInfoUpdate() {
-    final params = ConsentRequestParameters(
-        consentDebugSettings: ConsentDebugSettings(
-            debugGeography: DebugGeography.debugGeographyEea,
-            testIdentifiers: ['D5E5A833CA124D2CD5E33A574AF9EA88']));
+    // No ConsentDebugSettings in release. This used to force
+    // DebugGeography.debugGeographyEea plus a hardcoded test-device hash, so
+    // every real user was evaluated as if they were in the EEA — the actual
+    // consent geography was never consulted, which is wrong for both ad
+    // revenue and GDPR applicability.
+    //
+    // Debug builds keep the EEA simulation, which is the only place it is
+    // useful: it is the only way to exercise the consent form on a device
+    // that is not physically in the EEA.
+    final params = kDebugMode
+        ? ConsentRequestParameters(
+            consentDebugSettings: ConsentDebugSettings(
+              debugGeography: DebugGeography.debugGeographyEea,
+            ),
+          )
+        : ConsentRequestParameters();
+
     ConsentInformation.instance.requestConsentInfoUpdate(
       params,
       () async {
@@ -119,7 +134,11 @@ class AdsManager {
         }
       },
       (FormError error) {
-        // Handle the error
+        // Non-fatal: ads still serve, just without a consent form. Logged
+        // rather than swallowed so a misconfigured UMP setup is visible
+        // instead of looking like "the form never appears".
+        Loggers.error(
+            'requestConsentInfoUpdate failed: ${error.errorCode} ${error.message}');
       },
     );
   }

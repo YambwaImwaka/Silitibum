@@ -650,7 +650,7 @@ class LivestreamScreenController extends BaseController {
         try {
           await zegoEngine.startPlayingStream(streamID, canvas: canvas, config: config);
         } catch (e) {
-          print(e);
+          Loggers.error(e);
         }
       }).then((canvasViewWidget) {
         if (canvasViewWidget != null) {

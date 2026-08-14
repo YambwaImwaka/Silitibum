@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:get/get.dart';
 import 'package:shortzz/common/functions/json_parse.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/url_extractor/parsers/base_parser.dart';
 import 'package:shortzz/model/post_story/music/music_model.dart';
@@ -314,17 +315,27 @@ class Post {
   }
 
   String get getThumbnail {
-    return (postType == PostType.image
-        ? (images?.first.image ?? '')
-        : (thumbnail ?? ''));
+    if (postType != PostType.image) return thumbnail ?? '';
+    // `images?.first` guarded null but not empty — an image post whose images
+    // array came back [] threw StateError while rendering a feed or profile
+    // thumbnail, taking out the whole list item.
+    final first = images?.firstOrNull;
+    return first?.image ?? thumbnail ?? '';
   }
 
   UrlMetadata? get metaData {
-    if (metadata == null || metadata?.isEmpty == true) {
-      return null;
-    } else {
-      Map<String, dynamic>? valueMap = jsonDecode(metadata ?? '');
-      if (valueMap != null) return UrlMetadata.fromJson(valueMap);
+    final raw = metadata;
+    if (raw == null || raw.isEmpty) return null;
+
+    // The empty case was guarded, the malformed case was not: any
+    // non-empty-but-invalid metadata threw FormatException during feed render.
+    // Link previews are decoration — a bad one should drop the preview, not
+    // the post.
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return UrlMetadata.fromJson(decoded);
+    } catch (e) {
+      Loggers.error('Post $id has unparseable metadata: $e');
     }
     return null;
   }

@@ -40,7 +40,6 @@ extension Number on num {
     final hours = duration.inHours;
     final minutes = (duration.inMinutes % 60);
     final seconds = (duration.inSeconds % 60);
-    print('$hours $minutes $seconds');
     if (hours > 0) {
       time = '${hours}h ';
     }

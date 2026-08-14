@@ -9,15 +9,43 @@
 
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- Capped, because the granular READ_MEDIA_* trio below supersedes them
+         from API 33. Left uncapped, these read to Play review as a request for
+         broad storage access the app does not need, which is what the Photo
+         and Video Permissions policy looks for. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="Manifest.permission.CAPTURE_AUDIO_OUTPUT" />
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+
+    <!-- REMOVED: <uses-permission android:name="Manifest.permission.CAPTURE_AUDIO_OUTPUT" />
+         The Java constant expression was pasted instead of its value, so this
+         declared a permission literally named "Manifest.permission.CAPTURE_AUDIO_OUTPUT".
+         Android ignores unknown names, so it was inert — but it showed up in the
+         Play listing's permission list. The real CAPTURE_AUDIO_OUTPUT is
+         signature|privileged and is not grantable to a Play-distributed app
+         anyway, so there is nothing to replace it with. -->
+
+    <!-- Foreground services. targetSdk is 36, and from API 34 a typed FGS needs
+         the matching per-type permission or startForeground throws
+         SecurityException. Two typed services get merged in from plugins:
+         geolocator's GeolocatorLocationService (type "location") and Zego's
+         ZegoScreenCaptureService (type "mediaProjection"). Without these two
+         lines, background location and live-stream screen sharing crash on
+         every Android 14+ device.
+         Both types also need a Play Console Foreground Service declaration. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <!-- Notifications. Required from Android 13 (API 33) upward: with
          targetSdk 36 and this permission absent, the runtime prompt never
@@ -30,12 +58,20 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
 
+    <!-- allowBackup="false": Android Auto Backup otherwise copies the app's
+         get_storage files to the user's Google Drive, and SessionManager keeps
+         the auth token there. Restoring that onto another device hands over a
+         live session.
+         usesCleartextTraffic="true" is replaced by networkSecurityConfig,
+         which permits cleartext for ip-api.com only (the one non-HTTPS
+         endpoint) and denies it everywhere else. See that file for why. -->
     <application
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:label="Silitibum"
+        android:allowBackup="false"
         android:enableOnBackInvokedCallback="true"
-        android:usesCleartextTraffic="true">
+        android:networkSecurityConfig="@xml/network_security_config">
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
@@ -63,10 +99,27 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
 
-                <!-- Custom scheme -->
-                <data android:scheme="shortzz" />
+                <!-- Custom scheme. Was "shortzz", left over from the template
+                     this app was built from. -->
+                <data android:scheme="silitibum" />
             </intent-filter>
 
+            <!-- App Links for share URLs. ShareManager.shareTheContent builds
+                 "${baseURL}s/<base64>" (share_manager.dart), which the backend
+                 serves via Route::get('s/{encryptedId}').
+
+                 The host was the literal placeholder "_____ BASE URL ______"
+                 — not a valid host, so with autoVerify="true" verification
+                 failed outright and no share link ever opened the app.
+
+                 pathPrefix scopes this to /s/ deliberately: without it the app
+                 claims every https://silitibum.com link, including
+                 /privacy_policy, /terms_of_uses and /delete_account, which are
+                 web pages that must open in a browser.
+
+                 Verification also needs assetlinks.json served at
+                 https://silitibum.com/.well-known/assetlinks.json containing
+                 the Play App Signing SHA-256. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
 
@@ -74,7 +127,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="https" />
-                <data android:host="_____ BASE URL ______" />
+                <data android:host="silitibum.com" />
+                <data android:pathPrefix="/s/" />
             </intent-filter>
 
             <meta-data
@@ -88,15 +142,29 @@
             android:name="flutterEmbedding"
             android:value="2" />
 
+        <!-- The Silitibum Firebase project's Android API key (same value as
+             android/app/google-services.json). Was the literal placeholder
+             "______ GOOGLE API ________", which renders every map — including
+             LocationScreen's GoogleMap — as blank grey tiles.
+
+             ACTION REQUIRED in Google Cloud Console for this key:
+               1. Enable "Maps SDK for Android" on the project.
+               2. Under the key's Application restrictions, add the
+                  com.silitibum.app package with BOTH the upload SHA-1 and the
+                  Play App Signing SHA-1, or maps break for Play installs.
+             The key is not a secret — it ships in every APK by design. -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="______ GOOGLE API ________" />
+            android:value="AIzaSyCMF29UBhdHtlkTb0JYgfj2U5-gFRXkZQk" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="shortzz" />
+        <!-- Was ca-app-pub-3940256099942544~3347511713 — Google's public sample
+             app id, which serves only test ads and never associates the app
+             with an AdMob account. -->
         <meta-data
             android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="ca-app-pub-3940256099942544~3347511713" />
+            android:value="ca-app-pub-4376534408759166~1952490853" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

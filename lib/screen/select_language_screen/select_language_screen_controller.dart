@@ -55,9 +55,20 @@ class SelectLanguageScreenController extends BaseController {
         languages.add(element);
       }
     }
-    selectedLanguage.value = languages.firstWhere((element) {
-      return element.code == SessionManager.instance.getLang();
-    }) as Language?;
+    // firstWhereOrNull, not firstWhere. This runs from onInit() on the
+    // first-launch path (splash routes a fresh install straight here), so an
+    // unmatched lookup threw StateError before the screen could build — a red
+    // screen on the very first open, with no way past it.
+    //
+    // Two ways it goes unmatched: no language row has status == 1, or none
+    // matches getLang(). getLang() falls back to the is_default language, so
+    // an admin toggling the only enabled language off is enough.
+    //
+    // The old `as Language?` cast read like a null guard but was dead code —
+    // firstWhere returns non-null or throws, so the cast never ran.
+    selectedLanguage.value = languages.firstWhereOrNull(
+      (element) => element.code == SessionManager.instance.getLang(),
+    );
   }
 
   void onLanguageChange(Language? value) {

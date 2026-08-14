@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'parsers/base_parser.dart';
 import 'parsers/metadata_parser.dart';
 import 'utils/util.dart';
+import 'package:shortzz/common/manager/logger.dart';
 
 /// Fetches a [url], validates it, and returns [UrlMetadata].
 Future<UrlMetadata?> extract(String url) async {
@@ -39,13 +40,13 @@ Future<UrlMetadata?> extract(String url) async {
 
     return _extractMetadata(document);
   } on SocketException catch (e) {
-    print('SocketException: $e');
+    Loggers.error('SocketException: $e');
   } on TimeoutException catch (e) {
-    print('The connection has timed out: $e');
+    Loggers.error('The connection has timed out: $e');
   } on http.ClientException catch (e) {
-    print('Client error: $e');
+    Loggers.error('Client error: $e');
   } catch (e) {
-    print('Unexpected error: $e');
+    Loggers.error('Unexpected error: $e');
   }
   return null;
 }

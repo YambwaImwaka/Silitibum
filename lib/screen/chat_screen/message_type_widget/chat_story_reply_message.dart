@@ -15,6 +15,7 @@ import 'package:shortzz/screen/chat_screen/widget/chat_center_message_view.dart'
 import 'package:shortzz/screen/notification_screen/widget/activity_notification_page.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
+import 'package:shortzz/common/manager/logger.dart';
 
 class ChatStoryReplyMessage extends StatelessWidget {
   final ChatScreenController controller;
@@ -34,7 +35,7 @@ class ChatStoryReplyMessage extends StatelessWidget {
         Story.fromJsonWithUser(jsonDecode(message.storyReplyMessage ?? ''));
     bool isEmojiText = isSingleEmoji(message.textMessage ?? '');
     bool isStoryUnAvailable = story.id == null;
-    print(story.toJson());
+    Loggers.info(story.toJson());
     return SizedBox(
       width: width,
       child: Stack(
