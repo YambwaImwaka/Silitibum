@@ -1,0 +1,89 @@
+# Codemagic build config for Silitibum (Android).
+#
+# Secrets are NOT in this file and NOT in the repo. Two things must be set up
+# in the Codemagic UI before the first build:
+#
+#   1. Code signing identity named `silitibum_upload`
+#      Teams > Code signing identities > Android keystores > Add keystore.
+#      Upload android/upload-keystore.jks, keystore password, key alias
+#      `upload`, key password. Referencing it below exports CM_KEYSTORE_PATH,
+#      CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS and CM_KEY_PASSWORD into the build,
+#      which android/app/build.gradle reads when key.properties is absent.
+#
+#   2. Nothing else. google-services.json is committed (it is client config,
+#      not a secret, and is extractable from any APK), so the build needs no
+#      other injected files.
+#
+# The backend (shortzz_backend/) is deployed by scp and is not built here.
+
+workflows:
+  android-release:
+    name: Android release (AAB + APK)
+    max_build_duration: 90
+    instance_type: mac_mini_m2
+
+    environment:
+      android_signing:
+        - silitibum_upload
+      flutter: stable
+      java: 17
+      vars:
+        # Play wants a unique, increasing versionCode per upload. versionCode
+        # and versionName are literals in android/app/build.gradle (they are
+        # deliberately NOT read from pubspec.yaml), so bump them there — this
+        # var only tags the build in the Codemagic UI.
+        BUILD_LABEL: "silitibum"
+
+    triggering:
+      events:
+        - tag
+      tag_patterns:
+        - pattern: "v*"
+          include: true
+
+    scripts:
+      - name: Flutter dependencies
+        script: flutter pub get
+
+      - name: Analyze
+        script: flutter analyze
+
+      - name: Unit tests
+        script: flutter test
+
+      - name: Build AAB
+        script: flutter build appbundle --release
+
+      # A universal APK for sideloading onto test devices. Play takes the AAB;
+      # this is only so testers can install without going through a track.
+      - name: Build APK
+        script: flutter build apk --release
+
+      # The check that catches the failure mode this whole setup exists to
+      # prevent. A debug-signed artifact is accepted by every local tool and
+      # only rejected at Play upload, so assert the certificate here instead.
+      - name: Verify the AAB is signed with the upload key, not the debug key
+        script: |
+          set -e
+          AAB=build/app/outputs/bundle/release/app-release.aab
+          OWNER=$(keytool -printcert -jarfile "$AAB" | grep -m1 "Owner:")
+          echo "$OWNER"
+          if echo "$OWNER" | grep -q "CN=Android Debug"; then
+            echo "FAIL: debug-signed. Play would reject this."
+            exit 1
+          fi
+          echo "OK: signed with a non-debug certificate."
+
+    artifacts:
+      - build/app/outputs/bundle/release/*.aab
+      - build/app/outputs/flutter-apk/*.apk
+      - build/app/outputs/**/mapping.txt
+      - flutter_drive.log
+
+    publishing:
+      email:
+        recipients:
+          - yambwaimwakaa@gmail.com
+        notify:
+          success: true
+          failure: true

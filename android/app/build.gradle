@@ -8,18 +8,53 @@ plugins {
 
 }
 
-// Upload-key credentials. Kept out of the repo — android/.gitignore already
-// ignores key.properties, *.jks and *.keystore.
+// Upload-key credentials, from either of two sources — never from the repo,
+// since android/.gitignore ignores key.properties, *.jks and *.keystore.
 //
-// When the file is absent (a fresh clone, CI without secrets), the release
-// build falls back to debug signing so `flutter run --release` still works
-// locally. That fallback is fine for development and NOT fine for Play: an
-// upload signed with the debug key is rejected. See signingConfigs below.
+//   1. android/key.properties           — local developer machines
+//   2. CM_KEYSTORE_* environment vars   — CI (Codemagic sets these when the
+//                                          build references an android_signing
+//                                          identity; the same names work on any
+//                                          CI if you export them yourself)
+//
+// The CI path exists because the keystore is deliberately not in git, so a
+// cloned checkout has no key.properties. Without it, CI would silently fall
+// back to debug signing and hand you an AAB that Play rejects at upload with
+// a message about the certificate rather than about the missing key.
 def keystorePropertiesFile = rootProject.file("key.properties")
 def keystoreProperties = new Properties()
-def hasReleaseKeystore = keystorePropertiesFile.exists()
-if (hasReleaseKeystore) {
+def hasReleaseKeystore = false
+
+if (keystorePropertiesFile.exists()) {
     keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+    hasReleaseKeystore = true
+} else if (System.getenv("CM_KEYSTORE_PATH")) {
+    // CM_KEYSTORE_PATH is absolute; rootProject.file() passes absolute paths
+    // through unchanged, so the storeFile resolution below works either way.
+    keystoreProperties['storeFile'] = System.getenv("CM_KEYSTORE_PATH")
+    keystoreProperties['storePassword'] = System.getenv("CM_KEYSTORE_PASSWORD")
+    keystoreProperties['keyAlias'] = System.getenv("CM_KEY_ALIAS")
+    keystoreProperties['keyPassword'] = System.getenv("CM_KEY_PASSWORD")
+    hasReleaseKeystore = true
+}
+
+// Fail the Play-upload artifact rather than debug-sign it.
+//
+// bundleRelease is the only task whose output goes to Play, so it is the only
+// one that must hard-fail. assembleRelease still falls back to debug signing
+// on purpose: that is what `flutter run --release` uses, and a keyless clone
+// should stay able to build and run the app locally.
+gradle.taskGraph.whenReady { graph ->
+    def buildingBundle = graph.allTasks.any { it.name == "bundleRelease" }
+    if (buildingBundle && !hasReleaseKeystore) {
+        throw new GradleException(
+            "bundleRelease needs the upload keystore, and none was found.\n" +
+            "  Local:  create android/key.properties (storePassword, keyPassword, keyAlias, storeFile).\n" +
+            "  CI:     set CM_KEYSTORE_PATH, CM_KEYSTORE_PASSWORD, CM_KEY_ALIAS, CM_KEY_PASSWORD.\n" +
+            "Refusing to continue: without a key this would produce a debug-signed\n" +
+            "bundle that Play rejects at upload."
+        )
+    }
 }
 
 android {

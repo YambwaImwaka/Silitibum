@@ -26,9 +26,19 @@ const String realtimeAppKey = '7d38be2f46227a898b0b';
 const String realtimeCluster = 'mt1';
 const String realtimeHost = ''; // empty = Pusher cloud cluster hosts
 
-// RevenueCat Test Store key (test_...) — works for sandbox testing without
-// Play/App Store credentials. Before a store release, replace with the real
-// platform keys (goog_... for Android, appl_... for iOS) from the RevenueCat
-// dashboard → Project settings → API keys.
-String revenueCatAndroidApiKey = "test_bbuAgHoIIjxANexPgXtxYwapofF";
+// RevenueCat PUBLIC SDK keys, from the dashboard → Project settings → API keys.
+// These are designed to ship in clients; the SECRET key (sk_...) must never
+// appear here — it lives only in the backend .env as RC_KIT_API_KEY.
+//
+// Android is on the real Play Store key for project `proj02c5539f`
+// ("Silitibum"), app `apped20705601`, package com.silitibum.app. This MUST stay
+// on the same project as the backend's RC_PROJECT_ID/RC_KIT_API_KEY — there is
+// an older abandoned project `proj027eebc1` ("siliti") whose keys still work,
+// so a cross-project mismatch fails silently as empty purchase lists rather
+// than as an auth error.
+//
+// The old Test Store key was `test_bbuAgHoIIjxANexPgXtxYwapofF` —
+// SubscriptionManager._isRealKey refuses test_ keys outside debug builds, so
+// releases had IAP silently disabled.
+String revenueCatAndroidApiKey = "goog_sMOcrvPsVLKumScRNdLqtSIDaeo";
 String revenueCatAppleApiKey = "________"; // placeholder — safely ignored

@@ -46,3 +46,21 @@ app.*.map.json
 /android/app/.cxx
 /ios/build
 android/build
+
+# Secrets. The upload keystore and key.properties are already covered by
+# android/.gitignore; these are the ones that live outside android/.
+#
+# googleCredentials.json is the Firebase service-account private key used for
+# FCM and Google Sign-In. It belongs only on the production server (installed
+# there with 600 perms) and must never reach the repo — anyone holding it can
+# send push as Silitibum and mint tokens for the project.
+**/googleCredentials.json
+shortzz_backend/.env
+shortzz_backend/.env.*
+!shortzz_backend/.env.example
+*.jks
+*.keystore
+key.properties
+
+# Local build/CI scratch
+shortzz_backend/storage/logs/*.log
