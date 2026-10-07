@@ -1,0 +1,25 @@
+# Uploaded content is data, never code or pages.
+#
+# This directory is served straight from the web root (public/storage is a
+# symlink to it). Uploads used to keep the client's own filename and
+# extension, so a ".php" file here could execute on the server and an
+# ".html"/".svg" file could run script on silitibum.com, where the admin panel
+# lives. GlobalFunction::saveFileAndGivePath now only writes allow-listed media
+# extensions; this refuses to serve anything else that may already be here.
+#
+# Deploy this file to storage/app/public/.htaccess — never via public/storage/,
+# which would replace the symlink with a real directory and 404 every upload.
+#
+# Deliberately only access rules: an unsupported directive (php_flag on an
+# FPM/LSAPI host, for example) makes the server answer 500 for every file in
+# this directory, images included. After deploying, re-fetch one existing
+# image to confirm it still loads.
+<FilesMatch "(?i)\.(php[0-9]?|phtml|pht|phar|phps|shtml?|cgi|pl|py|sh|jsp|aspx?|html?|xhtml|xml|svgz?|js|htaccess|user\.ini)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

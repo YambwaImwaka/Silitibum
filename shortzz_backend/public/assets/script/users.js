@@ -122,13 +122,17 @@ $(document).ready(function () {
         e.preventDefault();
         const userId = $(this).attr("rel");
         const username = $(this).data("username");
+        // .data() hands back the decoded attribute — the raw username the user
+        // chose — and SweetAlert's `html` renders it as markup, so escape it
+        // for display. The typed confirmation still compares the raw value.
+        const safeUsername = $("<div>").text(String(username)).html();
 
         checkUserType(() => {
             Swal.fire({
                 icon: "warning",
                 title: "Delete this account permanently?",
                 html:
-                    `This removes <b>${username}</b> and all their posts, comments, ` +
+                    `This removes <b>${safeUsername}</b> and all their posts, comments, ` +
                     `likes, follows, stories, chats and uploaded files.<br><br>` +
                     `Payment records are kept for auditing, with the link to this ` +
                     `user removed.<br><br><b>This cannot be undone.</b><br><br>` +

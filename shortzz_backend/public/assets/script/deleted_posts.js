@@ -170,8 +170,12 @@ $(document).ready(function () {
         $("#imgPostSwiperWrapper").empty();
 
         $.each(images, function (index, image) {
+            // Built as elements: image paths are client-supplied, and a quote
+            // in one broke out of src="…" into markup.
             $("#imgPostSwiperWrapper").append(
-                `<div class="swiper-slide"><img src="${image.image}" alt="" class="img-fluid"></div>`
+                $('<div class="swiper-slide"></div>').append(
+                    $('<img alt="" class="img-fluid">').attr("src", image.image)
+                )
             );
         });
 

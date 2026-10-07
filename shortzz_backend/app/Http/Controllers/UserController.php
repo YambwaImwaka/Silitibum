@@ -667,8 +667,10 @@ class UserController extends Controller
             $action = "<span class='d-flex justify-content-end align-items-center'>{$view}{$edit}{$delete}</span>";
 
 
-            $identity = "<h5>{$item->identity}</h5>";
-            $password = "<p class='m-0'>{$item->password}</p>";
+            // e(): DataTables renders these cells as HTML, and identity is
+            // whatever the account signed up with.
+            $identity = "<h5>" . e($item->identity) . "</h5>";
+            $password = "<p class='m-0'>" . e($item->password) . "</p>";
             $identity_password = '<div class="">'.$identity.$password.'</div>';
 
             return [
@@ -736,7 +738,7 @@ class UserController extends Controller
             return [
                 $userProfileCard,
                 $realOrFake,
-                $item->identity,
+                e($item->identity), // rendered as HTML by DataTables
                 $freeze,
                 $moderator,
                 $action
@@ -809,7 +811,7 @@ class UserController extends Controller
             return [
                 $userProfileCard,
                 $realOrFake,
-                $item->identity,
+                e($item->identity), // rendered as HTML by DataTables
                 $freeze,
                 $moderator,
                 $action
@@ -1121,16 +1123,35 @@ class UserController extends Controller
         return GlobalFunction::sendDataResponse(true, 'Data Fetch Successful!', $user);
     }
 
+    // Returned when a password channel (email/phone) is used on an account
+    // that was created through Google or Apple sign-in, so has no password
+    // hash. Plain text on purpose: the app shows unrecognised messages as-is.
+    private const SOCIAL_ACCOUNT_MESSAGE = 'This account was created with Google or Apple sign-in. Continue with Google/Apple, or use "Forgot password" to set a password.';
+
     // MySQL-native signup for the password channels (phone / email). Never an
-    // upsert: an identity that already holds a password must log in instead.
-    // An identity left over from the Firebase era (no password hash) is
-    // claimed by the first signup that proves nothing more — acceptable only
-    // because no real Firebase-credentialed users ever shipped.
+    // upsert, and never a claim on an existing row: an identity that already
+    // exists must log in instead.
+    //
+    // It used to claim any row with no password hash as a "Firebase-era"
+    // leftover — but every Google/Apple sign-up also has no password, so
+    // anyone who knew a Google user's email could set a password on that
+    // account here and be handed its auth token. A password-less account now
+    // gets a password only through forgotPassword/resetPasswordWithCode,
+    // which proves the mailbox first.
     function registerUser(Request $request)
     {
         $validator = Validator::make($request->all(), [
             'fullname' => 'nullable',
-            'identity' => 'required',
+            // Format-checked per channel. identity is the account key and the
+            // admin panel prints it, so a free-form string here was also a
+            // stored-XSS vector into the admin session. Phone is the app's
+            // canonical '+<code><digits>' (AuthScreenController._normalizedPhone);
+            // some codes in its country list carry a dash, e.g. +1-268.
+            'identity' => [
+                'required',
+                'max:191',
+                $request->login_method == 'phone' ? 'regex:/^\+[0-9][0-9\-]{5,24}$/' : 'email:filter',
+            ],
             'password' => 'required|min:6',
             'login_method' => 'required|in:email,phone',
             'device' => 'required',
@@ -1159,15 +1180,14 @@ class UserController extends Controller
         }
 
         try {
-            $user = Users::where('identity', $request->identity)->first();
-            if ($user != null && $user->password != null) {
-                return GlobalFunction::sendSimpleResponse(false, 'account_exists');
+            $existing = Users::where('identity', $request->identity)->first();
+            if ($existing != null) {
+                return GlobalFunction::sendSimpleResponse(false,
+                    $existing->password == null ? self::SOCIAL_ACCOUNT_MESSAGE : 'account_exists');
             }
 
-            $newRegister = ($user == null);
-            if ($user == null) {
-                $user = $this->createAppUser($request);
-            }
+            $newRegister = true;
+            $user = $this->createAppUser($request);
             $user->password = Hash::make($request->password);
 
             if ($request->login_method == 'email') {
@@ -1239,9 +1259,12 @@ class UserController extends Controller
                 return GlobalFunction::sendSimpleResponse(false, 'account_not_found');
             }
             if ($user->password == null) {
-                // Firebase-era row without a local hash: first password login claims it.
-                $user->password = Hash::make($request->password);
-            } else if (!Hash::check($request->password, $user->password)) {
+                // No hash = created via Google/Apple. This branch used to set
+                // the submitted password and log the caller in, which handed
+                // any Google user's account to whoever typed their email.
+                return GlobalFunction::sendSimpleResponse(false, self::SOCIAL_ACCOUNT_MESSAGE);
+            }
+            if (!Hash::check($request->password, $user->password)) {
                 return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
             }
             try {

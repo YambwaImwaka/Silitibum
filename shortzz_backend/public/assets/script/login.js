@@ -27,41 +27,18 @@ $(document).ready(function () {
             },
             error: function (err) {
                 console.log(err);
-            },
-        });
-    });
-
-    $("#forgotPasswordForm").on("submit", function (event) {
-        event.preventDefault();
-        var formData = new FormData(this);
-
-        var newPassword = $("#new_password").val();
-        var confirmPassword = $("#confirm_password").val();
-
-        if (newPassword !== confirmPassword) {
-            showErrorToast("Passwords do not match!");
-            return;
-        }
-
-        $.ajax({
-            url: `${domainUrl}forgotPasswordForm`,
-            type: "POST",
-            data: formData,
-            dataType: "json",
-            contentType: false,
-            processData: false,
-            success: function (response) {
-                if (response.status) {
-                    $("#forgotPasswordModal").modal("hide");
-                    resetForm("#forgotPasswordForm");
-                    resetForm("#loginForm");
-                    showSuccessToast(response.message);
-                } else {
-                    showErrorToast(response.message);
+                // loginForm is rate limited; without this a locked-out admin
+                // just sees the button do nothing.
+                if (err.status === 429) {
+                    $.NotificationApp.send(
+                        "Too many attempts",
+                        "Please wait a minute and try again.",
+                        "top-right",
+                        "rgba(0,0,0,0.2)",
+                        "error",
+                        3000
+                    );
                 }
-            },
-            error: function (err) {
-                console.log(err);
             },
         });
     });

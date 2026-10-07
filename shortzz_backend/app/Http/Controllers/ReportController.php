@@ -143,8 +143,10 @@ class ReportController extends Controller
             $user = GlobalFunction::createUserDetailsColumn($item->user_id);
             $reportedBy = GlobalFunction::createUserDetailsColumn($item->by_user_id);
 
-            $reason = "<h5>{$item->reason}</h5>";
-            $description = "<p>{$item->description}</p>";
+            // Both are text the reporting user typed; DataTables renders them
+            // as HTML, and reports are the one page an admin always opens.
+            $reason = "<h5>" . e($item->reason) . "</h5>";
+            $description = "<p>" . e($item->description) . "</p>";
 
             $details = '<div class="reportDescription">'.$reason.$description.'</div>';
 
@@ -214,8 +216,10 @@ class ReportController extends Controller
             // View Content Button
             $viewContent = GlobalFunction::createViewContentButton($post);
 
-            $reason = "<h5>{$item->reason}</h5>";
-            $description = "<p>{$item->description}</p>";
+            // Both are text the reporting user typed; DataTables renders them
+            // as HTML, and reports are the one page an admin always opens.
+            $reason = "<h5>" . e($item->reason) . "</h5>";
+            $description = "<p>" . e($item->description) . "</p>";
 
             $details = '<div class="reportDescription">'.$reason.$description.'</div>';
 

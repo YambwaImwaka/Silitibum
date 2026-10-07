@@ -568,8 +568,8 @@ class SettingsController extends Controller
                         </a>";
             $action = "<span class='d-flex justify-content-end align-items-center'>{$edit}{$delete}</span>";
 
-            $title = '<span class="text-dark font-weight-bold font-16">' . $item->title . '</span><br>';
-            $desc = '<span>' . $item->description . '</span>';
+            $title = '<span class="text-dark font-weight-bold font-16">' . e($item->title) . '</span><br>';
+            $desc = '<span>' . e($item->description) . '</span>';
             $detail = $title . $desc;
 
             $sortable = '<div data-id='.$item->id.' class="sort-handler grabbable action-btn  d-flex align-items-center justify-content-center border rounded-2 text-info">
@@ -1175,14 +1175,24 @@ class SettingsController extends Controller
     public function uploadFileGivePath(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'file' => 'required',
+            'file' => 'required|file',
         ]);
 
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
         }
 
-        $path = GlobalFunction::saveFileAndGivePath($request->file('file'));
+        // Checked here too (saveFileAndGivePath also refuses) so the app gets
+        // a clean answer instead of a 500. This endpoint used to store any
+        // file under its own name and extension in the public web root — a
+        // .php upload there is code execution on the server.
+        if (GlobalFunction::safeUploadExtension($request->file('file')) === null) {
+            return response()->json(['status' => false, 'message' => 'This file type is not supported.']);
+        }
+
+        // Owner-tagged so deleteFile below can tell whose upload it is.
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        $path = GlobalFunction::saveFileAndGivePath($request->file('file'), $user->id);
 
         return response()->json([
             'status' => true,
@@ -1198,6 +1208,16 @@ class SettingsController extends Controller
 
         if ($validator->fails()) {
             return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+
+        // Only your own uploads. This used to delete any path for any signed-in
+        // user — every post's media path is public, so the whole platform's
+        // photos and videos (and anything else under storage/app) were one
+        // request each away. The app only calls this to clean up media from a
+        // chat message its user unsent, and ignores the result.
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        if (!GlobalFunction::isOwnUpload($request->filePath, $user->id)) {
+            return response()->json(['status' => false, 'message' => 'file not found']);
         }
 
         GlobalFunction::deleteFile($request->filePath);

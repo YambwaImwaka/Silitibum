@@ -143,7 +143,10 @@ class CommentController extends Controller
             $states = GlobalFunction::createCommentStatesView($item->id);
 
             if($item->type == Constants::commentTypeImage){
-                $formattedComment = '<img class="rounded" width="80" height="80" src='.$item->comment.' alt="">';
+                // The "comment" of an image/GIF comment is a URL the client
+                // sent. It was dropped into an unquoted src, so a comment like
+                // `x onerror=…` ran script in the admin panel.
+                $formattedComment = '<img class="rounded" width="80" height="80" src="' . e($item->comment) . '" alt="">';
             }else{
                 $formattedComment = GlobalFunction::formatDescription($item->comment);
             }

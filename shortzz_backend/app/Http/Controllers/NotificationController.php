@@ -6,6 +6,7 @@ use App\Models\AdminNotifications;
 use App\Models\Constants;
 use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
+use App\Models\Livestream;
 use App\Models\UserNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
@@ -18,12 +19,86 @@ class NotificationController extends Controller
 {
     //
 
+    /**
+     * Client-requested push. This used to forward whatever FCM payload the
+     * client sent, with the server's own credentials — so any account could
+     * push any text to the "silitibum_android" topic every install subscribes
+     * to, i.e. to every user at once, or to any device token it held.
+     *
+     * Likes, comments, follows, gifts and chat are all pushed server-side
+     * now (GlobalFunction::pushToUser). The shipped app still sends exactly
+     * two kinds through here, and those are the only ones accepted:
+     *   - its own device token (the registration-bonus notice), and
+     *   - its own "<userId>_android" / "<userId>_ios" topic, i.e. its own
+     *     followers, while it is hosting a live stream ("X is live").
+     * The message is rebuilt from known fields rather than forwarded, so
+     * nothing else in it (links, click actions, conditions) reaches FCM.
+     */
     function pushNotificationToSingleUser(Request $request)
     {
-        $payload = $request->json()->all();
-        $result = GlobalFunction::sendPushNotification($payload);
-        // return $response;
-        return response()->json(['result' => $result, 'fields' => $payload]);
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        $message = $request->json('message');
+        if (!is_array($message) || isset($message['condition'])) {
+            return GlobalFunction::sendSimpleResponse(false, 'invalid notification');
+        }
+
+        if (!empty($message['topic'])) {
+            $topic = (string) $message['topic'];
+            if (!in_array($topic, [$user->id . '_android', $user->id . '_ios'], true)) {
+                return GlobalFunction::sendSimpleResponse(false, 'not allowed');
+            }
+            $isLive = Livestream::where('host_id', $user->id)
+                ->where('status', Livestream::STATUS_LIVE)
+                ->exists();
+            if (!$isLive) {
+                return GlobalFunction::sendSimpleResponse(false, 'not allowed');
+            }
+            $clean = ['topic' => $topic];
+        } elseif (!empty($message['token'])) {
+            if (empty($user->device_token) || !hash_equals((string) $user->device_token, (string) $message['token'])) {
+                return GlobalFunction::sendSimpleResponse(false, 'not allowed');
+            }
+            $clean = ['token' => (string) $message['token']];
+        } else {
+            return GlobalFunction::sendSimpleResponse(false, 'invalid notification');
+        }
+
+        $text = function ($value, int $max) {
+            return is_scalar($value) ? mb_substr((string) $value, 0, $max) : null;
+        };
+
+        if (isset($message['notification']) && is_array($message['notification'])) {
+            $clean['notification'] = array_filter([
+                'title' => $text($message['notification']['title'] ?? null, 200),
+                'body' => $text($message['notification']['body'] ?? null, 500),
+            ], fn ($v) => $v !== null);
+        }
+
+        if (isset($message['data']) && is_array($message['data'])) {
+            // FCM data values must be strings. notification_data is the JSON
+            // the receiving app parses, so it is passed whole, never cut —
+            // FCM itself rejects data over its 4KB limit.
+            $data = array_filter([
+                'title' => $text($message['data']['title'] ?? null, 200),
+                'body' => $text($message['data']['body'] ?? null, 500),
+                'type' => $text($message['data']['type'] ?? null, 32),
+                'notification_data' => $text($message['data']['notification_data'] ?? null, 4096),
+            ], fn ($v) => $v !== null);
+            if (!empty($data)) {
+                $clean['data'] = $data;
+            }
+        }
+
+        if (isset($message['apns'])) {
+            // The fixed shape the app sends; nothing client-supplied.
+            $clean['apns'] = [
+                'headers' => ['apns-priority' => '10'],
+                'payload' => ['aps' => ['sound' => 'default', 'content-available' => 1]],
+            ];
+        }
+
+        $result = GlobalFunction::sendPushNotification(['message' => $clean]);
+        return GlobalFunction::sendSimpleResponse((bool) $result, $result ? 'notification sent' : 'notification not sent');
     }
 
     public function fetchActivityNotifications(Request $request)
@@ -158,8 +233,8 @@ class NotificationController extends Controller
                 $imgUrl = GlobalFunction::generateFileUrl($item->image);
                 $image = "<img class='rounded' width='130' height='80' src='{$imgUrl}' alt=''>";
             }
-            $title = "<h5>{$item->title}</h5>";
-            $description = "<p class='m-0'>{$item->description}</p>";
+            $title = "<h5>" . e($item->title) . "</h5>";
+            $description = "<p class='m-0'>" . e($item->description) . "</p>";
             $notification = '<div class="reportDescription">' . $image . $title . $description . '</div>';
 
             $repeat = "<a href='#'

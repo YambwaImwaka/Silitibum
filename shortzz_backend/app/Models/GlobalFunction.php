@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use PhpParser\Node\Stmt\Return_;
 
 class GlobalFunction extends Model
@@ -573,7 +574,12 @@ class GlobalFunction extends Model
             return '';
         }
 
-        $profileImageUrl = $user->profile_photo != null ? GlobalFunction::generateFileUrl($user->profile_photo) : url('assets/img/placeholder.png');
+        // e() on everything user-controlled: this card is rendered as HTML in
+        // nearly every admin table (users, posts, comments, reports,
+        // withdrawals), and username/fullname are free text a user sets in
+        // the app — unescaped, any account could run script in the admin's
+        // session just by being listed.
+        $profileImageUrl = e($user->profile_photo != null ? GlobalFunction::generateFileUrl($user->profile_photo) : url('assets/img/placeholder.png'));
 
         $verifyIcon = '';
         if ($user->is_verify == 1) {
@@ -590,11 +596,11 @@ class GlobalFunction extends Model
             '" class="me-2 avatar-sm rounded-circle object-fit-cover bg-primary-lighten text-info rounded border">
                         <div class="d-grid text-start">
                             <div class="text-body text-dark fw-semibold">' .
-            $user->username .
+            e($user->username) .
             $verifyIcon .
             '</div>
                             <div class="text-secondary fs-6">' .
-            $user->fullname .
+            e($user->fullname) .
             '</div>
                         </div>
                         </a>
@@ -677,37 +683,21 @@ class GlobalFunction extends Model
         $viewStory = '';
         $story->content = GlobalFunction::getItemBaseUrl() . $story->content;
 
+        // Every attribute quoted and e()-escaped. username is free text the
+        // user sets and these were unquoted, so a space or quote in it could
+        // inject new attributes — event handlers — into the admin page.
+        $attributes = ' data-contenttype="' . e($storyType) . '"'
+            . ' data-username="' . e($story->user->username ?? '') . '"'
+            . ' data-content="' . e($story->content) . '"'
+            . ' data-userid="' . e($story->user->id ?? '') . '"'
+            . ' data-storyid="' . e($story->id) . '"'
+            . ' rel="' . e($story->id) . '"';
+
         if ($storyType == Constants::storyTypeImage) {
-            $viewStory =
-                '<button type="button" data-contenttype=' .
-                $storyType .
-                ' class="btn btn-primary viewImageStory rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#imageStoryModal"  data-username=' .
-                $story->user->username .
-                ' data-content=' .
-                $story->content .
-                ' data-userid=' .
-                $story->user->id .
-                ' data-storyid="' .
-                $story->id .
-                '" rel="' .
-                $story->id .
-                '">
+            $viewStory = '<button type="button"' . $attributes . ' class="btn btn-primary viewImageStory rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#imageStoryModal">
             <i class="uil-image-v fs-4 me-1" style="line-height: 18px;"></i> View Content</button>';
         } elseif ($storyType == Constants::storyTypeVideo) {
-            $viewStory =
-                '<button type="button" data-contenttype=' .
-                $storyType .
-                ' class="btn btn-primary viewVideoStory rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoStoryModal"  data-username=' .
-                $story->user->username .
-                ' data-content=' .
-                $story->content .
-                ' data-userid=' .
-                $story->user->id .
-                ' data-storyid="' .
-                $story->id .
-                '" rel="' .
-                $story->id .
-                '">
+            $viewStory = '<button type="button"' . $attributes . ' class="btn btn-primary viewVideoStory rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoStoryModal">
             <i class="uil-video fs-3 me-1" style="line-height: 18px;"></i> View Content</button>';
         }
 
@@ -716,82 +706,37 @@ class GlobalFunction extends Model
     public static function createViewContentButton($post)
     {
         $contentType = $post->post_type;
+
+        // Every attribute quoted and e()-escaped. The caption and username are
+        // free text the user controls, and were concatenated in unescaped
+        // (some attributes unquoted), so a post could inject markup and event
+        // handlers into every admin table it appeared in.
+        $attributes = ' data-contenttype="' . e($contentType) . '"'
+            . ' data-username="' . e($post->user->username ?? '') . '"'
+            . ' data-userid="' . e($post->user->id ?? '') . '"'
+            . ' data-desc="' . e($post->description) . '"'
+            . ' data-postid="' . e($post->id) . '"'
+            . ' rel="' . e($post->id) . '"';
+
+        $viewContent = '';
         if ($contentType == Constants::postTypeImage) {
             $images = $post->images;
             foreach ($images as $image) {
                 $image->image = GlobalFunction::getItemBaseUrl() . $image->image;
             }
 
-            $viewContent =
-                '<button type="button" data-contenttype=' .
-                $contentType .
-                ' class="btn btn-primary viewImagePost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#imagePostModal"  data-username=' .
-                $post->user->username .
-                ' data-images=' .
-                $images .
-                ' data-userid=' .
-                $post->user->id .
-                '  data-desc="' .
-                $post->description .
-                '" data-postid="' .
-                $post->id .
-                '" rel="' .
-                $post->id .
-                '">
+            // JSON, escaped into a quoted attribute; jQuery's .data('images')
+            // decodes and parses it exactly as before.
+            $viewContent = '<button type="button"' . $attributes . ' data-images="' . e((string) $images) . '" class="btn btn-primary viewImagePost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#imagePostModal">
             <i class="uil-image-v fs-4 me-1" style="line-height: 18px;"></i> View Content</button>';
         } elseif ($contentType == Constants::postTypeVideo) {
-            $videoUrl = GlobalFunction::generateFileUrl($post->video);
-            $viewContent =
-                '<button type="button" data-contenttype=' .
-                $contentType .
-                ' data-videourl=' .
-                $videoUrl .
-                ' class="btn btn-primary viewVideoPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoPostModal"  data-username=' .
-                $post->user->username .
-                ' data-userid=' .
-                $post->user->id .
-                '  data-desc="' .
-                $post->description .
-                '" data-postid="' .
-                $post->id .
-                '" rel="' .
-                $post->id .
-                '">
+            $viewContent = '<button type="button"' . $attributes . ' data-videourl="' . e(GlobalFunction::generateFileUrl($post->video)) . '" class="btn btn-primary viewVideoPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoPostModal">
             <i class="uil-video fs-3 me-1" style="line-height: 18px;"></i> View Content</button>';
         } elseif ($contentType == Constants::postTypeText) {
-            $viewContent =
-                '<button type="button" data-contenttype=' .
-                $contentType .
-                ' class="btn btn-primary viewTextPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#textPostModal" data-username=' .
-                $post->user->username .
-                ' data-userid=' .
-                $post->user->id .
-                ' data-desc="' .
-                $post->description .
-                '" data-postid="' .
-                $post->id .
-                '" rel="' .
-                $post->id .
-                '">
+            $viewContent = '<button type="button"' . $attributes . ' class="btn btn-primary viewTextPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#textPostModal">
             <i class="uil-text fs-3 me-1" style="line-height: 18px;"></i> View Content</button>';
         } elseif ($contentType == Constants::postTypeReel) {
-            $videoUrl = GlobalFunction::generateFileUrl($post->video);
-            $viewContent =
-                '<button type="button" data-contenttype=' .
-                $contentType .
-                ' data-videourl=' .
-                $videoUrl .
-                ' class="btn btn-primary viewReelPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoPostModal" data-username=' .
-                $post->user->username .
-                ' data-desc="' .
-                $post->description .
-                '" data-userid=' .
-                $post->user->id .
-                ' data-postid="' .
-                $post->id .
-                '" rel="' .
-                $post->id .
-                '">
+            $viewContent = '<button type="button"' . $attributes . ' data-videourl="' . e(GlobalFunction::generateFileUrl($post->video)) . '" class="btn btn-primary viewReelPost rounded-pill d-flex align-items-center commonViewBtn" data-bs-toggle="modal" data-bs-target="#videoPostModal">
             <i class="uil-play fs-4 me-1" style="line-height: 18px;"></i> View Content</button>';
         }
 
@@ -1597,6 +1542,14 @@ class GlobalFunction extends Model
                 && ($payload['iss'] ?? null) !== 'accounts.google.com') {
                 return null;
             }
+            // logInUser links a Google sign-in to an existing account by
+            // email, so an address Google has not verified must never reach
+            // that lookup. FILTER_VALIDATE_BOOLEAN because older token formats
+            // carry the claim as the string "true".
+            if (!filter_var($payload['email_verified'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                Log::error('verifyGoogleIdToken: email not verified for sub ' . ($payload['sub'] ?? 'null'));
+                return null;
+            }
             return $payload;
         } catch (\Throwable $e) {
             Log::error('verifyGoogleIdToken: ' . $e->getMessage());
@@ -1704,9 +1657,11 @@ class GlobalFunction extends Model
         if ($user == null) {
             return null;
         }
+        // No 'identity': it is the account's email or phone number, and this
+        // payload goes to every viewer of a livestream, signed-out guests
+        // included. The app never reads it for other users.
         return [
             'user_id' => $user->id,
-            'identity' => $user->identity,
             'username' => $user->username,
             'fullname' => $user->fullname,
             'profile' => $user->profile_photo,
@@ -1722,16 +1677,35 @@ class GlobalFunction extends Model
         if ($sender->id == $receiver->id) {
             return 'you can not gift yourself!';
         }
-        if ($sender->coin_wallet < $gift->coin_price) {
+        $price = (int) $gift->coin_price;
+
+        // The debit IS the balance check: one conditional UPDATE. The old
+        // check-then-save() read the balance from an already-loaded model, so
+        // N simultaneous gifts all passed against the same coins and all
+        // credited the receiver — coins minted from nothing, then
+        // withdrawable. Both sides are relative `col = col ± n` writes, so a
+        // gift landing alongside any other wallet change cannot overwrite it.
+        $sent = DB::transaction(function () use ($sender, $receiver, $price) {
+            if ($price <= 0) {
+                return true; // a free gift moves nothing (and a 0 decrement affects 0 rows)
+            }
+            $debited = Users::where('id', $sender->id)
+                ->where('coin_wallet', '>=', $price)
+                ->decrement('coin_wallet', $price, [
+                    'coin_gifted_lifetime' => DB::raw('coin_gifted_lifetime + ' . $price),
+                ]);
+            if ($debited !== 1) {
+                return false;
+            }
+            Users::where('id', $receiver->id)->incrementEach([
+                'coin_wallet' => $price,
+                'coin_collected_lifetime' => $price,
+            ]);
+            return true;
+        });
+        if (!$sent) {
             return 'no enough coins in your wallet!';
         }
-        $sender->coin_wallet -= $gift->coin_price;
-        $sender->coin_gifted_lifetime += $gift->coin_price;
-        $sender->save();
-
-        $receiver->coin_wallet += $gift->coin_price;
-        $receiver->coin_collected_lifetime += $gift->coin_price;
-        $receiver->save();
 
         self::insertUserNotification(Constants::notify_gift_user, $sender->id, $receiver->id, $gift->id);
         self::pushToUser(
@@ -1792,16 +1766,62 @@ class GlobalFunction extends Model
         return $randomString;
     }
 
-    public static function saveFileAndGivePath($file)
+    // Every extension an upload may be stored under. Uploads land in a folder
+    // the web server serves directly, so the stored extension decides how the
+    // file is treated: .php would execute, .html/.svg would run script on this
+    // origin (where the admin panel lives). Media, plus the two admin asset
+    // types (language CSVs, DeepAR effect files). Extend deliberately.
+    private const UPLOAD_EXTENSIONS = [
+        'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'avif',
+        'mp4', 'mov', 'm4v', '3gp', '3g2', 'webm', 'mkv', 'avi', 'mpeg', 'mpg',
+        'mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'amr', 'flac', 'weba',
+        'csv', 'deepar',
+    ];
+
+    /// The extension an upload will be stored under, or null if it is not an
+    /// allowed type. Trusts the client's extension only when it is on the
+    /// list; otherwise falls back to sniffing the content (fileinfo), which
+    /// rescues real media sent with an odd or missing extension.
+    public static function safeUploadExtension($file): ?string
+    {
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+        if (in_array($extension, self::UPLOAD_EXTENSIONS, true)) {
+            return $extension;
+        }
+        try {
+            $guessed = strtolower((string) $file->guessExtension());
+        } catch (\Throwable $e) {
+            $guessed = '';
+        }
+        return in_array($guessed, self::UPLOAD_EXTENSIONS, true) ? $guessed : null;
+    }
+
+    private static function cleanAppName(): string
+    {
+        // Clean APP_NAME (remove spaces and special characters)
+        $rawAppName = env('APP_NAME');
+        return $rawAppName ? preg_replace('/[^A-Za-z0-9_\-]/', '_', $rawAppName) : '';
+    }
+
+    /// $ownerId tags the stored name ("u42_…") for uploads a user may later
+    /// delete through settings/deleteFile — see isOwnUpload(). The name is
+    /// generated here, never taken from the client: the client's filename used
+    /// to be kept verbatim, extension included, inside the public web root.
+    public static function saveFileAndGivePath($file, ?int $ownerId = null)
     {
         $storageType = env('FILES_STORAGE_LOCATION');
 
-        // Clean APP_NAME (remove spaces and special characters)
-        $rawAppName = env('APP_NAME');
-        $cleanAppName = $rawAppName ? preg_replace('/[^A-Za-z0-9_\-]/', '_', $rawAppName) : '';
+        $extension = self::safeUploadExtension($file);
+        if ($extension === null) {
+            throw new \InvalidArgumentException(
+                'Refusing to store an upload of an unsupported type (' . $file->getClientOriginalExtension() . ')'
+            );
+        }
 
-        // Create file name without spaces
-        $fileName = time() . '_' . $cleanAppName . '_' . str_replace(' ', '_', $file->getClientOriginalName());
+        $cleanAppName = self::cleanAppName();
+
+        $fileName = ($ownerId !== null ? 'u' . $ownerId . '_' : '')
+            . time() . '_' . $cleanAppName . '_' . Str::random(16) . '.' . $extension;
 
         // Set base path with cleaned app name
         $appNamePath = $cleanAppName ? $cleanAppName . '/' : '';
@@ -1831,6 +1851,25 @@ class GlobalFunction extends Model
         }
 
         return $filePath;
+    }
+
+    /// True when $filePath is an upload this user made through
+    /// settings/uploadFileGivePath: it sits directly in the uploads folder
+    /// and carries their owner tag, which only saveFileAndGivePath writes.
+    /// Paths a user merely references (e.g. typed into their own chat
+    /// message) do not qualify, and neither does anything uploaded before
+    /// owner tags existed.
+    public static function isOwnUpload($filePath, int $userId): bool
+    {
+        if (!is_string($filePath) || $filePath === '' || str_contains($filePath, '..') || str_contains($filePath, '\\')) {
+            return false;
+        }
+        $cleanAppName = self::cleanAppName();
+        $uploadDirs = $cleanAppName !== '' ? ['uploads', $cleanAppName . '/uploads'] : ['uploads'];
+        if (!in_array(dirname($filePath), $uploadDirs, true)) {
+            return false;
+        }
+        return preg_match('/^u' . $userId . '_[A-Za-z0-9_\-]+\.[a-z0-9]+$/', basename($filePath)) === 1;
     }
 
     public static function deleteFile($filePath)
@@ -1985,6 +2024,12 @@ class GlobalFunction extends Model
 
     public static function formatDescription($description)
     {
+        // Escaped FIRST. Every caller renders the result as HTML — admin
+        // tables, and fetchFormattedPostDesc through jQuery .html() — and the
+        // text is whatever the user typed into a caption, comment or reply.
+        // Only the mention/hashtag links below are markup we write ourselves.
+        $description = e($description);
+
         // Use regex to find all mentions of @<id>
         $pattern = '/@(\d+)/';
 
@@ -1999,7 +2044,7 @@ class GlobalFunction extends Model
                 if ($username) {
                     // Generate a URL for the user and wrap the username in an anchor tag
                     $url = route('viewUserDetails', $userId);
-                    return '<a target="_blank" href="' . $url . '" class="username">@' . $username . '</a>';
+                    return '<a target="_blank" href="' . e($url) . '" class="username">@' . e($username) . '</a>';
                 }
 
                 // If the user is not found, return the original mention
@@ -2008,14 +2053,15 @@ class GlobalFunction extends Model
             $description,
         );
 
-        // Make hashtags clickable with a URL
+        // Make hashtags clickable with a URL. (?<!&) keeps this off the "#039"
+        // inside the &#039; entity that e() writes for an apostrophe.
         $description = preg_replace_callback(
-            '/#(\w+)/',
+            '/(?<!&)#(\w+)/',
             function ($matches) {
                 $hashtag = $matches[1]; // Extract the hashtag
                 // Generate a URL for the hashtag and wrap it in an anchor tag
                 $url = route('hashtagDetails', $hashtag);
-                return '<a target="_blank" href="' . $url . '" class="hashtag">#' . $hashtag . '</a>';
+                return '<a target="_blank" href="' . e($url) . '" class="hashtag">#' . e($hashtag) . '</a>';
             },
             $description,
         );

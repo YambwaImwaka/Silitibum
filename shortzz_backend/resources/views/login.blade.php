@@ -73,11 +73,6 @@
                                     <button class="btn btn-primary w-100" type="submit"> {{ __('Login') }} </button>
                                 </div>
 
-                                <hr>
-                                <div class="text-center">
-                                    <a class="text-danger" href="javascript:;" data-bs-toggle="modal" data-bs-target="#forgotPasswordModal">{{__('Forget Password?')}}</a>
-                                </div>
-
                             </form>
                         </div>
                     </div>
@@ -86,67 +81,6 @@
         </div>
     </div>
 </body>
-
-<div id="forgotPasswordModal" class="modal fade" tabindex="-1" role="dialog" aria-labelledby="standard-modalLabel"
-    aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title" id="standard-modalLabel">{{ __('Forgot Password') }}</h4>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
-            </div>
-            <form id="forgotPasswordForm" method="POST">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="database_username" class="form-label">{{ __('Database Username') }}</label>
-                        <input class="form-control" type="text" id="database_username" name="database_username"
-                            placeholder="Enter your database username" required="">
-                    </div>
-                    <div class="mb-3">
-                        <label for="database_password" class="form-label">{{ __('Database Password') }}</label>
-                        <div class="input-group input-group-merge">
-                            <input type="password" id="database_password" name="database_password"
-                                class="form-control" placeholder="Enter your database password" required="">
-                            <div class="input-group-text" data-password="false">
-                                <span class="password-eye"></span>
-                            </div>
-                        </div>
-                    </div>
-                    <hr>
-                    <div class="mb-3">
-                        <label for="new_password" class="form-label">{{ __('New Password') }}</label>
-                        <div class="input-group input-group-merge">
-                            <input type="password" id="new_password" name="new_password" class="form-control"
-                                placeholder="New Password" required="">
-                            <div class="input-group-text" data-password="false">
-                                <span class="password-eye"></span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="confirm_password" class="form-label">{{ __('Confirm Password') }}</label>
-                        <div class="input-group input-group-merge">
-                            <input type="password" id="confirm_password" name="confirm_password"
-                                class="form-control" placeholder="Confirm Password" required="">
-                            <div class="input-group-text" data-password="false">
-                                <span class="password-eye"></span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-light"
-                        data-bs-dismiss="modal">{{ __('Close') }}</button>
-                    <button type="submit" class="btn btn-primary">
-                        <span class="spinner-border spinner-border-sm me-1 spinner hide" role="status"
-                            aria-hidden="true"></span>
-                        {{ __('Save') }}
-                    </button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
 
 <!-- scripts -->
 <input type="hidden" value="{{ env('APP_URL') }}" id="appUrl">

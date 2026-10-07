@@ -178,7 +178,7 @@ Route::middleware('checkHeader')->group(function () {
 
         // Notification
         Route::post('fetchAdminNotifications', [NotificationController::class, 'fetchAdminNotifications'])->middleware('authorizeUser');
-        Route::post('pushNotificationToSingleUser', [NotificationController::class, 'pushNotificationToSingleUser'])->middleware('authorizeUser');
+        Route::post('pushNotificationToSingleUser', [NotificationController::class, 'pushNotificationToSingleUser'])->middleware(['authorizeUser', 'throttle:push']);
         Route::post('fetchActivityNotifications', [NotificationController::class, 'fetchActivityNotifications'])->middleware('authorizeUser');
 
     });

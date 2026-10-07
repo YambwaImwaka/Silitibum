@@ -65,14 +65,16 @@ class HashtagController extends Controller
 
             $hashtagUrl =  route('hashtagDetails', $item->hashtag);
 
-            $view = "<a href='$hashtagUrl' target='_blank'
+            $view = "<a href='" . e($hashtagUrl) . "' target='_blank'
                           class='action-btn d-flex align-items-center justify-content-center btn border rounded-2 text-info ms-1'>
                             <i class='ri-eye-line'></i>
                         </a>";
             $action = "<span class='d-flex justify-content-end align-items-center'>{$view}{$delete}</span>";
 
-            $hashtag = '<a href='.$hashtagUrl.' target="_blank"
-            <h5 class="m-0 hashtag">#'.$item->hashtag.'</h5>
+            // Hashtags are whatever users typed into captions. Escaped, and the
+            // <a> now actually closes before the <h5> (it never did).
+            $hashtag = '<a href="' . e($hashtagUrl) . '" target="_blank">
+            <h5 class="m-0 hashtag">#' . e($item->hashtag) . '</h5>
              </a>';
 
             return [

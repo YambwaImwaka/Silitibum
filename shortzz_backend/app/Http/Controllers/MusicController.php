@@ -194,20 +194,26 @@ class MusicController extends Controller
         $data = $result->map(function ($item) {
 
 
-            $imgUrl = GlobalFunction::generateFileUrl($item->image);
+            // Escaped throughout: users add music from the app (addUserMusic),
+            // so title/artist/duration are their text, and older stored file
+            // names still carry the uploader's own filename.
+            $imgUrl = e(GlobalFunction::generateFileUrl($item->image));
             $image = "<img class='rounded' width='80' height='80' src='{$imgUrl}' alt=''>";
 
-            $musicUrl = GlobalFunction::generateFileUrl($item->sound);
+            $musicUrl = e(GlobalFunction::generateFileUrl($item->sound));
             $music = '<audio controls><source src="' . $musicUrl . '" type="audio/mp3"></audio>';
 
+            $title = e($item->title);
+            $artist = e($item->artist);
+            $duration = e($item->duration);
             $edit = "<a href='#'
                         rel='{$item->id}'
-                        data-title='{$item->title}'
+                        data-title='{$title}'
                         data-image='{$imgUrl}'
                         data-music='{$musicUrl}'
                         data-category='{$item->category_id}'
-                        data-duration='{$item->duration}'
-                        data-artist='{$item->artist}'
+                        data-duration='{$duration}'
+                        data-artist='{$artist}'
                         class='action-btn edit d-flex align-items-center justify-content-center btn border rounded-2 text-success ms-1'>
                         <i class='uil-pen'></i>
                         </a>";
@@ -222,10 +228,10 @@ class MusicController extends Controller
             return [
                 $image,
                 $music,
-                $item->title,
-                $item->category->name ?? '',
-                $item->duration,
-                $item->artist,
+                $title,
+                e($item->category->name ?? ''),
+                $duration,
+                $artist,
                 $action
             ];
         });

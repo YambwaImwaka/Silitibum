@@ -66,7 +66,7 @@ class RestrictionsController extends Controller
 
         $data = $result->map(function ($item){
 
-            $username = '<h5 class="m-0 username">'.$item->username.'</h5>';
+            $username = '<h5 class="m-0 username">' . e($item->username) . '</h5>';
 
             $edit = "<a href='#'
                         rel='{$item->id}'

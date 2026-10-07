@@ -239,12 +239,11 @@ $(document).ready(function () {
         var content = $(this).data("content");
         $('#imgStorySwiperWrapper').empty();
 
+        // Built as elements so the story path can never be parsed as markup.
         $('#imgStorySwiperWrapper').append(
-            `
-            <div class="swiper-slide">
-                <img src="${content}" alt="" class="img-fluid">
-            </div>
-            `
+            $('<div class="swiper-slide"></div>').append(
+                $('<img alt="" class="img-fluid">').attr('src', content)
+            )
         );
         const swiper = new Swiper(".mySwiper", {
             spaceBetween: 30,
@@ -267,12 +266,13 @@ $(document).ready(function () {
 
         $.each(images, function(index, image) {
 
+            // Built as elements, not an HTML string: image paths are client-
+            // supplied (feed images are uploaded first and the path passed to
+            // addPost), so a quote in one broke out of src="…" into markup.
             $('#imgPostSwiperWrapper').append(
-                `
-                <div class="swiper-slide">
-                            <img src="${image.image}" alt="" class="img-fluid">
-                </div>
-                `
+                $('<div class="swiper-slide"></div>').append(
+                    $('<img alt="" class="img-fluid">').attr('src', image.image)
+                )
             );
 
         });

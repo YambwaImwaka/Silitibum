@@ -47,7 +47,7 @@ class CategoryController extends Controller
 
             $title = "<a href='./$item->id' class='table-user'>
                         <img src='{$imageUrl}' alt='table-user' class='me-2 rounded object-fit-contain bg-primary-lighten bg-info-lighten rounded'>
-                        <span class='text-body fw-semibold'>{$item->title}</span>
+                        <span class='text-body fw-semibold'>" . e($item->title) . "</span>
                     </a>";
 
             $viewSubcategory = "<a href='./$item->id'

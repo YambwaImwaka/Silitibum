@@ -2,11 +2,9 @@
 
 namespace App\Http\Controllers;
 use App\Models\Admin;
-use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Session;
 
@@ -14,33 +12,13 @@ use function Psy\debug;
 
 class LoginController extends Controller
 {
-    public function forgotPasswordForm(Request $request)
-    {
-        $request->validate([
-            'new_password' => 'required',
-        ]);
-
-        $databaseUsername = env('DB_USERNAME');
-        $databasePassword = env('DB_PASSWORD');
-
-        if ($request->database_username == $databaseUsername && $request->database_password == $databasePassword) {
-            $encryptedPassword = Crypt::encrypt($request->new_password);
-
-            $admin = Admin::where('admin_username', 'admin')->first();
-
-            if (!$admin) {
-                return GlobalFunction::sendSimpleResponse(false, 'Admin user not found.');
-            }
-
-            $admin->admin_password = $encryptedPassword;
-            $admin->save();
-
-            return GlobalFunction::sendSimpleResponse(true, 'Password updated successfully.');
-
-        } else {
-            return GlobalFunction::sendSimpleResponse(false, 'Wrong credentials.');
-        }
-    }
+    // REMOVED: forgotPasswordForm. It was a public, unthrottled endpoint that
+    // reset the admin password for anyone who supplied the database username
+    // and password — guessable without limit, and compared via env() with
+    // loose ==, so once `php artisan config:cache` ran (env() then returns
+    // null) a request carrying neither field matched null == null and reset
+    // the admin password with no credentials at all. Recovery now needs shell
+    // access: `php artisan admin:reset-password` (ResetAdminPassword).
 
     function login()
     {

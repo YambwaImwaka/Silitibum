@@ -48,10 +48,13 @@ Route::get('/linkstorage', function () {
 })->middleware(['checkLogin']);
 
 Route::get('/', [LoginController::class, 'login'])->name('/');
-Route::post('loginForm', [LoginController::class, 'checkLogin'])->name('loginForm');
+// Throttled: the admin username is the well-known default, so an unthrottled
+// form was an open brute-force target. See RouteServiceProvider 'admin-login'.
+Route::post('loginForm', [LoginController::class, 'checkLogin'])->middleware('throttle:admin-login')->name('loginForm');
 Route::get('logout', [LoginController::class, 'logout'])->middleware(['checkLogin'])->name('logout');
 
-Route::post('forgotPasswordForm', [LoginController::class, 'forgotPasswordForm'])->name('forgotPasswordForm');
+// REMOVED: Route::post('forgotPasswordForm', ...) — a public admin-password
+// reset gated only on the database credentials. See LoginController.
 
 Route::get('privacy_policy', [SettingsController::class, 'privacy_policy'])->name('privacy_policy');
 Route::get('terms_of_uses', [SettingsController::class, 'terms_of_uses'])->name('terms_of_uses');

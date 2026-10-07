@@ -78,5 +78,19 @@ class RouteServiceProvider extends ServiceProvider
         RateLimiter::for('engagement', function (Request $request) {
             return Limit::perMinute(120)->by($request->header('authtoken') ?: $request->ip());
         });
+
+        // Client-requested pushes (NotificationController::
+        // pushNotificationToSingleUser). Legitimate use is at most two per
+        // live-stream start plus one at signup; anything beyond that is
+        // someone spamming their followers.
+        RateLimiter::for('push', function (Request $request) {
+            return Limit::perMinute(10)->by($request->header('authtoken') ?: $request->ip());
+        });
+
+        // Admin panel login. Its own bucket rather than 'auth', so app users
+        // signing in from the same network can't lock the admin out.
+        RateLimiter::for('admin-login', function (Request $request) {
+            return Limit::perMinute(10)->by($request->ip());
+        });
     }
 }

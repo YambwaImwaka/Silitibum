@@ -117,10 +117,10 @@ class TranscodeVideoJob implements ShouldQueue
         ];
 
         // Built from an escaped argument array, never raw string
-        // interpolation — GlobalFunction::saveFileAndGivePath derives stored
-        // filenames from the client-supplied original filename with minimal
-        // sanitization (only spaces replaced), which is a real shell-injection
-        // vector if this were ever a concatenated string command instead.
+        // interpolation. GlobalFunction::saveFileAndGivePath now generates
+        // stored names itself, but files uploaded before that still carry the
+        // client's own filename, which is a shell-injection vector if this
+        // were ever a concatenated string command instead.
         $escaped = array_map('escapeshellarg', $args);
         $cmd = implode(' ', $escaped);
 

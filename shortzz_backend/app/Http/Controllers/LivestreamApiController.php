@@ -249,14 +249,15 @@ class LivestreamApiController extends Controller
     }
 
     // Both serializers below feed GlobalFunction::appUserPayload, which reads
-    // exactly these six columns. Selecting * pulled every column of every
+    // exactly these five columns. Selecting * pulled every column of every
     // participant and every comment sender — bio, device_token, password,
     // saved_music_ids and the rest — on a request that each viewer repeats
     // every couple of seconds for the whole stream. Narrowing it cuts both the
     // row width MySQL reads and the memory Laravel hydrates, which is what
-    // makes a tighter client poll interval affordable.
+    // makes a tighter client poll interval affordable. identity (email/phone)
+    // is deliberately absent: this payload reaches signed-out guest viewers.
     private const USER_PAYLOAD_COLUMNS = [
-        'id', 'identity', 'username', 'fullname', 'profile_photo', 'is_verify',
+        'id', 'username', 'fullname', 'profile_photo', 'is_verify',
     ];
 
     private function fullState($stream, $afterCommentId)

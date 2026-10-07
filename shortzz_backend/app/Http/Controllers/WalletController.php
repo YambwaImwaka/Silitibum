@@ -261,21 +261,36 @@ class WalletController extends Controller
     public function coinPackages(){
         return view('coinPackages');
     }
+    // Only a request that is still open can be closed. Failed requests were
+    // already refunded, and completed ones were paid out.
+    private const OPEN_WITHDRAWAL_STATES = [Constants::withdrawalPending, Constants::withdrawalProcessing];
+
     public function rejectWithdrawal(Request $request){
         $item = RedeemRequests::find($request->id);
-        $item->status = Constants::withdrawalRejected;
-        $item->save();
-
-        $user = $item->user;
-        $user->coin_wallet += $item->coins;
-        $user->save();
+        if ($item == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'withdrawal not found');
+        }
+        // The status change is claimed by the write itself, and only the call
+        // that made it refunds. Before, a double-clicked Reject — or Reject on
+        // a request that had already completed or failed — credited the coins
+        // back once per click.
+        $claimed = RedeemRequests::where('id', $item->id)
+            ->whereIn('status', self::OPEN_WITHDRAWAL_STATES)
+            ->update(['status' => Constants::withdrawalRejected, 'updated_at' => now()]);
+        if ($claimed !== 1) {
+            return GlobalFunction::sendSimpleResponse(false, 'this withdrawal is already closed');
+        }
+        Users::where('id', $item->user_id)->increment('coin_wallet', $item->coins);
 
         return GlobalFunction::sendSimpleResponse(true,'withdrawal rejected successfully');
     }
     public function completeWithdrawal(Request $request){
-        $item = RedeemRequests::find($request->id);
-        $item->status = Constants::withdrawalCompleted;
-        $item->save();
+        $claimed = RedeemRequests::where('id', $request->id)
+            ->whereIn('status', self::OPEN_WITHDRAWAL_STATES)
+            ->update(['status' => Constants::withdrawalCompleted, 'updated_at' => now()]);
+        if ($claimed !== 1) {
+            return GlobalFunction::sendSimpleResponse(false, 'this withdrawal is already closed');
+        }
 
         return GlobalFunction::sendSimpleResponse(true,'withdrawal complete successfully');
     }
@@ -295,16 +310,22 @@ class WalletController extends Controller
         }
         $result = $gateway->verify($item->provider_reference ?? $item->request_number);
 
+        // Same claim-then-act as the webhook path (PaymentWebhookController::
+        // resolveRedeemRequest): a recheck racing a webhook or a second click
+        // must not refund twice.
         if ($result['status'] === 'completed') {
-            $item->status = Constants::withdrawalCompleted;
-            $item->save();
+            RedeemRequests::where('id', $item->id)
+                ->where('status', Constants::withdrawalProcessing)
+                ->update(['status' => Constants::withdrawalCompleted, 'updated_at' => now()]);
         } elseif ($result['status'] === 'failed') {
-            $item->status = Constants::withdrawalFailed;
-            $item->save();
-            $user = $item->user;
-            $user->coin_wallet += $item->coins;
-            $user->save();
+            $claimed = RedeemRequests::where('id', $item->id)
+                ->where('status', Constants::withdrawalProcessing)
+                ->update(['status' => Constants::withdrawalFailed, 'updated_at' => now()]);
+            if ($claimed === 1) {
+                Users::where('id', $item->user_id)->increment('coin_wallet', $item->coins);
+            }
         }
+        $item->refresh();
 
         return GlobalFunction::sendSimpleResponse(true, 'rechecked — status is now ' . $item->status);
     }
@@ -319,23 +340,34 @@ class WalletController extends Controller
         if ($item == null || $item->status != Constants::withdrawalFailed) {
             return GlobalFunction::sendSimpleResponse(false, 'nothing to retry');
         }
-        $user = $item->user;
-        if ($item->coins > $user->coin_wallet) {
-            return GlobalFunction::sendSimpleResponse(false, 'user no longer has enough coins to retry this withdrawal');
-        }
         $settings = GlobalSettings::first();
         $gateway = PaymentGatewayFactory::active();
         if ($gateway == null) {
             return GlobalFunction::sendSimpleResponse(false, 'no active payout provider configured');
         }
 
-        DB::transaction(function () use ($item, $user, $settings) {
-            $item->provider = $settings->active_payout_provider;
-            $item->status = Constants::withdrawalPending;
-            $item->save();
-            $user->coin_wallet -= $item->coins;
-            $user->save();
+        // Row lock + conditional debit: two retry clicks used to both pass the
+        // status/balance checks above and both re-debit and re-pay.
+        $error = DB::transaction(function () use ($item, $settings) {
+            $locked = RedeemRequests::where('id', $item->id)->lockForUpdate()->first();
+            if ($locked == null || $locked->status != Constants::withdrawalFailed) {
+                return 'nothing to retry';
+            }
+            $debited = Users::where('id', $locked->user_id)
+                ->where('coin_wallet', '>=', $locked->coins)
+                ->decrement('coin_wallet', $locked->coins);
+            if ($debited !== 1) {
+                return 'user no longer has enough coins to retry this withdrawal';
+            }
+            $locked->provider = $settings->active_payout_provider;
+            $locked->status = Constants::withdrawalPending;
+            $locked->save();
+            return null;
         });
+        if ($error !== null) {
+            return GlobalFunction::sendSimpleResponse(false, $error);
+        }
+        $item->refresh();
 
         try {
             $result = $gateway->payout($item->account, (float) $item->amount, $settings->currency ?? 'USD', $item->request_number);
@@ -348,8 +380,7 @@ class WalletController extends Controller
             $item->status = Constants::withdrawalFailed;
             $item->provider_reference = $result['provider_reference'] ?? null;
             $item->save();
-            $user->coin_wallet += $item->coins;
-            $user->save();
+            Users::where('id', $item->user_id)->increment('coin_wallet', $item->coins);
             return GlobalFunction::sendSimpleResponse(false, 'retry failed, coins refunded again');
         }
 
@@ -396,8 +427,9 @@ class WalletController extends Controller
             $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
             $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
 
-            $gateway = "<span class='badge badge-info-lighten fs-6'>{$item->gateway}</span>";
-            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span>";
+            // gateway/account come from the user's withdrawal request.
+            $gateway = "<span class='badge badge-info-lighten fs-6'>" . e($item->gateway) . "</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>" . e($item->account) . "</span>";
 
             $requestNumber = "<h5 class='text-success'>#{$item->request_number}</h5>";
 
@@ -450,8 +482,9 @@ class WalletController extends Controller
             $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
             $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
 
-            $gateway = "<span class='badge badge-info-lighten fs-6'>{$item->gateway}</span>";
-            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span>";
+            // gateway/account come from the user's withdrawal request.
+            $gateway = "<span class='badge badge-info-lighten fs-6'>" . e($item->gateway) . "</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>" . e($item->account) . "</span>";
 
             $requestNumber = "<h5 class='text-danger'>#{$item->request_number}</h5>";
 
@@ -504,8 +537,9 @@ class WalletController extends Controller
             $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
             $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
 
-            $gateway = "<span class='badge badge-info-lighten fs-6'>{$item->gateway}</span>";
-            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span>";
+            // gateway/account come from the user's withdrawal request.
+            $gateway = "<span class='badge badge-info-lighten fs-6'>" . e($item->gateway) . "</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>" . e($item->account) . "</span>";
 
             $requestNumber = "<h5 class='text-primary'>#{$item->request_number}</h5>";
 
@@ -564,8 +598,8 @@ class WalletController extends Controller
             $user = GlobalFunction::createUserDetailsColumn($item->user_id);
             $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
             $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
-            $gateway = "<span class='badge badge-info-lighten fs-6'>".($item->provider ?? $item->gateway)."</span>";
-            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span><br><span class='fs-6 text-muted'>ref: {$item->provider_reference}</span>";
+            $gateway = "<span class='badge badge-info-lighten fs-6'>" . e($item->provider ?? $item->gateway) . "</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>" . e($item->account) . "</span><br><span class='fs-6 text-muted'>ref: " . e($item->provider_reference) . "</span>";
             $requestNumber = "<h5 class='text-primary'>#{$item->request_number}</h5>";
 
             $recheck = "<a href='#'
@@ -609,8 +643,8 @@ class WalletController extends Controller
             $user = GlobalFunction::createUserDetailsColumn($item->user_id);
             $amount = "<h4 class='text-primary m-0'>{$settings->currency} {$item->amount}</h4>";
             $withdrawal = $amount."<span class='fs-6'>Coins: {$item->coins}</span><br><span class='fs-6'>Coin Value: {$item->coin_value}</span>";
-            $gateway = "<span class='badge badge-danger-lighten fs-6'>".($item->provider ?? $item->gateway)."</span>";
-            $paymentDetails = $gateway."<br><span class='fs-6'>{$item->account}</span>";
+            $gateway = "<span class='badge badge-danger-lighten fs-6'>" . e($item->provider ?? $item->gateway) . "</span>";
+            $paymentDetails = $gateway."<br><span class='fs-6'>" . e($item->account) . "</span>";
             $requestNumber = "<h5 class='text-primary'>#{$item->request_number}</h5>";
 
             $retry = "<a href='#'
@@ -704,8 +738,10 @@ class WalletController extends Controller
             return ['status' => false, 'message' => "this user is freezed!"];
         }
         $rules = [
-            'coins' => 'required',
-            'gateway' => 'required',
+            // integer|min:1, not just required: fractional, negative or
+            // non-numeric values used to reach the wallet arithmetic below.
+            'coins' => 'required|integer|min:1',
+            'gateway' => 'required|max:100',
             // MSISDN-style: optional leading +, 8-15 digits — loose on
             // purpose (exact format varies by country/network) but enough
             // to reject obviously-garbage input now that this string is
@@ -722,10 +758,13 @@ class WalletController extends Controller
         if (($settings->is_withdrawal_on ?? 1) == 0) {
             return GlobalFunction::sendSimpleResponse(false, 'withdrawals are currently disabled');
         }
-        if($request->coins < $settings->min_redeem_coins){
+        $coins = (int) $request->coins;
+        if($coins < $settings->min_redeem_coins){
             return GlobalFunction::sendSimpleResponse(false, 'min. amount to Withdrawal is '. $settings->min_redeem_coins);
         }
-        if($request->coins > $user->coin_wallet){
+        // Fast path only — the conditional debit inside the transaction below
+        // is the check that actually holds under concurrency.
+        if($coins > $user->coin_wallet){
             return GlobalFunction::sendSimpleResponse(false, 'insufficient coins to redeem');
         }
 
@@ -741,24 +780,35 @@ class WalletController extends Controller
         // (holding a DB transaction open across a slow network call is its
         // own risk: lock contention on the user's row for however long the
         // provider takes to respond).
-        $redeem = DB::transaction(function () use ($user, $request, $settings, $provider) {
+        $redeem = DB::transaction(function () use ($user, $request, $settings, $provider, $coins) {
+            // The debit IS the balance check: one conditional UPDATE. The old
+            // read-then-save() let two simultaneous requests both pass the
+            // check above against the same balance and both write it down, so
+            // a user could withdraw their balance twice.
+            $debited = Users::where('id', $user->id)
+                ->where('coin_wallet', '>=', $coins)
+                ->decrement('coin_wallet', $coins);
+            if ($debited !== 1) {
+                return null;
+            }
+
             $redeem = new RedeemRequests();
             $redeem->request_number = GlobalFunction::generateRedeemRequestNumber($user->id);
             $redeem->user_id = $user->id;
             $redeem->gateway = $request->gateway;
             $redeem->account = $request->account;
             $redeem->provider = $provider;
-            $redeem->coins = $request->coins;
+            $redeem->coins = $coins;
             $redeem->coin_value = $settings->coin_value;
-            $redeem->amount = $settings->coin_value * $request->coins;
+            $redeem->amount = $settings->coin_value * $coins;
             $redeem->status = Constants::withdrawalPending;
             $redeem->save();
 
-            $user->coin_wallet -= $request->coins;
-            $user->save();
-
             return $redeem;
         });
+        if ($redeem === null) {
+            return GlobalFunction::sendSimpleResponse(false, 'insufficient coins to redeem');
+        }
 
         try {
             $result = $gateway->payout($redeem->account, (float) $redeem->amount, $settings->currency ?? 'USD', $redeem->request_number);
@@ -774,8 +824,8 @@ class WalletController extends Controller
             $redeem->status = Constants::withdrawalFailed;
             $redeem->provider_reference = $result['provider_reference'] ?? null;
             $redeem->save();
-            $user->coin_wallet += $redeem->coins;
-            $user->save();
+            // Relative, not save(): $user is stale since the debit above.
+            Users::where('id', $user->id)->increment('coin_wallet', $redeem->coins);
             return GlobalFunction::sendSimpleResponse(false, 'withdrawal could not be processed, your coins have been refunded');
         }
 
