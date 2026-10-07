@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Silitibum media storage - a private S3 bucket served only through a
+  CloudFront CDN, plus a least-privilege IAM user for the Laravel backend
+  (FILES_STORAGE_LOCATION=AWSS3). No parameters: deploy it in the Region the
+  bucket should live in.
+
+# Deploy: CloudFormation console -> Create stack -> Upload a template file ->
+# stack name "silitibum-media" -> tick the IAM acknowledgement -> Submit.
+# Then create an access key for the BackendUser output and copy the outputs
+# into the server's .env (see the AWS section of .env.example).
+
+Resources:
+  MediaBucket:
+    Type: AWS::S3::Bucket
+    # Holds every user upload; deleting the stack must never take it along.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${AWS::StackName}-${AWS::AccountId}-${AWS::Region}'
+      # ACLs disabled. config/filesystems.php pins every upload to the one
+      # ACL S3 still accepts here (bucket-owner-full-control).
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      # Nothing is public on the bucket itself; viewers only ever reach it
+      # through CloudFront (origin access control below).
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          # Large videos go up as multipart uploads; a request that dies
+          # halfway otherwise leaves invisible parts that are billed forever.
+          - Id: AbortIncompleteMultipartUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+
+  OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${AWS::StackName}-oac'
+        Description: Lets the media CDN read the private bucket
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Silitibum media CDN
+        # PriceClass_100 would leave out the African edge locations
+        # (Johannesburg, Cape Town, Nairobi, Lagos) that Zambian viewers are
+        # served from, sending them to Europe instead — the opposite of the
+        # point. The audience is regional, so All costs the same in practice.
+        PriceClass: PriceClass_All
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        Origins:
+          - Id: media-bucket
+            DomainName: !GetAtt MediaBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt OriginAccessControl.Id
+            # Must be present and empty when using origin access control.
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: media-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # Managed-CachingOptimized: no cookies/query strings in the cache
+          # key, and it honours the one-year Cache-Control every upload gets.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          # Managed-SimpleCORS (Access-Control-Allow-Origin: *). The app and
+          # the admin panel's <img>/<video> tags don't need it, but any web
+          # page fetching media by script (e.g. an hls.js player) would.
+          ResponseHeadersPolicyId: 60669652-455b-4ae9-85a4-c4c02393f86c
+
+  MediaBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref MediaBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowMediaCdnRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${MediaBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/${Distribution}'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt MediaBucket.Arn
+              - !Sub '${MediaBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # The identity the Laravel backend signs S3 calls with. Scoped to this one
+  # bucket: it can list, read, write and delete media, and nothing else in
+  # the account. Its access key is created by hand in the IAM console so the
+  # secret never appears in stack outputs.
+  BackendUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub '${AWS::StackName}-backend'
+      Policies:
+        - PolicyName: media-bucket-read-write
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # allFiles()/directoryExists()/deleteDirectory() list prefixes,
+              # and a missing key returns 404 rather than 403 only with this.
+              - Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt MediaBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  # Flysystem sends an ACL with every upload, and S3 requires
+                  # this permission for any PutObject that carries one. It
+                  # cannot widen access: the bucket has ACLs disabled.
+                  - s3:PutObjectAcl
+                  - s3:DeleteObject
+                  - s3:AbortMultipartUpload
+                Resource: !Sub '${MediaBucket.Arn}/*'
+
+Outputs:
+  BucketName:
+    Description: AWS_BUCKET
+    Value: !Ref MediaBucket
+  Region:
+    Description: AWS_DEFAULT_REGION
+    Value: !Ref AWS::Region
+  ItemBaseUrl:
+    Description: AWS_ITEM_BASE_URL (keep the trailing slash)
+    Value: !Sub 'https://${Distribution.DomainName}/'
+  BackendUser:
+    Description: Create an access key for this user (Security credentials tab) -> AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+    Value: !Sub 'https://console.aws.amazon.com/iam/home#/users/details/${BackendUser}?section=security_credentials'

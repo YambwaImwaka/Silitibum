@@ -52,6 +52,23 @@ return [
             'url' => env('AWS_ITEM_BASE_URL'),
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+            // Sent with every write to this disk (infra/aws/media-cdn.yaml).
+            'options' => [
+                // The bucket has ACLs disabled ("bucket owner enforced") and is
+                // read only through CloudFront. S3 then rejects any upload
+                // carrying an ACL other than bucket-owner-full-control with
+                // AccessControlListNotSupported, and Flysystem always sends one:
+                // public-read for the 'public' visibility every caller here
+                // passes, private otherwise. Pinning it on the disk overrides
+                // both, so no call site has to know which backend it is on.
+                'ACL' => 'bucket-owner-full-control',
+                // Every key is written once and never overwritten (timestamped
+                // uploads, hls/{postId}/...), so CloudFront edges and the
+                // players' own caches can keep each object for a year instead
+                // of re-fetching it — which is most of what makes playback
+                // start fast on a repeat view.
+                'CacheControl' => 'public, max-age=31536000, immutable',
+            ],
         ],
 
         'digitalocean' => [
