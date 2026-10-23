@@ -11,6 +11,7 @@ import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/chat_service.dart';
+import 'package:shortzz/common/service/api/notification_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
@@ -87,8 +88,33 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     SubscriptionManager.shared.subscriptionListener();
     _fetchLanguageFromUser();
     _fetchUnReadCount();
+    refreshUnreadActivity();
+    // Whatever arrived while the app was in the background shows up on the
+    // badges as soon as it is back.
+    _appLifecycle = AppLifecycleListener(onResume: () {
+      refreshUnreadActivity();
+      refreshUnreadCounts();
+    });
     startCacheCleanupScheduler();
     _subscribeFollowUserIds();
+  }
+
+  AppLifecycleListener? _appLifecycle;
+
+  /// Counts activity (follows, gifts, likes, comments) newer than what the
+  /// user last saw, for the bell and the Feed tab. Read from the server, so
+  /// what arrived while the app was closed counts too — pushes alone only
+  /// counted what landed while it was open.
+  Future<void> refreshUnreadActivity() async {
+    if (isGuest) return;
+    try {
+      final items = await NotificationService.instance.fetchActivityNotifications();
+      final int lastSeen = SessionManager.instance.lastSeenActivityId;
+      SessionManager.instance.setUnreadActivity(
+          items.where((item) => (item.id ?? 0) > lastSeen).length);
+    } catch (e) {
+      Loggers.error('refreshUnreadActivity failed: $e');
+    }
   }
 
   void startCacheCleanupScheduler() {
@@ -104,6 +130,7 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     _unReadCountSubscription?.cancel();
     _lastUsedAtTimer?.cancel();
     _unreadPollTimer?.cancel();
+    _appLifecycle?.dispose();
     super.onClose();
   }
 

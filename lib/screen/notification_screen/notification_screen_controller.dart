@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/manager/logger.dart';
+import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/notification_service.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/navigation/navigate_with_controller.dart';
@@ -81,11 +82,18 @@ class NotificationScreenController extends BaseController {
     if (isActivityNotification.value) return;
     isActivityNotification.value = true;
     try {
+      final bool firstPage = activityNotifications.isEmpty;
       List<ActivityNotification> items = await NotificationService.instance
           .fetchActivityNotifications(
               lastItemId: activityNotifications.lastOrNull?.id);
       if (items.isNotEmpty) {
         activityNotifications.addAll(items);
+      }
+      // The newest are on the first page: seeing it clears the bell and the
+      // Feed tab's dot.
+      if (firstPage && items.isNotEmpty) {
+        SessionManager.instance.setLastSeenActivityId(items.first.id ?? 0);
+        SessionManager.instance.setUnreadActivity(0);
       }
       activityError.value = null;
     } catch (e, st) {

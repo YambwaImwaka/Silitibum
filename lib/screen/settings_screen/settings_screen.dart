@@ -16,7 +16,7 @@ import 'package:shortzz/screen/select_language_screen/select_language_screen.dar
 import 'package:shortzz/screen/settings_screen/settings_screen_controller.dart';
 import 'package:shortzz/screen/settings_screen/widget/notifications_page.dart';
 import 'package:shortzz/screen/settings_screen/widget/setting_icon_text_with_arrow.dart';
-import 'package:shortzz/screen/subscription_screen/subscription_screen.dart';
+import 'package:shortzz/common/functions/web_payment.dart';
 import 'package:shortzz/screen/term_and_privacy_screen/term_and_privacy_screen.dart';
 import 'package:shortzz/utilities/asset_res.dart';
 import 'package:shortzz/utilities/color_res.dart';
@@ -198,17 +198,14 @@ class _SubscriptionCardState extends State<SubscriptionCard> {
     return Obx(() {
       bool isVerify = widget.controller.myUser.value?.isVerify == 1;
       return InkWell(
-        onTap: () {
-          if (!isVerify) {
-            Get.to<bool>(
-                    () => SubscriptionScreen(onUpdateUser: widget.onUpdateUser))
-                ?.then((value) {
-              if (value == true) {
-                widget.controller.myUser.update((val) => val?.isVerify = 1);
-              }
-            });
-          }
-        },
+        // The blue tick is bought with mobile money on the web (Lenco); the
+        // store subscription it used to open never had a product to sell.
+        // Still tappable once verified, to renew a paid tick.
+        onTap: () => openWebPayment(WebPaymentPage.blueTick, onReturn: (user) {
+          if (user == null) return;
+          widget.controller.myUser.value = user;
+          widget.onUpdateUser?.call(user);
+        }),
         child: Container(
           height: 47,
           padding: const EdgeInsets.symmetric(horizontal: 15),
@@ -240,9 +237,8 @@ class _SubscriptionCardState extends State<SubscriptionCard> {
                       ]),
                 ),
               ),
-              if (!isVerify)
-                Image.asset(AssetRes.icForwardArrow,
-                    width: 24, height: 20, color: whitePure(context))
+              Image.asset(AssetRes.icForwardArrow,
+                  width: 24, height: 20, color: whitePure(context))
             ],
           ),
         ),

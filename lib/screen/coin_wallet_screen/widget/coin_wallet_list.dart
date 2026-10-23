@@ -1,14 +1,13 @@
 import 'package:figma_squircle_updated/figma_squircle.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/functions/web_payment.dart';
 import 'package:shortzz/common/widget/text_button_custom.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/screen/coin_wallet_screen/coin_wallet_screen_controller.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:shortzz/utilities/const_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 class CoinWalletList extends StatelessWidget {
   final CoinWalletScreenController controller;
@@ -98,15 +97,19 @@ class CoinWalletList extends StatelessWidget {
                       ),
               ),
               // Mobile-money top-up: opens the backend's public /topup page in
-              // the browser. Deliberately outside the app's IAP flow — the
-              // page has its own login and credits the wallet via webhook.
-              // Store-policy note: linking out for consumable coin purchases
-              // can violate Play/App Store rules; accepted by the owner.
+              // the browser, signed in through a single-use link (Google and
+              // Apple accounts have no password for its own form). Deliberately
+              // outside the app's IAP flow — the page credits the wallet via
+              // webhook. Store-policy note: linking out for consumable coin
+              // purchases can violate Play/App Store rules; accepted by the
+              // owner.
               SafeArea(
                 top: false,
                 child: TextButtonCustom(
-                    onTap: () => launchUrl(Uri.parse('${baseURL}topup'),
-                        mode: LaunchMode.externalApplication),
+                    onTap: () => openWebPayment(WebPaymentPage.topUp,
+                        onReturn: (user) {
+                      if (user != null) controller.myUser.value = user;
+                    }),
                     title: LKey.topUpWithMobileMoney.tr,
                     backgroundColor: themeAccentSolid(context),
                     btnHeight: 48,

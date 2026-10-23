@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/widget/custom_app_bar.dart';
 import 'package:shortzz/common/widget/custom_tab_switcher.dart';
 import 'package:shortzz/common/widget/error_retry_view.dart';
@@ -39,6 +40,7 @@ class NotificationScreen extends StatelessWidget {
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.linear);
                   })),
+          const _NotificationsOffBanner(),
           Expanded(
             child: Obx(() {
               return PageView(
@@ -71,6 +73,84 @@ class NotificationScreen extends StatelessWidget {
               );
             }),
           )
+        ],
+      ),
+    );
+  }
+}
+
+/// Shown while the phone blocks this app's notifications — never asked on
+/// Android 13+ (the launch-time camera prompt used to cancel that request),
+/// denied, or switched off in system settings — so the user learns why
+/// follows, gifts and messages never pinged them, and can fix it in a tap.
+class _NotificationsOffBanner extends StatefulWidget {
+  const _NotificationsOffBanner();
+
+  @override
+  State<_NotificationsOffBanner> createState() =>
+      _NotificationsOffBannerState();
+}
+
+class _NotificationsOffBannerState extends State<_NotificationsOffBanner> {
+  bool _blocked = false;
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _check();
+    // Back from system settings: re-check.
+    _lifecycle = AppLifecycleListener(onResume: _check);
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    final bool blocked = !(await Permission.notification.isGranted);
+    if (mounted && blocked != _blocked) setState(() => _blocked = blocked);
+  }
+
+  Future<void> _turnOn() async {
+    final status = await Permission.notification.request();
+    if (!status.isGranted) await openAppSettings();
+    await _check();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_blocked) return const SizedBox();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(15, 0, 15, 10),
+      padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+      decoration: BoxDecoration(
+          color: bgLightGrey(context), borderRadius: BorderRadius.circular(12)),
+      child: Row(
+        children: [
+          Icon(Icons.notifications_off_outlined, color: textDarkGrey(context)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(LKey.notificationsOffTitle.tr,
+                    style: TextStyleCustom.outFitMedium500(
+                        color: textDarkGrey(context), fontSize: 15)),
+                Text(LKey.notificationsOffDescription.tr,
+                    style: TextStyleCustom.outFitLight300(
+                        color: textLightGrey(context), fontSize: 13)),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: _turnOn,
+            child: Text(LKey.turnOn.tr,
+                style: TextStyleCustom.outFitMedium500(
+                    color: themeAccentSolid(context), fontSize: 15)),
+          ),
         ],
       ),
     );

@@ -70,6 +70,18 @@ class SessionManager {
     return storage.read(SessionKeys.notifyCount) ?? 0;
   }
 
+  /// Unread activity (follows, gifts, likes, comments), counted from the
+  /// server rather than from pushes, so ones that arrived while the app was
+  /// closed are counted too.
+  void setUnreadActivity(int count) =>
+      storage.write(SessionKeys.notifyCount, count < 0 ? 0 : count);
+
+  /// The newest activity notification the user has seen.
+  int get lastSeenActivityId => storage.read(SessionKeys.lastSeenActivityId) ?? 0;
+
+  void setLastSeenActivityId(int id) =>
+      storage.write(SessionKeys.lastSeenActivityId, id);
+
   void listenNotifyCount() {
     notifyCount.value = getNotifyCount;
     storage.listenKey(SessionKeys.notifyCount, (value) {
@@ -201,6 +213,7 @@ class SessionManager {
     storage.remove(SessionKeys.authToken);
     storage.remove(SessionKeys.password);
     storage.remove(SessionKeys.notifyCount);
+    storage.remove(SessionKeys.lastSeenActivityId);
     storage.remove(SessionKeys.fallbackLang);
     storage.remove(SessionKeys.lang);
   }
@@ -216,6 +229,7 @@ class SessionKeys {
   static const authToken = "authToken";
   static const password = "password";
   static const notifyCount = "notify_count";
+  static const lastSeenActivityId = "last_seen_activity_id";
   static const isLanguageScreenSelect = "is_language_screen_select";
   static const isOnBoardingScreenSelect = "is_on_boarding_screen_select";
   static const guestStreamId = "guest_stream_id";

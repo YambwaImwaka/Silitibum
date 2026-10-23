@@ -92,7 +92,7 @@ class FeedTopView extends StatelessWidget {
                                   color: themeAccentSolid(context),
                                   shape: BoxShape.circle),
                               child: Text(
-                                '$notifyCount',
+                                notifyCount > 9 ? '9+' : '$notifyCount',
                                 style: TextStyleCustom.outFitRegular400(
                                     color: whitePure(context), fontSize: 12),
                               ),

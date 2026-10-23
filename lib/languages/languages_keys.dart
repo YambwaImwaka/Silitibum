@@ -444,6 +444,13 @@ class LKey {
   static const String thisLiveHasEnded = "This LIVE has ended";
   static const String swipeUpForNextLive = "Swipe up for the next LIVE";
   static const String connectingToLive = "Connecting…";
+  static const String notificationsOffTitle = "Notifications are off";
+  static const String notificationsOffDescription =
+      "Turn them on to know when someone follows you, sends you a gift or messages you.";
+  static const String turnOn = "Turn on";
+  static const String renewBlueTick = "Renew your blue tick";
+  static const String blueTickActive = "Blue tick active";
+  static const String blueTickUntil = "Blue tick until @date";
   static const String noUserReelsTitle = "No Snaps Yet";
   static const String noUserReelsDescription =
       "This user hasn’t posted any snaps so far.";

@@ -70,6 +70,7 @@ class _GiftWallet {
   String submitWithdrawalRequest = "${apiURL}misc/submitWithdrawalRequest";
   String buyCoins = "${apiURL}misc/buyCoins";
   String fetchCreatorStatus = "${apiURL}misc/fetchCreatorStatus";
+  String createWebLoginLink = "${apiURL}misc/createWebLoginLink";
   String savePayoutAccount = "${apiURL}misc/savePayoutAccount";
   String fetchWalletTransactions = "${apiURL}misc/fetchWalletTransactions";
 }

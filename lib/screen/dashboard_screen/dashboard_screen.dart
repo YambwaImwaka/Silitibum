@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:proste_indexed_stack/proste_indexed_stack.dart';
+import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/banner_ads_custom.dart';
 import 'package:shortzz/common/widget/gradient_border.dart';
 import 'package:shortzz/common/widget/gradient_icon.dart';
@@ -173,11 +174,32 @@ class DashboardScreen extends StatelessWidget {
                         height: 38, width: 38),
                   ),
                   if (index == 4) _buildUnreadCount(controller, context),
+                  if (index == 1) _buildActivityDot(context),
                   // Moved to a separate function
                 ],
               ),
             ),
           ),
+        ),
+      );
+    });
+  }
+
+  /// New follows, gifts, likes or comments: the bell that lists them sits on
+  /// the Feed tab, so the tab itself carries a dot.
+  Widget _buildActivityDot(BuildContext context) {
+    return Obx(() {
+      if (SessionManager.instance.notifyCount.value <= 0) {
+        return const SizedBox();
+      }
+      return Positioned(
+        top: 4,
+        right: 4,
+        child: Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+              color: themeAccentSolid(context), shape: BoxShape.circle),
         ),
       );
     });

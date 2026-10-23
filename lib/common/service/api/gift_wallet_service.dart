@@ -71,6 +71,18 @@ class GiftWalletService {
     return response;
   }
 
+  /// A single-use link that opens the web payment page [next] (`topup` or
+  /// `verify`) already signed in. Null when the server could not make one.
+  Future<String?> createWebLoginLink({required String next}) async {
+    final raw = await ApiService.instance.call<Map<String, dynamic>>(
+        url: WebService.giftWallet.createWebLoginLink,
+        param: {Params.next: next});
+    if (raw['status'] == true && raw['data'] is Map) {
+      return (raw['data'] as Map)['url']?.toString();
+    }
+    return null;
+  }
+
   /// Balances, creator share, payout account and the withdrawal checklist.
   Future<CreatorStatusModel> fetchCreatorStatus() async {
     CreatorStatusModel response = await ApiService.instance.call(

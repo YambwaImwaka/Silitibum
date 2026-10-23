@@ -80,6 +80,7 @@ class Params {
   static const String keyword = 'keyword';
   static const String limit = 'limit';
   static const String lastItemId = 'last_item_id';
+  static const String next = 'next';
   static const String excludeIds = 'exclude_ids';
   static const String categoryId = 'category_id';
   static const String file = 'file';
