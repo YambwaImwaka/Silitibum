@@ -9,6 +9,7 @@ use App\Models\Livestream;
 use App\Models\LivestreamComment;
 use App\Models\LivestreamUser;
 use App\Models\Users;
+use App\Services\Live\LivestreamLiveness;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -58,6 +59,7 @@ class LivestreamApiController extends Controller
         $stream->is_restrict_to_join = (int) ($request->is_restrict_to_join ?? 0);
         $stream->host_view_id = $request->host_view_id;
         $stream->setCoHostIdsArray([]);
+        $stream->last_seen_at = Carbon::now();
         $stream->save();
 
         $host = new LivestreamUser();
@@ -73,11 +75,14 @@ class LivestreamApiController extends Controller
         ]);
     }
 
-    // Guest-open: the Live tab lists streams without a session.
+    // Guest-open: the Live tab lists streams without a session. Only rooms
+    // whose host was seen recently: a `live` row alone is no proof anyone is
+    // broadcasting (LivestreamLiveness).
     public function fetchLivestreams(Request $request)
     {
-        $streams = Livestream::where('status', Livestream::STATUS_LIVE)
+        $streams = LivestreamLiveness::listed()
             ->orderBy('watching_count', 'desc')
+            ->orderBy('id', 'desc')
             ->limit((int) ($request->limit ?? 50))
             ->get();
 
@@ -107,6 +112,7 @@ class LivestreamApiController extends Controller
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
         }
+        LivestreamLiveness::noteActor($user, $stream);
 
         if ($user->id == 0) {
             $stream->watching_count = $stream->watching_count + 1;
@@ -239,13 +245,15 @@ class LivestreamApiController extends Controller
         return GlobalFunction::sendSimpleResponse(true, 'left livestream');
     }
 
-    // Polling fallback + full snapshot on join.
+    // Polling fallback + full snapshot on join. The host's own polls are its
+    // heartbeat.
     public function fetchStreamState(Request $request)
     {
         $stream = $this->liveStream($request->room_id);
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
         }
+        LivestreamLiveness::noteRequest($request, $stream);
         return $this->fullState($stream, $request->after_comment_id);
     }
 
@@ -305,6 +313,7 @@ class LivestreamApiController extends Controller
         if ($stream == null) {
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
         }
+        LivestreamLiveness::noteActor($user, $stream);
 
         $comment = new LivestreamComment();
         $comment->livestream_id = $stream->id;
@@ -414,6 +423,8 @@ class LivestreamApiController extends Controller
             return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
         }
 
+        LivestreamLiveness::noteActor($user, $stream);
+
         $targetId = (int) ($request->user_id ?? $user->id);
         if ($targetId != $user->id && $stream->host_id != $user->id) {
             return GlobalFunction::sendSimpleResponse(false, 'only the host can change other users');
@@ -474,6 +485,7 @@ class LivestreamApiController extends Controller
         if ($stream->host_id != $user->id) {
             return GlobalFunction::sendSimpleResponse(false, 'only the host can change battle state');
         }
+        LivestreamLiveness::noteActor($user, $stream);
 
         $stream->battle_type = $request->battle_type;
         if ($request->filled('type')) {

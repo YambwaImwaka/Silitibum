@@ -53,7 +53,13 @@ class VideoTranscoder
             . '[v1]scale=-2:min(480\,ih)[v1out];'
             . '[v2]scale=-2:min(720\,ih)[v2out]';
         $args = [
-            $ffmpegBinary, '-y', '-i', $sourceUrl,
+            // Before -i, -threads caps the *decoder*; the one further down
+            // only caps the encoders. Left alone the H.264 decoder starts a
+            // thread per core (12 here), and with the account's other
+            // processes that crossed the LVE limit of 120: ffmpeg died with
+            // "Resource temporarily unavailable" (-11) while configuring
+            // filters, and every upload in that window failed to transcode.
+            $ffmpegBinary, '-y', '-threads', '2', '-i', $sourceUrl,
             '-filter_complex', $filterComplex,
             '-map', '[v1out]', '-map', '[v2out]', '-map', '0:a', '-map', '0:a',
             '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',

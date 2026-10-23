@@ -49,6 +49,14 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground();
 
+        // Ends live rooms whose host's app died without ending them, and
+        // re-confirms hosts that are only visible in the presence channel, so
+        // the Live tab lists real broadcasts only (LivestreamLiveness).
+        $schedule->command('livestreams:reap')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
         // Views/shares are written as deduplicated rows per viewer per day and
         // folded into the tbl_post counters here, so a viral post takes one
         // row lock per run instead of one per viewer. Five minutes of

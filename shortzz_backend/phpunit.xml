@@ -34,6 +34,8 @@
         <server name="DB_PASSWORD" value=""/>
         <server name="MAIL_MAILER" value="array"/>
         <server name="QUEUE_CONNECTION" value="sync"/>
+        <!-- Never send test events to the real Pusher app the local .env points at. -->
+        <server name="BROADCAST_DRIVER" value="null"/>
         <server name="SESSION_DRIVER" value="array"/>
         <server name="TELESCOPE_ENABLED" value="false"/>
     </php>

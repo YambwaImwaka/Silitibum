@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\ChatThread;
 use App\Models\GlobalFunction;
 use App\Models\Livestream;
+use App\Services\Live\LivestreamLiveness;
 use Illuminate\Http\Request;
 use Pusher\Pusher;
 
@@ -62,6 +63,8 @@ class BroadcastAuthController extends Controller
             if ($stream == null || $stream->status != 'live') {
                 return response()->json(['message' => 'Forbidden'], 403);
             }
+            // The host (re)joining its room's channel is a sign of life.
+            LivestreamLiveness::noteActor($user, $stream);
             $userInfo = ChatThread::userSummary($user);
             return response($pusher->authorizePresenceChannel(
                     $channel, $socketId, (string) $user->id, $userInfo))
