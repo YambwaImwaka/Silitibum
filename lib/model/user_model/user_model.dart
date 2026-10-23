@@ -71,6 +71,11 @@ class User {
       this.coinCollectedLifetime,
       this.coinGiftedLifetime,
       this.coinPurchasedLifetime,
+      this.coinWalletValue,
+      this.earningsBalance,
+      this.earningsAvailable,
+      this.earningsOnHold,
+      this.earningsLifetime,
       this.bio,
       this.followerCount,
       this.followingCount,
@@ -126,6 +131,11 @@ class User {
     int? coinCollectedLifetime,
     int? coinGiftedLifetime,
     int? coinPurchasedLifetime,
+    double? coinWalletValue,
+    double? earningsBalance,
+    double? earningsAvailable,
+    double? earningsOnHold,
+    double? earningsLifetime,
     String? bio,
     int? followerCount,
     int? followingCount,
@@ -184,6 +194,11 @@ class User {
         coinGiftedLifetime: coinGiftedLifetime ?? this.coinGiftedLifetime,
         coinPurchasedLifetime:
             coinPurchasedLifetime ?? this.coinPurchasedLifetime,
+        coinWalletValue: coinWalletValue ?? this.coinWalletValue,
+        earningsBalance: earningsBalance ?? this.earningsBalance,
+        earningsAvailable: earningsAvailable ?? this.earningsAvailable,
+        earningsOnHold: earningsOnHold ?? this.earningsOnHold,
+        earningsLifetime: earningsLifetime ?? this.earningsLifetime,
         bio: bio ?? this.bio,
         followerCount: followerCount ?? this.followerCount,
         followingCount: followingCount ?? this.followingCount,
@@ -242,6 +257,13 @@ class User {
     coinCollectedLifetime = asNumOrNull(json['coin_collected_lifetime']);
     coinGiftedLifetime = asNumOrNull(json['coin_gifted_lifetime']);
     coinPurchasedLifetime = asNumOrNull(json['coin_purchased_lifetime']);
+    // Self-only wallet fields, decimal strings on the wire ("4.0000",
+    // "12.50"). Other users' profiles never carry them.
+    coinWalletValue = asDoubleOrNull(json['coin_wallet_value']);
+    earningsBalance = asDoubleOrNull(json['earnings_balance']);
+    earningsAvailable = asDoubleOrNull(json['earnings_available']);
+    earningsOnHold = asDoubleOrNull(json['earnings_on_hold']);
+    earningsLifetime = asDoubleOrNull(json['earnings_lifetime']);
     bio = asStringOrNull(json['bio']);
     followerCount = asNumOrNull(json['follower_count']);
     followingCount = asNumOrNull(json['following_count']);
@@ -313,6 +335,18 @@ class User {
   num? coinCollectedLifetime;
   num? coinGiftedLifetime;
   num? coinPurchasedLifetime;
+
+  /// What the coins in [coinWallet] cost (K): purchases add their price,
+  /// bonus and admin grants add 0. A gift spends coins at this average cost.
+  double? coinWalletValue;
+
+  /// Creator earnings (K) — the only withdrawable balance. [earningsBalance]
+  /// is [earningsAvailable] plus [earningsOnHold] (recent gift earnings that
+  /// are not withdrawable yet).
+  double? earningsBalance;
+  double? earningsAvailable;
+  double? earningsOnHold;
+  double? earningsLifetime;
   String? bio;
   num? followerCount;
   num? followingCount;
@@ -370,6 +404,11 @@ class User {
     map['coin_collected_lifetime'] = coinCollectedLifetime;
     map['coin_gifted_lifetime'] = coinGiftedLifetime;
     map['coin_purchased_lifetime'] = coinPurchasedLifetime;
+    map['coin_wallet_value'] = coinWalletValue;
+    map['earnings_balance'] = earningsBalance;
+    map['earnings_available'] = earningsAvailable;
+    map['earnings_on_hold'] = earningsOnHold;
+    map['earnings_lifetime'] = earningsLifetime;
     map['bio'] = bio;
     map['follower_count'] = followerCount;
     map['following_count'] = followingCount;

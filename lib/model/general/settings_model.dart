@@ -84,6 +84,29 @@ class Setting {
   int? isCompress;
   int? isDeepAr;
   int? isWithdrawalOn;
+
+  /// 1 switches the app to the creator earnings wallet (coins are spend-only,
+  /// gifts pay creators K earnings, withdrawals come out of earnings). 0 or
+  /// absent keeps the legacy coin cash-out screens, so a build can ship before
+  /// the server flips it on.
+  int? walletV2;
+
+  /// Percent of what a fan paid for a gift that the receiving creator keeps.
+  int? creatorSharePercent;
+
+  /// Smallest withdrawal, in [currency] ("50.00" on the wire).
+  double? minWithdrawalAmount;
+
+  /// Days gift earnings stay on hold before they can be withdrawn.
+  int? earningsHoldDays;
+  int? maxWithdrawalsPerWeek;
+
+  /// ISO 4217 code of [currency] ("ZMW").
+  String? currencyCode;
+  int? creatorMinAccountAgeDays;
+
+  /// Hours withdrawals stay blocked after the payout number changes.
+  int? payoutChangeHoldHours;
   String? helpMail;
   int? isContentModeration;
   String? sightEngineApiUser;
@@ -149,6 +172,14 @@ class Setting {
     this.isCompress,
     this.isDeepAr,
     this.isWithdrawalOn,
+    this.walletV2,
+    this.creatorSharePercent,
+    this.minWithdrawalAmount,
+    this.earningsHoldDays,
+    this.maxWithdrawalsPerWeek,
+    this.currencyCode,
+    this.creatorMinAccountAgeDays,
+    this.payoutChangeHoldHours,
     this.helpMail,
     this.isContentModeration,
     this.sightEngineApiUser,
@@ -217,6 +248,15 @@ class Setting {
         isCompress: asIntOrNull(json["is_compress"]),
         isDeepAr: asIntOrNull(json["is_deepAR"]),
         isWithdrawalOn: asIntOrNull(json["is_withdrawal_on"]),
+        walletV2: asIntOrNull(json["wallet_v2"]),
+        creatorSharePercent: asIntOrNull(json["creator_share_percent"]),
+        minWithdrawalAmount: asDoubleOrNull(json["min_withdrawal_amount"]),
+        earningsHoldDays: asIntOrNull(json["earnings_hold_days"]),
+        maxWithdrawalsPerWeek: asIntOrNull(json["max_withdrawals_per_week"]),
+        currencyCode: asStringOrNull(json["currency_code"]),
+        creatorMinAccountAgeDays:
+            asIntOrNull(json["creator_min_account_age_days"]),
+        payoutChangeHoldHours: asIntOrNull(json["payout_change_hold_hours"]),
         helpMail: asStringOrNull(json["help_mail"]),
         isContentModeration: asIntOrNull(json["is_content_moderation"]),
         sightEngineApiUser: asStringOrNull(json["sight_engine_api_user"]),
@@ -278,6 +318,9 @@ class Setting {
                 json["deepARFilters"]?.map((x) => DeepARFilters.fromJson(x))),
       );
 
+  /// Gate for every creator-earnings screen; see [walletV2].
+  bool get isWalletV2 => walletV2 == 1;
+
   Map<String, dynamic> toJson() => {
         "id": id,
         "app_name": appName,
@@ -315,6 +358,14 @@ class Setting {
         "is_compress": isCompress,
         "is_deepAR": isDeepAr,
         "is_withdrawal_on": isWithdrawalOn,
+        "wallet_v2": walletV2,
+        "creator_share_percent": creatorSharePercent,
+        "min_withdrawal_amount": minWithdrawalAmount,
+        "earnings_hold_days": earningsHoldDays,
+        "max_withdrawals_per_week": maxWithdrawalsPerWeek,
+        "currency_code": currencyCode,
+        "creator_min_account_age_days": creatorMinAccountAgeDays,
+        "payout_change_hold_hours": payoutChangeHoldHours,
         "help_mail": helpMail,
         "is_content_moderation": isContentModeration,
         "sight_engine_api_user": sightEngineApiUser,

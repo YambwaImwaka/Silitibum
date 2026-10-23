@@ -20,11 +20,17 @@ class SendGiftSheetController extends BaseController {
   Rx<Setting?> settings = Rx<Setting?>(null);
   Rx<User?> myUser = Rx<User?>(null);
   int? userId;
+
+  /// The reel/post the sheet was opened from, so the creator's earnings
+  /// history can show which video a gift came from. Null for chat, story and
+  /// live gifts.
+  int? postId;
   List<AppUser> liveUsers;
   GiftType? giftType;
   late LivestreamScreenController livestreamController;
 
-  SendGiftSheetController(this.giftType, this.userId, this.liveUsers);
+  SendGiftSheetController(this.giftType, this.userId, this.liveUsers,
+      {this.postId});
 
   @override
   void onInit() {
@@ -93,8 +99,8 @@ class SendGiftSheetController extends BaseController {
       return;
     }
 
-    final response = await withLoader(() =>
-        GiftWalletService.instance.sendGift(giftId: giftId, userId: userId));
+    final response = await withLoader(() => GiftWalletService.instance
+        .sendGift(giftId: giftId, userId: userId, postId: postId));
     if (response == null) return;
     if (response.status == true) {
       // Deduct gift coins from user wallet
@@ -126,6 +132,7 @@ class GiftManager {
     await Get.bottomSheet<GiftManager>(
       SendGiftSheet(
         userId: userId,
+        postId: post?.id,
         giftType: giftType,
         battleViewType: battleViewType,
         streamUsers: streamUsers,

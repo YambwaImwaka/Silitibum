@@ -1387,11 +1387,9 @@ packages:
   retrytech_plugin:
     dependency: "direct main"
     description:
-      path: "."
-      ref: master
-      resolved-ref: "17967839692148f5da2c37123cab2cab876857b0"
-      url: "https://gitlab.com/jeelkhokhariya59/retrytech_plugin.git"
-    source: git
+      path: "packages/retrytech_plugin"
+      relative: true
+    source: path
     version: "0.0.1"
   rxdart:
     dependency: "direct main"

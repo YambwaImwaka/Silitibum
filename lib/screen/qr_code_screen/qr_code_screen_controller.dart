@@ -30,6 +30,8 @@ class QrCodeScreenController extends BaseController {
     }
     if (type == 'save') {
       try {
+        // Android 9 and older need storage access to save to the gallery.
+        if (!await Gal.hasAccess()) await Gal.requestAccess();
         await Gal.putImage(image.path);
         showSnackBar('Image saved successfully.');
         Loggers.success('✅ Image saved at: ');

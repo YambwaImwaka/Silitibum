@@ -61,7 +61,9 @@ class RequestWithdrawalScreenController extends BaseController {
         ? 0
         : int.parse(amountController.text.trim());
 
-    if (amount <= (settings.value?.minRedeemCoins ?? 0)) {
+    // Exactly the minimum is allowed (`<=` used to reject it); an empty or
+    // zero amount never is.
+    if (amount <= 0 || amount < (settings.value?.minRedeemCoins ?? 0)) {
       return showSnackBar(LKey.redeemMinCoinDescription.tr);
     }
 

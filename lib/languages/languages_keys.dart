@@ -656,4 +656,102 @@ class LKey {
       "We'll email a code to your recovery address to reset your password.";
   static const String emailVerifiedSuccessfully =
       "Your email has been verified.";
+
+  // --- Creator earnings wallet (settings wallet_v2) ---
+  static const String wallet = "Wallet";
+  static const String usedToSendGifts = "Used to send gifts";
+  static const String earnings = "Earnings";
+  static const String availableToWithdraw = "Available to withdraw";
+  static const String onHold = "On hold";
+  static const String availableAfterOneDay = "Available after 1 day";
+  static const String availableAfterDays = "Available after @days days";
+  static const String youKeepShareOfGifts =
+      "You keep @share% of what fans spend on gifts to you";
+  static const String withdraw = "Withdraw";
+  static const String history = "History";
+  static const String payoutAccount = "Payout Account";
+
+  static const String walletHistory = "Wallet History";
+  static const String all = "All";
+  static const String txGiftFrom = "Gift from @name";
+  static const String txGiftSentTo = "Gift sent to @name";
+  static const String txGiftReceived = "Gift received";
+  static const String txGiftSent = "Gift sent";
+  static const String txWithdrawal = "Withdrawal";
+  static const String txWithdrawalReturned = "Withdrawal returned";
+  static const String txCoinsBought = "Coins bought";
+  static const String txBonusCoins = "Bonus coins";
+  static const String txAdjustment = "Adjustment";
+  static const String txRefund = "Refund";
+  static const String txCreatorFund = "Creator Fund";
+  static const String txOpeningBalance = "Opening balance";
+  static const String txGiftRefunded = "Gift refunded by the sender";
+  static const String txOther = "Transaction";
+  static const String coinsCount = "@count coins";
+  static const String noTransactionsYet = "No transactions yet";
+  static const String noTransactionsDescription =
+      "Gifts, coin purchases and withdrawals will show up here.";
+
+  static const String currentPayoutAccount = "Current payout account";
+  static const String changePayoutAccount = "Change payout account";
+  static const String addPayoutAccountDescription =
+      "Add the mobile money account your earnings should be sent to. It must be registered in your name.";
+  static const String legalName = "Full legal name";
+  static const String legalNameHint = "As on your NRC or passport";
+  static const String mobileNetwork = "Mobile network";
+  static const String mobileMoneyNumber = "Mobile money number";
+  static const String mobileMoneyNumberHint = "e.g. 0971234567";
+  static const String iAm18OrOlder = "I am 18 or older";
+  static const String nameVerified = "Name verified";
+  static const String nameNotVerified = "Name not verified yet";
+  static const String nameMismatchApproved = "Name approved by support";
+  static const String nameMismatchWarning =
+      "This number does not appear to be registered in your name. Use a number registered to you, or contact support.";
+  static const String payoutAccountSuspended =
+      "This payout account is suspended. Please contact support.";
+  static const String payoutChangeHoldNotice =
+      "For your security, withdrawals pause for @hours hours after you change your payout number.";
+  static const String enterLegalName =
+      "Please enter your full legal name (first and last name).";
+  static const String enterMobileMoneyNumber =
+      "Please enter your mobile money number.";
+  static const String invalidMobileMoneyNumber =
+      "Please enter a valid Zambian mobile money number.";
+  static const String numberNotOnNetwork = "This number is not on @network.";
+  static const String confirmAdultRequired =
+      "Please confirm that you are 18 or older.";
+  static const String payoutAccountTooManyChanges =
+      "You have changed your payout account too many times today. Please try again tomorrow.";
+
+  static const String withdrawEarnings = "Withdraw Earnings";
+  static const String minimumWithdrawalAmount = "Minimum withdrawal: @amount";
+  static const String sendTo = "Send to";
+  static const String change = "Change";
+  static const String addPayoutAccount = "Add payout account";
+  static const String noPayoutAccountYet = "No payout account yet";
+  static const String beforeYouCanWithdraw = "Before you can withdraw";
+  static const String availableFrom = "Available from @date";
+  static const String amountInCurrency = "Amount (@currency)";
+  static const String enterAmountHint = "Enter amount";
+  static const String withdrawAll = "Withdraw all";
+  static const String enterWithdrawalAmount = "Please enter an amount.";
+  static const String amountBelowMinimum =
+      "The minimum withdrawal is @amount.";
+  static const String amountAboveAvailable =
+      "You only have @amount available to withdraw.";
+  static const String withdrawalsPausedMessage =
+      "Withdrawals are paused right now. Your earnings are safe, and you can withdraw them once withdrawals reopen.";
+  static const String withdrawalInProgressMessage =
+      "Your withdrawal of @amount is @status. You can request another once it is finished.";
+  static const String addPayoutAccountFirst =
+      "Add a payout account to withdraw your earnings.";
+  static const String completeChecklistFirst =
+      "Complete the checklist above before you withdraw.";
+  static const String notEnoughToWithdraw =
+      "You need at least @amount available to withdraw.";
+  static const String withdrawalsPerWeekNotice =
+      "You can make @count withdrawal(s) a week. Every withdrawal is checked by our team before it is sent.";
+  static const String confirmWithdrawal = "Confirm withdrawal";
+  static const String confirmWithdrawalDescription =
+      "@amount will be sent to @account once it is approved.";
 }

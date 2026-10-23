@@ -63,10 +63,19 @@ class BaseController extends FullLifeCycleController {
     }
   }
 
-  void showSnackBar(String? title, {int second = 2}) {
+  /// [keepCase] only capitalises the first letter. The default lower-cases
+  /// everything after it, which mangles server messages that carry amounts,
+  /// names or network labels ("K60.00" -> "k60.00", "Airtel Money").
+  void showSnackBar(String? title, {int second = 2, bool keepCase = false}) {
     if (Get.isSnackbarOpen) {
       return;
     }
+    final String text = keepCase
+        ? (title == null || title.isEmpty
+                ? ''
+                : title[0].toUpperCase() + title.substring(1))
+            .tr
+        : (title?.capitalizeFirst?.tr ?? '');
 
     Get.rawSnackbar(
       backgroundColor: blackPure(Get.context!),
@@ -76,7 +85,7 @@ class BaseController extends FullLifeCycleController {
       isDismissible: true,
       duration: Duration(seconds: second),
       snackPosition: SnackPosition.TOP,
-      messageText: Text(title?.capitalizeFirst?.tr ?? '',
+      messageText: Text(text,
           style: TextStyleCustom.outFitRegular400(
               color: whitePure(Get.context!), fontSize: 17)),
     );

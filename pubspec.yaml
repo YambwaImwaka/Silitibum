@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.2.0+20
+version: 1.2.1+21
 
 environment:
   sdk: ^3.5.4
@@ -129,10 +129,14 @@ dependencies:
   image: ^4.8.0
 
   ### 🔌 Custom Plugins
+  # Vendored from gitlab.com/jeelkhokhariya59/retrytech_plugin at commit
+  # 17967839 (the commit this app shipped with), then fixed in place:
+  # downsampled bitmap decoding, heavy work off the main thread, replies to
+  # every camera call, and no permission prompt on every app launch. Building
+  # from a third party's `master` branch also meant any push there changed
+  # what a release contained.
   retrytech_plugin:
-    git:
-      url: https://gitlab.com/jeelkhokhariya59/retrytech_plugin.git
-      ref: master
+    path: packages/retrytech_plugin
 
 
 dev_dependencies:

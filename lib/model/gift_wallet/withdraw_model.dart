@@ -40,10 +40,13 @@ class Withdraw {
     this.requestNumber,
     this.gateway,
     this.account,
+    this.operator,
     this.amount,
+    this.fee,
     this.coins,
     this.coinValue,
     this.status,
+    this.reason,
     this.createdAt,
     this.updatedAt,
   });
@@ -54,10 +57,13 @@ class Withdraw {
     requestNumber = asStringOrNull(json['request_number']);
     gateway = asStringOrNull(json['gateway']);
     account = asStringOrNull(json['account']);
+    operator = asStringOrNull(json['operator']);
     amount = asStringOrNull(json['amount']);
+    fee = asStringOrNull(json['fee']);
     coins = asNumOrNull(json['coins']);
     coinValue = asNumOrNull(json['coin_value']);
     status = asNumOrNull(json['status']);
+    reason = asStringOrNull(json['reason']);
     createdAt = asStringOrNull(json['created_at']);
     updatedAt = asStringOrNull(json['updated_at']);
   }
@@ -67,10 +73,21 @@ class Withdraw {
   String? requestNumber;
   String? gateway;
   String? account;
+
+  /// Mobile-money network of an earnings withdrawal (airtel | mtn | zamtel).
+  String? operator;
+
+  /// Kwacha, a decimal string ("60.00").
   String? amount;
+  String? fee;
   num? coins;
   num? coinValue;
+
+  /// 0 pending, 1 completed, 2 rejected, 3 processing, 4 failed.
   num? status;
+
+  /// Why a withdrawal was rejected or failed, shown to the creator.
+  String? reason;
   String? createdAt;
   String? updatedAt;
 
@@ -81,10 +98,13 @@ class Withdraw {
     map['request_number'] = requestNumber;
     map['gateway'] = gateway;
     map['account'] = account;
+    map['operator'] = operator;
     map['amount'] = amount;
+    map['fee'] = fee;
     map['coins'] = coins;
     map['coin_value'] = coinValue;
     map['status'] = status;
+    map['reason'] = reason;
     map['created_at'] = createdAt;
     map['updated_at'] = updatedAt;
     return map;

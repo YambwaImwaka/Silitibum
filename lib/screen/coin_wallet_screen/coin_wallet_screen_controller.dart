@@ -2,6 +2,7 @@
 import 'package:get/get.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/gift_wallet_service.dart';
 import 'package:shortzz/common/service/api/user_service.dart';
@@ -22,10 +23,23 @@ class CoinWalletScreenController extends BaseController {
     super.onInit();
     fetchData();
     fetchOfferings();
+    refreshUser();
   }
 
   void fetchData() {
     myUser.value = SessionManager.instance.getUser();
+  }
+
+  /// The cached user can be stale (gifts received since it was saved), so
+  /// the balances are re-read from the server whenever the wallet opens.
+  Future<void> refreshUser() async {
+    try {
+      final User? fresh = await UserService.instance
+          .fetchUserDetails(userId: SessionManager.instance.getUserID());
+      if (fresh != null) myUser.value = fresh;
+    } catch (e) {
+      Loggers.error('refreshUser failed: $e');
+    }
   }
 
   void fetchOfferings() {

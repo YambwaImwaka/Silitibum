@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
+import 'package:shortzz/common/functions/money_format.dart';
+import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/custom_app_bar.dart';
 import 'package:shortzz/common/widget/loader_widget.dart';
 import 'package:shortzz/common/widget/no_data_widget.dart';
@@ -20,6 +23,7 @@ class WithdrawalsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.put(WithdrawalsScreenController());
+    final String currency = SessionManager.instance.getCurrency();
     return Scaffold(
       body: Column(
         children: [
@@ -36,19 +40,9 @@ class WithdrawalsScreen extends StatelessWidget {
                         padding: const EdgeInsets.only(top: 1),
                         itemBuilder: (context, index) {
                           Withdraw withdraw = controller.withdraws[index];
-                          // 0 pending, 1 completed, 2 rejected, 3 processing
-                          // (async provider call, awaiting confirmation), 4
-                          // failed (provider call failed, coins refunded).
-                          // An explicit switch — the old nested ternary
-                          // silently rendered any unrecognized status as
-                          // "rejected", which is exactly what would have
-                          // happened to the two new statuses if left as-is.
-                          Color statusColor = switch (withdraw.status) {
-                            0 => ColorRes.orange,
-                            1 => ColorRes.green,
-                            3 => ColorRes.infoBlue,
-                            _ => ColorRes.likeRed,
-                          };
+                          Color statusColor = withdraw.statusColor;
+                          final String reason = withdraw.reason?.trim() ?? '';
+                          final String createdAt = withdraw.createdAt ?? '';
                           return Container(
                             color: bgLightGrey(context),
                             margin: const EdgeInsets.symmetric(vertical: 1),
@@ -79,24 +73,39 @@ class WithdrawalsScreen extends StatelessWidget {
                                                           context),
                                                       fontSize: 13),
                                             ),
-                                            Text(
-                                              (withdraw.createdAt ?? '')
-                                                  .formatDate1,
-                                              style: TextStyleCustom
-                                                  .outFitLight300(
-                                                      color: textLightGrey(
-                                                          context),
-                                                      fontSize: 13),
-                                            ),
+                                            if (createdAt.isNotEmpty)
+                                              Text(
+                                                createdAt.formatDate1,
+                                                style: TextStyleCustom
+                                                    .outFitLight300(
+                                                        color: textLightGrey(
+                                                            context),
+                                                        fontSize: 13),
+                                              ),
+                                            // Why an admin rejected it, or
+                                            // why the payout failed.
+                                            if (reason.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    top: 3),
+                                                child: Text(
+                                                  '${LKey.reason.tr}: $reason',
+                                                  style: TextStyleCustom
+                                                      .outFitRegular400(
+                                                          color: statusColor,
+                                                          fontSize: 13),
+                                                ),
+                                              ),
                                           ],
                                         ),
                                       ),
                                       Column(
                                         children: [
                                           Text(
-                                            (double.parse(
-                                                    withdraw.amount ?? '0'))
-                                                .currencyFormat,
+                                            formatMoney(
+                                                asDoubleOrNull(
+                                                    withdraw.amount),
+                                                currency: currency),
                                             style:
                                                 TextStyleCustom.outFitBold700(
                                                     fontSize: 18,
@@ -106,13 +115,7 @@ class WithdrawalsScreen extends StatelessWidget {
                                           const SizedBox(height: 5),
                                           TextButtonCustom(
                                             onTap: () {},
-                                            title: switch (withdraw.status) {
-                                              0 => LKey.pending.tr,
-                                              1 => LKey.completed.tr,
-                                              3 => LKey.processing.tr,
-                                              4 => LKey.withdrawalFailed.tr,
-                                              _ => LKey.rejected.tr,
-                                            },
+                                            title: withdraw.statusTitle,
                                             btnHeight: 23,
                                             horizontalMargin: 0,
                                             radius: 5,
@@ -128,20 +131,24 @@ class WithdrawalsScreen extends StatelessWidget {
                                     ],
                                   ),
                                 ),
-                                Container(
-                                  color: bgGrey(context),
-                                  height: 29,
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 20),
-                                  alignment: AlignmentDirectional.centerStart,
-                                  child: Text(
-                                      '${(withdraw.coins?.toInt() ?? 0).numberFormat} ${LKey.coins.tr} '
-                                      ':'
-                                      ' ${(withdraw.coinValue ?? 0).currencyFormat} / ${LKey.coin.tr}',
-                                      style: TextStyleCustom.outFitLight300(
-                                          color: textLightGrey(context))),
-                                )
+                                // Coin conversion details only exist on
+                                // legacy coin cash-outs; an earnings
+                                // withdrawal has no coins.
+                                if ((withdraw.coins ?? 0) > 0)
+                                  Container(
+                                    color: bgGrey(context),
+                                    height: 29,
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20),
+                                    alignment: AlignmentDirectional.centerStart,
+                                    child: Text(
+                                        '${(withdraw.coins?.toInt() ?? 0).numberFormat} ${LKey.coins.tr} '
+                                        ':'
+                                        ' ${(withdraw.coinValue ?? 0).currencyFormat} / ${LKey.coin.tr}',
+                                        style: TextStyleCustom.outFitLight300(
+                                            color: textLightGrey(context))),
+                                  )
                               ],
                             ),
                           );
@@ -154,4 +161,25 @@ class WithdrawalsScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 0 pending, 1 completed, 2 rejected, 3 processing (async provider call,
+/// awaiting confirmation), 4 failed (provider call failed, money refunded).
+/// An explicit switch — the old nested ternary silently rendered any
+/// unrecognized status as "rejected".
+extension WithdrawStatusX on Withdraw {
+  String get statusTitle => switch (status) {
+        0 => LKey.pending.tr,
+        1 => LKey.completed.tr,
+        3 => LKey.processing.tr,
+        4 => LKey.withdrawalFailed.tr,
+        _ => LKey.rejected.tr,
+      };
+
+  Color get statusColor => switch (status) {
+        0 => ColorRes.orange,
+        1 => ColorRes.green,
+        3 => ColorRes.infoBlue,
+        _ => ColorRes.likeRed,
+      };
 }

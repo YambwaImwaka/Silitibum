@@ -6,6 +6,7 @@ import 'package:shortzz/common/widget/custom_popup_menu_button.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/coin_wallet_screen/coin_wallet_screen_controller.dart';
+import 'package:shortzz/screen/earnings_screen/earnings_screen.dart';
 import 'package:shortzz/screen/request_withdrawal_screen/request_withdrawal_screen.dart';
 import 'package:shortzz/screen/withdrawals_screen/withdrawals_screen.dart';
 import 'package:shortzz/utilities/asset_res.dart';
@@ -19,6 +20,7 @@ class CoinWalletTopView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final controller = Get.find<CoinWalletScreenController>();
+    final bool isWalletV2 = controller.settings?.isWalletV2 ?? false;
     return AspectRatio(
       aspectRatio: 1,
       child: Stack(
@@ -47,20 +49,31 @@ class CoinWalletTopView extends StatelessWidget {
                                   color: whitePure(context)),
                             ),
                             Visibility(
-                              visible: controller.settings?.isWithdrawalOn == 1,
+                              // Earnings stay reachable while withdrawals are
+                              // paused: creators can still see what they made.
+                              visible: isWalletV2 ||
+                                  controller.settings?.isWithdrawalOn == 1,
                               replacement: const SizedBox(width: 35),
                               child: CustomPopupMenuButton(
                                   items: [
+                                    if (isWalletV2)
+                                      MenuItem(LKey.earnings.tr, () {
+                                        Get.to(() => const EarningsScreen())
+                                            ?.then((value) {
+                                          controller.fetchData();
+                                        });
+                                      }),
                                     MenuItem(LKey.withdrawals.tr, () {
                                       Get.to(() => const WithdrawalsScreen());
                                     }),
-                                    MenuItem(LKey.requestWithdrawal.tr, () {
-                                      Get.to(() =>
-                                              const RequestWithdrawalScreen())
-                                          ?.then((value) {
-                                        controller.fetchData();
-                                      });
-                                    }),
+                                    if (!isWalletV2)
+                                      MenuItem(LKey.requestWithdrawal.tr, () {
+                                        Get.to(() =>
+                                                const RequestWithdrawalScreen())
+                                            ?.then((value) {
+                                          controller.fetchData();
+                                        });
+                                      }),
                                   ],
                                   child: Container(
                                     height: 35,

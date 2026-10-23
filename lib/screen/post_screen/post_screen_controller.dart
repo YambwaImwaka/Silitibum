@@ -182,6 +182,7 @@ class PostScreenController extends BaseController {
     if (!AuthGate.check()) return;
     GiftManager.openGiftSheet(
       userId: post?.userId ?? -1,
+      post: post,
       onCompletion: (giftManager) {
         GiftManager.showAnimationDialog(giftManager.gift);
         GiftManager.sendNotification(post);

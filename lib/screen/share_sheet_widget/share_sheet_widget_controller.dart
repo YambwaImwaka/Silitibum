@@ -221,7 +221,10 @@ class ShareSheetWidgetController extends BaseController {
         }
       }
 
-      // Save to gallery
+      // Save to gallery. Android 9 and older need storage access for this,
+      // asked for here where the reason is clear (always granted on newer
+      // versions).
+      if (!await Gal.hasAccess()) await Gal.requestAccess();
       await Gal.putVideo(finalOutput);
       stopSnackBar();
       showSnackBar(LKey.downloadCompletedSuccessfully.tr);

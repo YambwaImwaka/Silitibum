@@ -115,6 +115,11 @@ class Params {
   static const String purchasedAt = 'purchased_at';
   static const String gateway = 'gateway';
   static const String account = 'account';
+  static const String amount = 'amount';
+  static const String legalName = 'legal_name';
+  static const String phone = 'phone';
+  static const String operator = 'operator';
+  static const String confirmAdult = 'confirm_adult';
   static const String notifyPostLike = 'notify_post_like';
   static const String notifyPostComment = 'notify_post_comment';
   static const String notifyFollow = 'notify_follow';

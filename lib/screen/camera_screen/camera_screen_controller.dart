@@ -143,10 +143,28 @@ class CameraScreenController extends BaseController
       // so there is nothing to fire it at either way.
       await _initDeepArCamera();
     } else {
+      // The native camera starts on "init" once camera access is granted; it
+      // no longer asks for permissions itself (that prompt used to fire on
+      // every app launch).
+      if (!await _requestCameraPermissions()) return;
       Future.delayed(const Duration(milliseconds: 100), () {
         RetrytechPlugin.shared.initCamera();
       });
     }
+  }
+
+  /// Camera access is required; without the microphone, videos are recorded
+  /// silently.
+  Future<bool> _requestCameraPermissions() async {
+    try {
+      final statuses =
+          await [Permission.camera, Permission.microphone].request();
+      if (statuses[Permission.camera]?.isGranted == true) return true;
+    } catch (e) {
+      Loggers.error('Camera permission request failed: $e');
+    }
+    showPermissionDeniedSheet();
+    return false;
   }
 
   Future<void> _initDeepArCamera() async {
