@@ -174,9 +174,17 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   /// the Live tab. Called from onChanged() when Live is selected, and again
   /// defensively before going live, so it is ready by the time a room is
   /// joined without costing anything to users who never go there.
-  Future<void> ensureZegoEngine() async {
-    if (_isZegoEngineReady) return;
+  Future<void> ensureZegoEngine() {
+    if (_isZegoEngineReady) return Future.value();
+    // Selecting the tab and the Live feed's first room both ask at once;
+    // sharing the call in flight keeps the engine from being created twice.
+    return _zegoEngineCreation ??=
+        _createZegoEngine().whenComplete(() => _zegoEngineCreation = null);
+  }
 
+  Future<void>? _zegoEngineCreation;
+
+  Future<void> _createZegoEngine() async {
     Setting? appSetting = SessionManager.instance.getSettings();
     // tryParse, not parse. zego_app_id is a nullable settings column, and an
     // unconfigured one comes back as "" — which is not null, so `?? '0'` never

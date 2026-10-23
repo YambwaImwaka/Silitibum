@@ -11,7 +11,7 @@ import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart
 import 'package:shortzz/screen/explore_screen/explore_screen.dart';
 import 'package:shortzz/screen/feed_screen/feed_screen.dart';
 import 'package:shortzz/screen/home_screen/home_screen.dart';
-import 'package:shortzz/screen/live_stream/live_stream_search_screen/live_stream_search_screen.dart';
+import 'package:shortzz/screen/live_stream/live_feed_screen/live_feed_screen.dart';
 import 'package:shortzz/screen/message_screen/message_screen.dart';
 import 'package:shortzz/screen/profile_screen/profile_screen.dart';
 import 'package:shortzz/utilities/style_res.dart';
@@ -50,7 +50,7 @@ class DashboardScreen extends StatelessWidget {
                   // stays alive for the rest of the session exactly as before.
                   IndexedStackChild(child: const HomeScreen(), preload: false),
                   IndexedStackChild(child: FeedScreen(myUser: myUser), preload: false),
-                  IndexedStackChild(child: const LiveStreamSearchScreen(), preload: false),
+                  IndexedStackChild(child: const LiveFeedScreen(), preload: false),
                   IndexedStackChild(child: const ExploreScreen(), preload: false),
                   IndexedStackChild(child: const MessageScreen(), preload: false),
                   IndexedStackChild(

@@ -120,6 +120,7 @@ class LivestreamScreenController extends BaseController {
   /// When the last realtime event landed on this room's channel. Drives the
   /// safety-net reconcile in [_startRealtime] — see the note there.
   DateTime _lastRealtimeEventAt = DateTime.now();
+  DateTime _lastPollAt = DateTime.now();
   Timer? _likeFlushTimer;
   String? _presenceChannelName;
   int _lastCommentId = 0;
@@ -210,6 +211,15 @@ class LivestreamScreenController extends BaseController {
       if (DateTime.now().difference(_lastRealtimeEventAt) >
           const Duration(seconds: 10)) {
         _pollState();
+        return;
+      }
+      // The host's polls are its heartbeat: the server stops listing a room
+      // whose host it has not heard from in two minutes. A busy room keeps
+      // the socket chatty enough that the host would otherwise never poll.
+      if (isHost &&
+          DateTime.now().difference(_lastPollAt) >
+              const Duration(seconds: 20)) {
+        _pollState();
       }
     });
     // Hearts are batched so a rapid tap burst is one request. 4s of batching
@@ -282,6 +292,7 @@ class LivestreamScreenController extends BaseController {
 
   Future<void> _pollState() async {
     if (roomId.isEmpty) return;
+    _lastPollAt = DateTime.now();
     try {
       final res = await LivestreamService.instance
           .fetchStreamState(roomId: roomId, afterCommentId: _lastCommentId);

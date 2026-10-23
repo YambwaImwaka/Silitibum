@@ -437,6 +437,13 @@ class LKey {
   static const String noLivestreamsTitle = "No Live Streams Yet";
   static const String noLivestreamsDescription =
       "Live streams will appear here when someone goes live.";
+  static const String noOneIsLiveTitle = "No one is live right now";
+  static const String noOneIsLiveDescription =
+      "When someone goes live, you'll find them here. Pull down to refresh, or go live yourself.";
+  static const String joinLive = "Join LIVE";
+  static const String thisLiveHasEnded = "This LIVE has ended";
+  static const String swipeUpForNextLive = "Swipe up for the next LIVE";
+  static const String connectingToLive = "Connecting…";
   static const String noUserReelsTitle = "No Snaps Yet";
   static const String noUserReelsDescription =
       "This user hasn’t posted any snaps so far.";
