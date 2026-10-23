@@ -9,6 +9,7 @@ use App\Models\RedeemRequests;
 use App\Models\Users;
 use App\Services\Payments\PaymentGatewayFactory;
 use App\Services\Payments\TopUpReconciler;
+use App\Services\Wallet\Withdrawals;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -99,8 +100,11 @@ class PaymentWebhookController extends Controller
             return response()->json(['status' => true]); // nothing to do, not an error
         }
 
+        // provider_reference is our per-attempt reference ({request_number}-N),
+        // which is what providers echo back; provider_txn_id is their own id.
         $redeem = RedeemRequests::where('provider_reference', $reference)
             ->orWhere('request_number', $reference)
+            ->orWhere('provider_txn_id', $reference)
             ->first();
         if ($redeem != null) {
             return $this->resolveRedeemRequest($redeem, $reference, $provider, $settings);
@@ -131,27 +135,11 @@ class PaymentWebhookController extends Controller
         if ($gateway == null) {
             return response()->json(['status' => true]);
         }
-        $result = $gateway->verify($reference);
-
-        if ($result['status'] === 'completed') {
-            RedeemRequests::where('id', $redeem->id)
-                ->where('status', Constants::withdrawalProcessing)
-                ->update(['status' => Constants::withdrawalCompleted, 'updated_at' => now()]);
-        } elseif ($result['status'] === 'failed') {
-            // Same concurrent-delivery hazard as the top-up side below, and
-            // worse here: the refund is the payout going back to the user, so
-            // two deliveries landing together would hand out the coins twice.
-            // Claim the row with the write itself and refund only if this
-            // call is the one that actually moved it out of 'processing'.
-            $claimed = RedeemRequests::where('id', $redeem->id)
-                ->where('status', Constants::withdrawalProcessing)
-                ->update(['status' => Constants::withdrawalFailed, 'updated_at' => now()]);
-            if ($claimed === 1) {
-                Users::where('id', $redeem->user_id)->increment('coin_wallet', $redeem->coins);
-            }
-        }
-        // 'processing' — leave as-is, another webhook call or the admin's
-        // manual retry will resolve it eventually.
+        // Asks the provider's TRANSFER status (verify() is for collections),
+        // keyed by our per-attempt reference. Withdrawals claims the status
+        // change with the write itself, so two deliveries landing together
+        // can neither complete nor refund a payout twice.
+        Withdrawals::applyProviderStatus($redeem, $gateway->verifyPayout($redeem->provider_reference ?: $reference));
 
         return response()->json(['status' => true]);
     }
@@ -160,7 +148,9 @@ class PaymentWebhookController extends Controller
     {
         // Fast path only — NOT the guard that prevents double-crediting. See
         // the claim below for why reading the status can never be the check.
-        if ($topup->status === 'completed' || $topup->status === 'failed') {
+        // 'failed' rows are deliberately re-verified: a late webhook for a
+        // payment we wrongly gave up on must still be able to credit it.
+        if ($topup->status === 'completed') {
             return response()->json(['status' => true]);
         }
 

@@ -37,13 +37,13 @@ class CheckLogin
                 session()->pull('username');
                 session()->pull('user_type');
                 session()->pull('userpassword');
-                 return redirect(url('/'));
+                 return redirect(route('admin.login'));
             }
         } else {
             session()->pull('username');
             session()->pull('user_type');
             session()->pull('userpassword');
-            return redirect(url('/'));
+            return redirect(route('admin.login'));
         }
     }
 }

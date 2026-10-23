@@ -88,6 +88,12 @@
                             <i class="mdi mdi-cash-multiple d-md-none d-block"></i>
                             <span class="d-none d-md-block">{{ __('Payment Providers') }}</span>
                         </a>
+                        <a class="main-nav-link nav-link" id="v-pills-monetization-tab" data-bs-toggle="pill"
+                            href="#v-pills-monetization" role="tab" aria-controls="v-pills-monetization"
+                            aria-selected="false">
+                            <i class="mdi mdi-hand-coin d-md-none d-block"></i>
+                            <span class="d-none d-md-block">{{ __('Creator Monetization') }}</span>
+                        </a>
                         <a class="main-nav-link nav-link" id="v-pills-admob-tab" data-bs-toggle="pill" href="#v-pills-admob"
                             role="tab" aria-controls="v-pills-admob" aria-selected="false">
                             <i class="mdi mdi-settings-outline d-md-none d-block"></i>
@@ -251,9 +257,8 @@
                             <h4 class="m-0 header-title">{{ __('App Settings') }}</h4>
                         </div>
                         <div class="card-body">
-                            <span class="fs-6">*Make sure to set coin value according to your currency.</span><br>
-                            <span class="fs-6">*Users can use withdrawal functions only if it the switch is on
-                                below.</span>
+                            <span class="fs-6">*Creator payouts are configured under <strong>Creator Monetization</strong>. Coin value and min. coins below only feed app versions released before the earnings wallet.</span><br>
+                            <span class="fs-6">*Creators can withdraw only while the withdrawal switch below is on.</span>
                             <form class="mt-2" id="basicSettingForm" method="POST">
                                 <div class="row">
                                     <div class="col-md-4 mb-3">
@@ -265,7 +270,7 @@
                                     </div>
                                     <div class="col-md-4 mb-3">
                                         <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
-                                            <label for="coin_value" class="form-label">1 {{ __('Coin Value') }}</label>
+                                            <label for="coin_value" class="form-label">1 {{ __('Coin Value') }} <span class="text-muted">({{ __('legacy') }})</span></label>
                                             <input type="number" step="any" class="form-control" id="coin_value"
                                                 name="coin_value" value="{{ $setting->coin_value }}">
                                         </div>
@@ -273,7 +278,7 @@
                                     <div class="col-md-4 mb-3">
                                         <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
                                             <label for="min_redeem_coins"
-                                                class="form-label">{{ __('Min. Coins To Withdraw') }}</label>
+                                                class="form-label">{{ __('Min. Coins To Withdraw') }} <span class="text-muted">({{ __('legacy') }})</span></label>
                                             <input type="number" min="1" step="1" class="form-control"
                                                 id="min_redeem_coins" name="min_redeem_coins"
                                                 value="{{ $setting->min_redeem_coins }}">
@@ -301,7 +306,7 @@
                                     <div class="col-md-4 mb-3">
                                         <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
                                             <label for=""
-                                                class="form-label">{{ __('Allow Withdrawal Of Coins') }}</label>
+                                                class="form-label">{{ __('Allow Creator Withdrawals') }}</label>
                                             <div class="mb-0">
                                                 <input name="is_withdrawal_on" type="checkbox" id="switchWithdrawal"
                                                     {{ $setting->is_withdrawal_on == 1 ? 'checked' : '' }}
@@ -315,7 +320,7 @@
                                 <h5>{{ __('REWARD SETTINGS') }}</h5>
                                 <hr>
                                 <span class="fs-6">*Users will get the following number of coins as a bonus when they
-                                    register, if the switch below is turned on.</span><br>
+                                    register, if the switch below is turned on. Bonus coins can be gifted but carry no cash value, so they never become a creator's earnings.</span><br>
                                 <div class="row mt-2">
                                     <div class="col-md-4 mb-3">
                                         <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
@@ -919,6 +924,85 @@
                                             <input type="text" class="form-control" id="flutterwave_secret_key"
                                                 name="flutterwave_secret_key"
                                                 value="{{ $userType == 0 ? '---------' : $setting->flutterwave_secret_key }}">
+                                        </div>
+                                    </div>
+                                </div>
+                                <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                {{-- Creator Monetization --}}
+                <div class="tab-pane fade" id="v-pills-monetization" role="tabpanel"
+                    aria-labelledby="v-pills-monetization-tab">
+                    <div class="card">
+                        <div class="card-header border-bottom">
+                            <h4 class="m-0 header-title">{{ __('Creator Monetization') }}</h4>
+                            <p class="text-muted mb-0">{{ __('Fans buy coins and send them as gifts. The creator earns their share of what the fan actually paid for those coins, in kwacha, and can withdraw it to mobile money. Bonus and admin-granted coins carry no cash value. Earnings already credited never change when these settings change.') }}</p>
+                        </div>
+                        <div class="card-body">
+                            <form id="monetizationSettingForm" method="POST">
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="creator_share_percent" class="form-label">{{ __('Creator share of gift spending (%)') }}</label>
+                                            <input type="number" min="1" max="100" step="1" class="form-control" id="creator_share_percent"
+                                                name="creator_share_percent" value="{{ $setting->creator_share_percent ?? 60 }}">
+                                            <span class="fs-6 text-muted" id="creatorSharePreview"></span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="min_withdrawal_amount" class="form-label">{{ __('Minimum withdrawal') }} ({{ $setting->currency }})</label>
+                                            <input type="number" min="1" step="0.01" class="form-control" id="min_withdrawal_amount"
+                                                name="min_withdrawal_amount" value="{{ $setting->min_withdrawal_amount ?? 50 }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="earnings_hold_days" class="form-label">{{ __('Hold gift earnings for (days)') }}</label>
+                                            <input type="number" min="0" max="60" step="1" class="form-control" id="earnings_hold_days"
+                                                name="earnings_hold_days" value="{{ $setting->earnings_hold_days ?? 7 }}">
+                                            <span class="fs-6 text-muted">{{ __('Time to catch refunds and fraud before money leaves.') }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="max_withdrawals_per_week" class="form-label">{{ __('Withdrawals per creator per week') }}</label>
+                                            <input type="number" min="1" max="14" step="1" class="form-control" id="max_withdrawals_per_week"
+                                                name="max_withdrawals_per_week" value="{{ $setting->max_withdrawals_per_week ?? 1 }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="creator_min_account_age_days" class="form-label">{{ __('Account age before first withdrawal (days)') }}</label>
+                                            <input type="number" min="0" max="365" step="1" class="form-control" id="creator_min_account_age_days"
+                                                name="creator_min_account_age_days" value="{{ $setting->creator_min_account_age_days ?? 30 }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="payout_change_hold_hours" class="form-label">{{ __('Hold after a payout number change (hours)') }}</label>
+                                            <input type="number" min="0" max="720" step="1" class="form-control" id="payout_change_hold_hours"
+                                                name="payout_change_hold_hours" value="{{ $setting->payout_change_hold_hours ?? 72 }}">
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="lenco_account_id" class="form-label">{{ __('Lenco payout account ID') }}</label>
+                                            <input type="password" autocomplete="off" class="form-control" id="lenco_account_id" name="lenco_account_id"
+                                                placeholder="{{ !empty($setting->lenco_account_id) ? __('saved — leave empty to keep') : __('the account payouts are sent from') }}">
+                                            <span class="fs-6 text-muted">{{ __('Needed only when Lenco is the active payout provider.') }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label class="form-label">{{ __('Show the earnings wallet in the app') }}</label>
+                                            <div class="mb-0">
+                                                <input name="wallet_v2" type="checkbox" id="switchWalletV2"
+                                                    {{ ($setting->wallet_v2 ?? 0) == 1 ? 'checked' : '' }} data-switch="primary" />
+                                                <label for="switchWalletV2"></label>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>

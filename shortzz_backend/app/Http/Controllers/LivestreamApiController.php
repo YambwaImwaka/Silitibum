@@ -12,6 +12,7 @@ use App\Models\Users;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 // Livestream signalling over MySQL + presence-channel broadcasting
@@ -356,22 +357,30 @@ class LivestreamApiController extends Controller
         }
 
         $receiver = Users::find($request->receiver_user_id);
+        // A stream gift is for someone on stage. Any user id used to be
+        // accepted, so this endpoint doubled as "send coins to anyone" while
+        // the room showed a gift to a host who never received it.
+        $onStage = $receiver->id == $stream->host_id
+            || in_array((int) $receiver->id, $stream->coHostIdsArray(), true);
+        if (!$onStage) {
+            return GlobalFunction::sendSimpleResponse(false, 'gifts here can only go to the host or a co-host');
+        }
         $gift = Gifts::find($request->gift_id);
-        $error = GlobalFunction::transferGiftCoins($user, $receiver, $gift);
+        $error = GlobalFunction::transferGiftCoins($user, $receiver, $gift, ['livestream_id' => $stream->id]);
         if ($error !== null) {
             return GlobalFunction::sendSimpleResponse(false, $error);
         }
 
-        // Track stream earnings on the receiving host/co-host.
+        // Track stream earnings on the receiving host/co-host. A relative
+        // UPDATE: the read-add-save this replaced lost gifts that landed in
+        // the same instant, which is exactly when a battle is closest.
         $participant = LivestreamUser::where('livestream_id', $stream->id)
             ->where('user_id', $receiver->id)->first();
         if ($participant != null) {
-            if ($stream->type == 'BATTLE' && $stream->battle_type == 'RUNNING') {
-                $participant->current_battle_coin += $gift->coin_price;
-            } else {
-                $participant->live_coin += $gift->coin_price;
-            }
-            $participant->save();
+            $column = ($stream->type == 'BATTLE' && $stream->battle_type == 'RUNNING')
+                ? 'current_battle_coin' : 'live_coin';
+            LivestreamUser::where('id', $participant->id)->increment($column, (int) $gift->coin_price);
+            $participant->refresh();
         }
 
         $comment = new LivestreamComment();
@@ -480,13 +489,17 @@ class LivestreamApiController extends Controller
         $stream->save();
 
         if ($request->battle_type == 'END') {
-            // Bank the round's coins.
+            // Bank the round's coins in one statement per row (SET is applied
+            // left to right, so the total takes the round's value before it is
+            // zeroed) — a gift landing mid-bank can no longer be wiped out.
             $participants = LivestreamUser::where('livestream_id', $stream->id)
                 ->where('current_battle_coin', '>', 0)->get();
             foreach ($participants as $participant) {
-                $participant->total_battle_coin += $participant->current_battle_coin;
-                $participant->current_battle_coin = 0;
-                $participant->save();
+                LivestreamUser::where('id', $participant->id)->update([
+                    'total_battle_coin' => DB::raw('total_battle_coin + current_battle_coin'),
+                    'current_battle_coin' => 0,
+                ]);
+                $participant->refresh();
                 BaseBroadcastEvent::fire('user_state.updated',
                     ['user_state' => $participant->serialize()], $this->channel($stream->room_id));
             }

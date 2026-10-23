@@ -43,10 +43,13 @@ class PaystackGateway implements PaymentGatewayInterface
                     'provider' => null, // VERIFY: Paystack expects a provider code (e.g. "mtn"/"vod"/"tgo" for Ghana) — map from the phone's network before going live.
                 ],
             ]);
+            if (!$response->successful()) {
+                return GatewayResult::fromInitiationError($response, null);
+            }
             return $this->mapChargeResponse($response);
         } catch (\Throwable $e) {
             Log::error('PaystackGateway::charge failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown(null);
         }
     }
 
@@ -76,10 +79,15 @@ class PaystackGateway implements PaymentGatewayInterface
                 'reason' => 'Shortzz withdrawal',
                 'reference' => $reference,
             ]);
+            if (!$response->successful()) {
+                return GatewayResult::fromInitiationError($response, $reference);
+            }
             return $this->mapTransferResponse($response);
         } catch (\Throwable $e) {
+            // Recipient creation failing is caught by the explicit check
+            // above; a throw here may have come from the transfer call itself.
             Log::error('PaystackGateway::payout failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown($reference);
         }
     }
 
@@ -87,18 +95,25 @@ class PaystackGateway implements PaymentGatewayInterface
     {
         try {
             $response = $this->client()->get('/transfer/verify/' . $reference);
+            if (!$response->successful()) {
+                return GatewayResult::fromVerifyError($response, $reference);
+            }
             return $this->mapTransferResponse($response);
         } catch (\Throwable $e) {
             Log::error('PaystackGateway::verify failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown($reference);
         }
     }
 
+    // verify() is the transfer lookup on Paystack.
+    public function verifyPayout(string $reference): array
+    {
+        return $this->verify($reference);
+    }
+
+    // Both mappers only ever see a 2xx — HTTP errors go through GatewayResult.
     private function mapChargeResponse($response): array
     {
-        if (!$response->successful()) {
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => $response->json('message')];
-        }
         $status = $response->json('data.status');
         // 'pay_offline'/'send_otp'/'pending' all mean "customer must approve
         // on their phone" — confirm the exact set of in-flight status
@@ -115,9 +130,6 @@ class PaystackGateway implements PaymentGatewayInterface
 
     private function mapTransferResponse($response): array
     {
-        if (!$response->successful()) {
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => $response->json('message')];
-        }
         $status = $response->json('data.status');
         $mapped = $status === 'success' ? 'completed' : ($status === 'failed' || $status === 'reversed' ? 'failed' : 'processing');
         return [

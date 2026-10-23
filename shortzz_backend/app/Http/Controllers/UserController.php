@@ -7,12 +7,14 @@ use App\Models\Followers;
 use App\Services\AccountDeleter;
 use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
+use App\Models\RedeemRequests;
 use App\Models\UserAuthTokens;
 use App\Models\UserBlocks;
 use App\Models\UserLinks;
 use App\Models\UsernameRestrictions;
 use App\Models\Users;
 use App\Models\VerificationCode;
+use App\Services\Wallet\WalletLedger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -427,6 +429,21 @@ class UserController extends Controller
         // pure write-on-read overhead, not something this read needs.
 
         $dataUser = GlobalFunction::prepareUserFullData($dataUser->id);
+
+        // The full row is only ever the owner's. This endpoint is open to
+        // guests and used to return every column of whoever was asked for —
+        // email, phone number, GPS position, coin balances — to anyone holding
+        // the app's (public) API key.
+        if ($user->id != $dataUser->id) {
+            $dataUser->makeHidden(array_values(array_diff(
+                array_keys($dataUser->getAttributes()),
+                explode(',', Constants::otherUserProfileFields)
+            )));
+        } else {
+            // The owner also sees how much of their earnings can be withdrawn
+            // now and how much is still inside the hold window.
+            $dataUser->forceFill(WalletLedger::summary((int) $dataUser->id));
+        }
 
         // Check follow status (single query reused for both directions'
         // worth of state — this used to run the "am I following them" query
@@ -944,6 +961,15 @@ class UserController extends Controller
         if ($user->password != null && !Hash::check($request->password ?? '', $user->password)) {
             return GlobalFunction::sendSimpleResponse(false, 'incorrect_password');
         }
+        // A payout in flight still needs its owner: a failed or rejected one
+        // refunds to this account, and the admin settling it must be able to
+        // see who it is for.
+        $openWithdrawal = RedeemRequests::where('user_id', $user->id)
+            ->whereIn('status', [Constants::withdrawalPending, Constants::withdrawalProcessing])
+            ->exists();
+        if ($openWithdrawal) {
+            return GlobalFunction::sendSimpleResponse(false, 'You have a withdrawal in progress. Please wait until it is completed before deleting your account.');
+        }
         GlobalFunction::deleteUserAccount($user);
         $user->delete();
          return GlobalFunction::sendSimpleResponse(true, 'account deleted successfully');
@@ -1097,12 +1123,23 @@ class UserController extends Controller
             $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->file('profile_photo'));
         }
 
-        $settings = GlobalSettings::first();
-        if ($settings != null && $settings->registration_bonus_status == 1) {
-            $user->coin_wallet = $settings->registration_bonus_amount;
-            $user->coin_collected_lifetime = $settings->registration_bonus_amount;
-        }
+        // The registration bonus is granted in respondWithUserData, once the
+        // row exists, through the wallet ledger.
         return $user;
+    }
+
+    // Sign-up bonus coins cost nothing, so they are recorded at zero value: a
+    // new user can try gifting with them, but a gift of them pays nobody — so
+    // farming throwaway accounts for bonuses has nothing to cash out. Keyed per
+    // user, so a retried registration response cannot grant it twice.
+    private function grantRegistrationBonus($user): void
+    {
+        $settings = GlobalSettings::first();
+        $amount = (int) ($settings->registration_bonus_amount ?? 0);
+        if ($settings == null || $settings->registration_bonus_status != 1 || $amount <= 0 || $user->is_dummy == 1) {
+            return;
+        }
+        WalletLedger::creditCoins((int) $user->id, $amount, 0, WalletLedger::TYPE_BONUS_REGISTRATION, 'bonus:registration:' . $user->id);
     }
 
     // Stamps device fields, issues a fresh auth token and returns the full
@@ -1113,9 +1150,13 @@ class UserController extends Controller
         $user->device = $request->device;
         $user->login_method = $request->login_method;
         $user->save();
+        if ($newRegister) {
+            $this->grantRegistrationBonus($user);
+        }
 
         $token = GlobalFunction::generateUserAuthToken($user);
         $user = GlobalFunction::prepareUserFullData($user->id);
+        $user->forceFill(WalletLedger::summary((int) $user->id));
         $user->new_register = $newRegister;
         $user->token = $token;
         $user->following_ids = GlobalFunction::fetchUserFollowingIds($user->id);

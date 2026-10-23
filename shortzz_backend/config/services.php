@@ -42,4 +42,14 @@ return [
      */
     'notification_topic' => env('NOTIFICATION_TOPIC', 'silitibum'),
 
+    /*
+     * Coin-pack purchases are credited from RevenueCat (RevenueCatCoinSync).
+     * Sandbox and test-store purchases cost nothing, yet credited coins turn
+     * into creators' withdrawable earnings when gifted, so they are only ever
+     * credited where this is explicitly switched on (local/testing).
+     */
+    'revenuecat' => [
+        'allow_sandbox' => (bool) env('RC_ALLOW_SANDBOX', false),
+    ],
+
 ];

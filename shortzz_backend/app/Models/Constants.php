@@ -69,6 +69,12 @@ final class Constants
     // an arbitrary push through misc/pushNotificationToSingleUser.
     const userPublicFields= 'id,username,fullname,bio,profile_photo,is_verify,device,device_token,app_language,notify_post_like,notify_post_comment,notify_follow,notify_mention,notify_gift_received,notify_chat,notify_new_post,coin_collected_lifetime,total_post_likes_count,following_count,follower_count,receive_message';
 
+    // Everything another person's profile screen may show: the public fields
+    // plus the visibility switches it renders (frozen banner, hidden
+    // following list). Anything else on tbl_users — identity, email, phone,
+    // location, wallet and earnings — is the owner's alone.
+    const otherUserProfileFields = Constants::userPublicFields . ',is_freez,show_my_following,who_can_view_post';
+
     const postsWithArray = ['images','music','user.links','user.stories','user:'.Constants::userPublicFields];
 
 }

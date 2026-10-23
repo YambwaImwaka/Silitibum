@@ -35,6 +35,7 @@ class GlobalSettings extends Model
     protected $hidden = [
         'dpo_company_token',
         'lenco_api_key',
+        'lenco_account_id',
         'paystack_secret_key',
         'flutterwave_secret_key',
         // Internal watermarks for posts:rollup-engagement. Not secret, just

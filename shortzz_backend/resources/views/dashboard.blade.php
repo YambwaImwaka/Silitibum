@@ -186,12 +186,10 @@
         <div class="card">
             <div class="card-header border-bottom">
                 <h4 class="header-title mb-0">{{__('Revenue')}}</h4>
-                {{-- Stated plainly: there is no coin-transaction ledger in the
-                     schema, so gift coins can only be counted from livestream
-                     gift events and exclude gifts sent on posts. --}}
                 <p class="text-muted mb-0 mt-1 fs-6">
-                    {{__('Top-ups and payouts are exact. Gift coins are an estimate from livestream gift events only.')}}
+                    {{__('Exact, from the wallet ledger: what fans spent, what creators earned from gifts, the platform commission, and payouts sent.')}}
                 </p>
+                <p class="text-muted mb-0 fs-6" id="revenueOwed"></p>
             </div>
             <div class="card-body">
                 <div dir="ltr">

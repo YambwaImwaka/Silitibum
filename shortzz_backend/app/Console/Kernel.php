@@ -25,6 +25,20 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground();
 
+        // The payout-side twin: automated payouts whose provider webhook never
+        // arrived. Only a provider-confirmed result changes anything.
+        $schedule->command('payouts:reconcile')
+            ->everyFiveMinutes()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        // Proves every wallet balance against the ledger; a mismatch is
+        // logged as an error (something changed money outside WalletLedger).
+        $schedule->command('wallet:reconcile')
+            ->dailyAt('03:30')
+            ->withoutOverlapping()
+            ->runInBackground();
+
         // TranscodeVideoJob only launches ffmpeg and records its PID (a
         // queued job can't safely wait out an encode — see that class); this
         // is what actually notices completion/failure/hangs and uploads the

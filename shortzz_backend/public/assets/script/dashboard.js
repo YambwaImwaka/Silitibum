@@ -189,8 +189,8 @@ $(document).ready(function () {
             const revenueChart = new ApexCharts(
                 document.querySelector('#chart-revenue'),
                 timeSeriesOptions(
-                    [BRAND.success, BRAND.danger, BRAND.theme],
-                    ['Top-ups', 'Payouts', 'Gift Coins (est.)'],
+                    [BRAND.success, BRAND.info, BRAND.theme, BRAND.danger],
+                    ['Fan spend', 'Creator earnings', 'Platform commission', 'Payouts'],
                     (value) => {
                         if (value === null || value === undefined) return '0';
                         return `${revenueCurrency}${value.toLocaleString()}`;
@@ -237,10 +237,17 @@ $(document).ready(function () {
                     revenueCurrency = payload.currency ? `${payload.currency} ` : '';
                     const pick = (key) => rows.map((r) => ({ x: r.date, y: r[key] }));
                     revenueChart.updateSeries([
-                        { name: 'Top-ups', data: pick('topUps') },
+                        { name: 'Fan spend', data: pick('fanSpend') },
+                        { name: 'Creator earnings', data: pick('creatorEarnings') },
+                        { name: 'Platform commission', data: pick('commission') },
                         { name: 'Payouts', data: pick('payouts') },
-                        { name: 'Gift Coins (est.)', data: pick('giftCoins') },
                     ]);
+                    if (payload.owed) {
+                        $('#revenueOwed').text(
+                            `Owed now: ${revenueCurrency}${Number(payload.owed.earnings).toLocaleString()} unpaid creator earnings · ` +
+                            `${revenueCurrency}${Number(payload.owed.coins).toLocaleString()} in fans' unspent coins`
+                        );
+                    }
                 });
             }
 

@@ -2,53 +2,60 @@
 
 namespace App\Console\Commands;
 
+use App\Jobs\TranscodeVideoJob;
 use App\Models\GlobalFunction;
 use App\Models\Posts;
+use App\Services\Video\VideoTranscoder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-// The other half of TranscodeVideoJob: that job only *launches* a detached
-// ffmpeg process and records its PID (see that class for why it can't wait
-// for the encode to finish). This command, run every minute, is what
-// actually notices a transcode finished, failed, or hung, and does the
-// upload-to-storage + DB update that turns a raw MP4 post into an
-// adaptive-bitrate HLS one.
+// Drives video transcoding, one encode at a time. Every minute (never
+// overlapping itself — see Console\Kernel) it:
+//   1. checks the encode in progress (video_status=1): uploads finished HLS
+//      output, fails dead or hung runs, and cleans up encodes of posts that
+//      were deleted meanwhile (those used to sit "transcoding" forever, since
+//      a plain query never sees soft-deleted posts);
+//   2. if nothing is encoding, starts the oldest queued post (status 4).
+// Only one ffmpeg at a time because this hosting account's process/thread
+// limit makes concurrent encodes fail outright (see TranscodeVideoJob).
 class PollTranscodeStatus extends Command
 {
     protected $signature = 'videos:poll-transcode-status';
 
-    protected $description = 'Check in-progress video transcodes (video_status=1): upload finished HLS output, fail hung/dead ones, leave the rest for the next run.';
+    protected $description = 'Finish or fail the running video transcode, then start the next queued one (one at a time).';
 
     // A short reel/feed-video encode at -preset veryfast should finish in
     // well under this; treated as a hard failure past this point so a
-    // wedged/OOM-killed-but-zombie ffmpeg (or one that somehow never wrote
-    // output) can't leave a post stuck "transcoding" forever.
+    // wedged/OOM-killed-but-zombie ffmpeg can't leave a post stuck
+    // "transcoding" (and block the queue) forever.
     private const TIMEOUT_MINUTES = 20;
 
-    public function handle(): int
+    public function handle(VideoTranscoder $transcoder): int
     {
-        $inProgress = Posts::where('video_status', 1)->get();
-        if ($inProgress->isEmpty()) {
-            $this->info('Nothing in progress.');
-            return self::SUCCESS;
-        }
-
         $uploaded = 0;
         $failed = 0;
         $stillRunning = 0;
 
-        foreach ($inProgress as $post) {
+        foreach (Posts::withTrashed()->where('video_status', 1)->get() as $post) {
             $workDir = storage_path("app/transcode/{$post->id}");
             $pid = $post->transcode_pid;
-            $alive = $pid && file_exists("/proc/{$pid}");
+            $alive = $transcoder->isAlive($pid);
+
+            if ($post->trashed()) {
+                if ($alive) {
+                    $transcoder->kill((int) $pid);
+                }
+                $this->abandon($post, $workDir);
+                continue;
+            }
 
             if ($alive) {
                 $startedAt = $post->transcode_started_at;
                 if ($startedAt !== null && now()->diffInMinutes($startedAt) > self::TIMEOUT_MINUTES) {
                     $this->warn("post {$post->id}: transcode exceeded " . self::TIMEOUT_MINUTES . "min, killing pid {$pid}");
-                    $this->killProcess($pid);
+                    $transcoder->kill((int) $pid);
                     $this->failPost($post, $workDir, 'timed out');
                     $failed++;
                 } else {
@@ -72,17 +79,23 @@ class PollTranscodeStatus extends Command
             }
         }
 
-        $this->info("Done. uploaded={$uploaded} failed={$failed} still-running={$stillRunning}");
-        return self::SUCCESS;
-    }
-
-    private function killProcess(int $pid): void
-    {
-        if (function_exists('posix_kill')) {
-            posix_kill($pid, 9);
-        } else {
-            exec('kill -9 ' . escapeshellarg((string) $pid));
+        $started = 0;
+        if ($stillRunning === 0) {
+            $next = Posts::where('video_status', TranscodeVideoJob::STATUS_QUEUED)->orderBy('id')->first();
+            if ($next !== null) {
+                if (empty($next->video)) {
+                    $next->video_status = 3;
+                    $next->save();
+                } elseif ($transcoder->launch($next)) {
+                    $started = 1;
+                    $this->info("post {$next->id}: transcode started");
+                }
+            }
         }
+
+        $queued = Posts::where('video_status', TranscodeVideoJob::STATUS_QUEUED)->count();
+        $this->info("Done. uploaded={$uploaded} failed={$failed} still-running={$stillRunning} started={$started} queued={$queued}");
+        return self::SUCCESS;
     }
 
     private function hasValidOutput(string $workDir): bool
@@ -150,5 +163,17 @@ class PollTranscodeStatus extends Command
         if (is_dir($workDir)) {
             File::deleteDirectory($workDir);
         }
+    }
+
+    // The post was deleted while (or before) it encoded: nothing to publish.
+    private function abandon(Posts $post, string $workDir): void
+    {
+        $post->video_status = 3;
+        $post->transcode_pid = null;
+        $post->save();
+        if (is_dir($workDir)) {
+            File::deleteDirectory($workDir);
+        }
+        $this->line("post {$post->id}: deleted — encode abandoned and cleaned up");
     }
 }

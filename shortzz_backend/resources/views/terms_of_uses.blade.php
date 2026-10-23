@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="zxx" dir="ltr" class="light">
+<html lang="en" dir="ltr" class="light">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="">
+    <meta name="description" content="The terms that apply when you use {{ $appName }}.">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ __('termsOfUses')}}</title>
+    <title>{{ __('Terms of Use') }} &middot; {{ $appName }}</title>
     <link rel="icon" type="image/png" href="{{ asset('assets/img/favicon.png') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">

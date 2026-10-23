@@ -3,7 +3,9 @@
 namespace App\Services\Payments;
 
 use App\Models\CoinTopUpRequests;
-use App\Models\Users;
+use App\Services\Wallet\Money;
+use App\Services\Wallet\WalletLedger;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 // The single place a web top-up is allowed to move from non-final to final and
@@ -37,27 +39,44 @@ class TopUpReconciler
     /// second), so a `if (status === completed) return;` guard lets every
     /// delivery through before any of them has written. One conditional UPDATE
     /// decides the winner, and only the winner credits.
+    ///
+    /// A provider-confirmed payment also rescues a row previously marked
+    /// 'failed'. Until GatewayResult existed, a status check that merely timed
+    /// out was recorded as a failure, so 'failed' rows can hide real payments;
+    /// the provider saying the money arrived outranks our earlier guess. Only
+    /// 'completed' is final in that direction.
     public static function apply(CoinTopUpRequests $topup, string $verifiedStatus): bool
     {
         if ($verifiedStatus === 'completed') {
-            $claimed = CoinTopUpRequests::where('id', $topup->id)
-                ->whereNotIn('status', ['completed', 'failed'])
-                ->update(['status' => 'completed', 'updated_at' => now()]);
+            // Claim and credit commit together: a crash between them can
+            // neither leave a 'completed' top-up without its coins nor let a
+            // retry credit twice (the ledger key topup:{id} is the backstop).
+            $credited = DB::transaction(function () use ($topup) {
+                $claimed = CoinTopUpRequests::where('id', $topup->id)
+                    ->where('status', '!=', 'completed')
+                    ->update(['status' => 'completed', 'updated_at' => now()]);
+                if ($claimed !== 1) {
+                    return false; // a concurrent delivery already credited it
+                }
+                if ($topup->user_id === null) {
+                    return false; // the buyer deleted their account meanwhile
+                }
+                // The coins carry what was paid for them; that is what a gift
+                // of them is worth to the creator who receives it.
+                return WalletLedger::creditCoins(
+                    (int) $topup->user_id,
+                    (int) $topup->coins,
+                    Money::toUnits((string) $topup->amount),
+                    WalletLedger::TYPE_PURCHASE_TOPUP,
+                    'topup:' . $topup->id,
+                    ['topup_id' => $topup->id]
+                );
+            });
 
-            if ($claimed !== 1) {
-                return false; // a concurrent delivery already credited it
+            if ($credited) {
+                Log::info("TopUpReconciler: credited {$topup->coins} coins to user {$topup->user_id} for top-up {$topup->id}");
             }
-
-            // incrementEach() is a single `SET col = col + n` statement, so
-            // two credits landing at once cannot clobber one another the way
-            // read-modify-write through the model could.
-            Users::where('id', $topup->user_id)->incrementEach([
-                'coin_wallet' => $topup->coins,
-                'coin_purchased_lifetime' => $topup->coins,
-            ]);
-
-            Log::info("TopUpReconciler: credited {$topup->coins} coins to user {$topup->user_id} for top-up {$topup->id}");
-            return true;
+            return $credited;
         }
 
         if ($verifiedStatus === 'failed') {

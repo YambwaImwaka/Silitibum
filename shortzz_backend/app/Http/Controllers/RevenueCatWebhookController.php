@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CoinPackages;
 use App\Models\Users;
+use App\Services\Payments\RevenueCatCoinSync;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -20,7 +22,14 @@ use Illuminate\Support\Facades\Log;
 class RevenueCatWebhookController extends Controller
 {
     private const GRANTS = ['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE'];
-    private const REVOKES = ['CANCELLATION', 'EXPIRATION', 'BILLING_ISSUE'];
+
+    // Only EXPIRATION ends access. CANCELLATION fires the moment a subscriber
+    // turns auto-renew off — they have still paid through the period — and
+    // BILLING_ISSUE opens a grace period that EXPIRATION closes if it lapses.
+    // Both used to strip the badge immediately. A refund (CANCELLATION with
+    // cancel_reason CUSTOMER_SUPPORT) is the one cancellation that ends
+    // access now.
+    private const REVOKES = ['EXPIRATION'];
 
     public function handle(Request $request)
     {
@@ -48,10 +57,22 @@ class RevenueCatWebhookController extends Controller
             return response()->json(['status' => true]);
         }
 
+        // Coin packs are consumables, not the badge subscription: buying or
+        // refunding one must never touch is_verify (a coin refund arrives as
+        // a CANCELLATION too). Instead the purchase list is synced — the
+        // guaranteed path that credits a purchase even when the app never got
+        // to call buyCoins, and takes back a refunded one. Idempotent, so the
+        // app's own call and every redelivery are harmless.
+        if ($type === 'NON_RENEWING_PURCHASE' || $this->isCoinProduct($event['product_id'] ?? null)) {
+            RevenueCatCoinSync::syncCustomer($user->id);
+            return response()->json(['status' => true]);
+        }
+
+        $isRefund = $type === 'CANCELLATION' && ($event['cancel_reason'] ?? null) === 'CUSTOMER_SUPPORT';
         if (in_array($type, self::GRANTS)) {
             $user->is_verify = 1;
             $user->save();
-        } elseif (in_array($type, self::REVOKES)) {
+        } elseif (in_array($type, self::REVOKES) || $isRefund) {
             $user->is_verify = 0;
             $user->save();
         }
@@ -59,5 +80,15 @@ class RevenueCatWebhookController extends Controller
         // intentionally ignored — they don't change verified-badge state.
 
         return response()->json(['status' => true]);
+    }
+
+    private function isCoinProduct(?string $productId): bool
+    {
+        if (empty($productId)) {
+            return false;
+        }
+        return CoinPackages::where('playstore_product_id', $productId)
+            ->orWhere('appstore_product_id', $productId)
+            ->exists();
     }
 }

@@ -71,7 +71,7 @@ class DpoGateway implements PaymentGatewayInterface
             return ['success' => true, 'status' => 'processing', 'provider_reference' => $token, 'message' => 'push_sent'];
         } catch (\Throwable $e) {
             Log::error('DpoGateway::charge failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown(null);
         }
     }
 
@@ -96,24 +96,28 @@ class DpoGateway implements PaymentGatewayInterface
 
             $response = Http::withBody($xml, 'application/xml')->post($this->baseUrl);
             $data = @simplexml_load_string($response->body());
-            if ($data === false) {
-                return ['success' => false, 'status' => 'failed', 'provider_reference' => $reference, 'message' => 'parse_error'];
+            if (!$response->successful() || $data === false) {
+                return GatewayResult::unknown($reference, 'unreadable_status_response');
             }
             $result = (string) $data->Result;
             // Confirmed codes (docs): 000 paid, 001 authorized, 900 not
             // paid yet, 901 declined, 903 past time limit, 904 cancelled.
-            $mapped = in_array($result, ['000', '001']) ? 'completed'
-                : ($result === '900' ? 'processing' : 'failed');
-            return [
-                'success' => $mapped === 'completed',
-                'status' => $mapped,
-                'provider_reference' => $reference,
-                'message' => (string) ($data->ResultExplanation ?? null),
-            ];
+            // Only those last three are verdicts. Any other code is an error
+            // about the REQUEST (bad token, missing field), which says nothing
+            // about whether the customer paid.
+            $mapped = in_array($result, ['000', '001']) ? GatewayResult::COMPLETED
+                : (in_array($result, ['901', '903', '904']) ? GatewayResult::FAILED : GatewayResult::PROCESSING);
+            return GatewayResult::make($mapped, $reference, (string) ($data->ResultExplanation ?? null));
         } catch (\Throwable $e) {
             Log::error('DpoGateway::verify failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => $reference, 'message' => 'gateway_error'];
+            return GatewayResult::unknown($reference);
         }
+    }
+
+    // DPO makes no payouts, so there is never a DPO transfer to look up.
+    public function verifyPayout(string $reference): array
+    {
+        return GatewayResult::unknown($reference, 'not_supported');
     }
 
     private function createToken(float $amount, string $currency, string $reference): ?string

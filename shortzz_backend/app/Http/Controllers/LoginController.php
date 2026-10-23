@@ -63,6 +63,6 @@ class LoginController extends Controller
         session()->pull('username');
         session()->pull('user_type');
         session()->pull('userpassword');
-        return redirect(url('/'));
+        return redirect(route('admin.login'));
     }
 }

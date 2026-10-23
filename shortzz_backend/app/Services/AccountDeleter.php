@@ -65,12 +65,10 @@ class AccountDeleter
         }
 
         DB::transaction(function () use ($userId, $user) {
-            // De-identify money records FIRST. Two reasons this must precede
-            // the shared routine: that routine deletes RedeemRequests
-            // outright, and once user_id is null its where('user_id', $id)
-            // no longer matches — so this both preserves the audit trail and
-            // neutralises the delete, without editing shared code that the
-            // in-app deletion flow also depends on.
+            // De-identify money records FIRST. The shared routine now does
+            // the same (it used to delete RedeemRequests outright), so this is
+            // belt and braces: the audit trail survives even if that routine
+            // changes again.
             CoinTopUpRequests::where('user_id', $userId)->update(['user_id' => null]);
             RedeemRequests::where('user_id', $userId)->update(['user_id' => null]);
 

@@ -23,9 +23,15 @@ interface PaymentGatewayInterface
     // shape as charge().
     public function payout(string $phone, float $amount, string $currency, string $reference): array;
 
-    // Re-checks a previously-initiated charge or payout by OUR reference
-    // (not the provider's) — used both for manual admin re-checks and, where
-    // a provider's webhook payload is thin, to confirm details server-side
-    // rather than trusting the webhook body alone. Same result shape.
+    // Re-checks a previously-initiated CHARGE by OUR reference (not the
+    // provider's) — used by the top-up webhook and the topups:reconcile sweep
+    // to confirm a payment server-side rather than trusting a webhook body.
+    // Same result shape; see GatewayResult for what 'failed' may mean.
     public function verify(string $reference): array;
+
+    // Re-checks a previously-initiated PAYOUT by our reference. Separate from
+    // verify() because providers keep transfers and collections apart (Lenco:
+    // /transfers/status vs /collections/status) — asking the wrong one says
+    // "not found" about a transfer that exists.
+    public function verifyPayout(string $reference): array;
 }

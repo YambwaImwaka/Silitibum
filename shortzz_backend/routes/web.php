@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\HashtagController;
 use App\Http\Controllers\LanguageController;
 use App\Http\Controllers\LoginController;
+use App\Http\Controllers\MonetizationController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PaymentWebhookController;
@@ -47,7 +48,10 @@ Route::get('/linkstorage', function () {
     return 'storage:link done';
 })->middleware(['checkLogin']);
 
-Route::get('/', [LoginController::class, 'login'])->name('/');
+// The root is the public landing page; the admin login moved to /admin so it
+// is no longer what search engines index as the site's homepage.
+Route::get('/', [SettingsController::class, 'home'])->name('home');
+Route::get('admin', [LoginController::class, 'login'])->name('admin.login');
 // Throttled: the admin username is the well-known default, so an unthrottled
 // form was an open brute-force target. See RouteServiceProvider 'admin-login'.
 Route::post('loginForm', [LoginController::class, 'checkLogin'])->middleware('throttle:admin-login')->name('loginForm');
@@ -135,10 +139,10 @@ Route::middleware(['checkLogin'])->group(function () {
 
     // Settings
     Route::get('setting', [SettingsController::class, 'settings'])->name('setting');
-    Route::post('saveSettings', [SettingsController::class, 'saveSettings'])->name('saveSettings');
+    Route::post('saveSettings', [SettingsController::class, 'saveSettings'])->name('saveSettings')->middleware('fullAdmin');
 
     Route::post('saveContentModerationSettings', [SettingsController::class, 'saveContentModerationSettings'])->name('saveContentModerationSettings');
-    Route::post('savePaymentProviderSettings', [SettingsController::class, 'savePaymentProviderSettings'])->name('savePaymentProviderSettings');
+    Route::post('savePaymentProviderSettings', [SettingsController::class, 'savePaymentProviderSettings'])->name('savePaymentProviderSettings')->middleware('fullAdmin');
     Route::post('saveGIFSettings', [SettingsController::class, 'saveGIFSettings'])->name('saveGIFSettings');
     Route::post('saveDeepARSettings', [SettingsController::class, 'saveDeepARSettings'])->name('saveDeepARSettings');
     Route::post('saveBasicSettings', [SettingsController::class, 'saveBasicSettings'])->name('saveBasicSettings');
@@ -202,7 +206,7 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('deletePost_Admin', [PostsController::class, 'deletePost_Admin'])->name('deletePost_Admin');
     Route::get('editUser/{id}', [UserController::class, 'editUser'])->name('editUser');
     Route::post('updateUser', [UserController::class, 'updateUser'])->name('updateUser');
-    Route::post('addCoinsToUserWallet_FromAdmin', [WalletController::class, 'addCoinsToUserWallet_FromAdmin'])->name('addCoinsToUserWallet_FromAdmin');
+    Route::post('addCoinsToUserWallet_FromAdmin', [WalletController::class, 'addCoinsToUserWallet_FromAdmin'])->name('addCoinsToUserWallet_FromAdmin')->middleware('fullAdmin');
 
     Route::get('createDummyUser', [UserController::class, 'createDummyUser'])->name('createDummyUser');
     Route::post('addDummyUser', [UserController::class, 'addDummyUser'])->name('addDummyUser');
@@ -227,19 +231,26 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::post('listPendingWithdrawals', [WalletController::class, 'listPendingWithdrawals'])->name('listPendingWithdrawals');
     Route::post('listCompletedWithdrawals', [WalletController::class, 'listCompletedWithdrawals'])->name('listCompletedWithdrawals');
     Route::post('listRejectedWithdrawals', [WalletController::class, 'listRejectedWithdrawals'])->name('listRejectedWithdrawals');
-    Route::post('completeWithdrawal', [WalletController::class, 'completeWithdrawal'])->name('completeWithdrawal');
-    Route::post('rejectWithdrawal', [WalletController::class, 'rejectWithdrawal'])->name('rejectWithdrawal');
+    Route::post('completeWithdrawal', [WalletController::class, 'completeWithdrawal'])->name('completeWithdrawal')->middleware('fullAdmin');
+    Route::post('rejectWithdrawal', [WalletController::class, 'rejectWithdrawal'])->name('rejectWithdrawal')->middleware('fullAdmin');
     Route::post('listProcessingWithdrawals', [WalletController::class, 'listProcessingWithdrawals'])->name('listProcessingWithdrawals');
     Route::post('listFailedWithdrawals', [WalletController::class, 'listFailedWithdrawals'])->name('listFailedWithdrawals');
-    Route::post('recheckWithdrawal', [WalletController::class, 'recheckWithdrawal'])->name('recheckWithdrawal');
-    Route::post('retryWithdrawal', [WalletController::class, 'retryWithdrawal'])->name('retryWithdrawal');
+    Route::post('recheckWithdrawal', [WalletController::class, 'recheckWithdrawal'])->name('recheckWithdrawal')->middleware('fullAdmin');
+    Route::post('retryWithdrawal', [WalletController::class, 'retryWithdrawal'])->name('retryWithdrawal')->middleware('fullAdmin');
+
+    // Creator earnings (WalletLedger / CreatorProgram)
+    Route::post('approveWithdrawal', [WalletController::class, 'approveWithdrawal'])->name('approveWithdrawal')->middleware('fullAdmin');
+    Route::post('adjustUserEarnings_FromAdmin', [WalletController::class, 'adjustUserEarnings_FromAdmin'])->name('adjustUserEarnings_FromAdmin')->middleware('fullAdmin');
+    Route::post('listUserWalletTransactions', [WalletController::class, 'listUserWalletTransactions'])->name('listUserWalletTransactions');
+    Route::post('saveMonetizationSettings', [MonetizationController::class, 'saveMonetizationSettings'])->name('saveMonetizationSettings')->middleware('fullAdmin');
+    Route::post('updateCreatorProfile_Admin', [MonetizationController::class, 'updateCreatorProfile'])->name('updateCreatorProfile_Admin')->middleware('fullAdmin');
 
     // Coin Packages
     Route::get('coinPackages', [WalletController::class, 'coinPackages'])->name('coinPackages');
-    Route::post('addCoinPackage', [WalletController::class, 'addCoinPackage'])->name('addCoinPackage');
-    Route::post('deleteCoinPackage', [WalletController::class, 'deleteCoinPackage'])->name('deleteCoinPackage');
-    Route::post('editCoinPackage', [WalletController::class, 'editCoinPackage'])->name('editCoinPackage');
-    Route::post('changeCoinPackageStatus', [WalletController::class, 'changeCoinPackageStatus'])->name('changeCoinPackageStatus');
+    Route::post('addCoinPackage', [WalletController::class, 'addCoinPackage'])->name('addCoinPackage')->middleware('fullAdmin');
+    Route::post('deleteCoinPackage', [WalletController::class, 'deleteCoinPackage'])->name('deleteCoinPackage')->middleware('fullAdmin');
+    Route::post('editCoinPackage', [WalletController::class, 'editCoinPackage'])->name('editCoinPackage')->middleware('fullAdmin');
+    Route::post('changeCoinPackageStatus', [WalletController::class, 'changeCoinPackageStatus'])->name('changeCoinPackageStatus')->middleware('fullAdmin');
     Route::post('listCoinPackages', [WalletController::class, 'listCoinPackages'])->name('listCoinPackages');
 
     // Dummy Lives admin panel removed. The DummyLiveVideos model and its table
@@ -307,9 +318,9 @@ Route::middleware(['checkLogin'])->group(function () {
 
     // Gifts
     Route::get('gifts', [WalletController::class, 'gifts'])->name('gifts');
-    Route::post('addGift', [WalletController::class, 'addGift'])->name('addGift');
-    Route::post('editGift', [WalletController::class, 'editGift'])->name('editGift');
-    Route::post('deleteGift', [WalletController::class, 'deleteGift'])->name('deleteGift');
+    Route::post('addGift', [WalletController::class, 'addGift'])->name('addGift')->middleware('fullAdmin');
+    Route::post('editGift', [WalletController::class, 'editGift'])->name('editGift')->middleware('fullAdmin');
+    Route::post('deleteGift', [WalletController::class, 'deleteGift'])->name('deleteGift')->middleware('fullAdmin');
 
     // App Languages
     Route::get('languages', [LanguageController::class, 'languages'])->name('language/index');

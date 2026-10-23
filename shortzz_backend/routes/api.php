@@ -171,6 +171,13 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('fetchMyWithdrawalRequest', [WalletController::class, 'fetchMyWithdrawalRequest'])->middleware('authorizeUser');
         Route::post('buyCoins', [WalletController::class, 'buyCoins'])->middleware('authorizeUser');
 
+        // Creator earnings (see WalletLedger / CreatorProgram)
+        Route::post('fetchWalletTransactions', [WalletController::class, 'fetchWalletTransactions'])->middleware('authorizeUser');
+        Route::post('fetchCreatorStatus', [WalletController::class, 'fetchCreatorStatus'])->middleware('authorizeUser');
+        // Each save looks the number up with the payout provider; capped per
+        // user so the endpoint cannot be used to probe numbers.
+        Route::post('savePayoutAccount', [WalletController::class, 'savePayoutAccount'])->middleware(['authorizeUser', 'throttle:payout-account']);
+
 
         // Report
         Route::post('reportPost', [ReportController::class, 'reportPost'])->middleware('authorizeUser');

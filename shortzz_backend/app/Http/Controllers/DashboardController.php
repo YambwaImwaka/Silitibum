@@ -22,6 +22,7 @@ use App\Models\Users;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 
@@ -166,20 +167,21 @@ class DashboardController extends Controller
     }
 
     /**
-     * Daily money in vs money out, plus an *estimate* of livestream gifting.
+     * Daily money in vs money out, all exact.
      *
-     * Top-ups and payouts are exact — both have their own request tables. Gift
-     * volume is not: there is no coin-transaction ledger anywhere in the schema
-     * (GlobalFunction::transferGiftCoins mutates counters on tbl_users in place
-     * and records nothing), so the only durable trace of a gift is the
-     * livestream comment row that announced it. That covers livestream gifting
-     * only, not gifts sent on posts — hence "estimate", and the UI labels it so.
+     * Fan spend = completed web top-ups + in-app purchases. Creator earnings
+     * and the platform's commission come from the wallet ledger, which records
+     * every gift (on posts, chats and lives alike). Payouts are completed
+     * withdrawals. "Owed" is what the platform currently holds for others:
+     * creators' unpaid earnings and the value of coins not yet gifted.
      */
     function fetchRevenueChartData(Request $request)
     {
         $currency = GlobalSettings::first()?->currency ?? '';
 
-        $series = $this->monthlySeries($request->year, $request->month, 'dashboard_revenue', function ($startDate, $endDate) {
+        // _v2: the row shape changed with the wallet ledger; a cached v1 month
+        // would otherwise feed the new chart old keys for up to 5 minutes.
+        $series = $this->monthlySeries($request->year, $request->month, 'dashboard_revenue_v2', function ($startDate, $endDate) {
             $topUps = CoinTopUpRequests::whereBetween('created_at', [$startDate, $endDate])
                 ->where('status', 'completed')
                 ->selectRaw('DATE(created_at) as d, SUM(amount) as c')
@@ -196,26 +198,40 @@ class DashboardController extends Controller
                 ->groupBy('d')
                 ->pluck('c', 'd');
 
-            $giftCoins = LivestreamComment::whereBetween('livestream_comments.created_at', [$startDate, $endDate])
-                ->where('comment_type', 'GIFT')
-                ->join('tbl_gifts', 'tbl_gifts.id', '=', 'livestream_comments.gift_id')
-                ->selectRaw('DATE(livestream_comments.created_at) as d, SUM(tbl_gifts.coin_price) as c')
+            // From the wallet ledger (exact): in-app purchases, what gifts paid
+            // creators, and the platform's commission on them.
+            $ledger = fn (string $type) => DB::table('wallet_transactions')
+                ->whereBetween('created_at', [$startDate, $endDate])
+                ->where('type', $type)
+                ->selectRaw('DATE(created_at) as d, SUM(amount) as c')
                 ->groupBy('d')
                 ->pluck('c', 'd');
+            $iap = $ledger('purchase_iap');
+            $creatorEarnings = $ledger('gift_received');
+            $commission = $ledger('platform_commission');
 
-            return compact('topUps', 'payouts', 'giftCoins');
+            return compact('topUps', 'payouts', 'iap', 'creatorEarnings', 'commission');
         }, function ($date, $key, $series) {
             return [
                 'date' => $key,
-                'topUps' => round((float) ($series['topUps'][$key] ?? 0), 2),
+                'fanSpend' => round((float) ($series['topUps'][$key] ?? 0) + (float) ($series['iap'][$key] ?? 0), 2),
+                'creatorEarnings' => round((float) ($series['creatorEarnings'][$key] ?? 0), 2),
+                'commission' => round((float) ($series['commission'][$key] ?? 0), 2),
                 'payouts' => round((float) ($series['payouts'][$key] ?? 0), 2),
-                'giftCoins' => (int) ($series['giftCoins'][$key] ?? 0),
             ];
         });
+
+        // What the platform owes right now: creators' unpaid earnings, and the
+        // purchase value of coins fans hold but have not gifted yet.
+        $owed = DB::table('tbl_users')->selectRaw('COALESCE(SUM(earnings_balance), 0) AS earnings, COALESCE(SUM(coin_wallet_value), 0) AS coins')->first();
 
         return GlobalFunction::sendDataResponse(true, 'Revenue fetched successfully.', [
             'currency' => $currency,
             'series' => $series,
+            'owed' => [
+                'earnings' => round((float) $owed->earnings, 2),
+                'coins' => round((float) $owed->coins, 2),
+            ],
         ]);
     }
 

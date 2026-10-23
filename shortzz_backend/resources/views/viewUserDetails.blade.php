@@ -105,19 +105,34 @@ use App\Models\GlobalFunction;
             </div>
         </div>
         {{-- Wallet Card --}}
+        @php
+            $walletSummary = \App\Services\Wallet\WalletLedger::summary((int) $user->id);
+            $creatorProfile = \App\Models\CreatorProfile::find($user->id);
+            $currency = \App\Models\GlobalSettings::first()->currency ?? '';
+        @endphp
         <div class="card">
             <div class="card-header d-flex align-items-center border-bottom">
                 <h4 class="card-title header-title">
                     {{ __('Wallet')}}
                 </h4>
-                <a data-bs-toggle="modal" data-bs-target="#addCoinsModal" class="btn btn-dark ms-auto">{{ __('Add Coins')}}</a>
+                <a data-bs-toggle="modal" data-bs-target="#addCoinsModal" class="btn btn-dark ms-auto">{{ __('Coins')}}</a>
+                <a data-bs-toggle="modal" data-bs-target="#adjustEarningsModal" class="btn btn-outline-dark ms-1">{{ __('Earnings')}}</a>
             </div>
             <div class="text-center">
                 <div class="card-body">
-                    <div>
-                        <h1 class="m-0 text-primary">{{GlobalFunction::formatNumber($user->coin_wallet)}}</h1>
-                        <span class="fs-6">{{__('Balance')}}</span>
+                    <div class="d-flex justify-content-center">
+                        <div style="width: 50%" class="text-center">
+                            <h2 class="m-0 text-primary">{{GlobalFunction::formatNumber($user->coin_wallet)}}</h2>
+                            <span class="fs-6">{{__('Coins (spend-only)')}}</span><br>
+                            <span class="fs-6 text-muted">{{__('worth')}} {{ $currency }}{{ number_format((float) $user->coin_wallet_value, 2) }}</span>
+                        </div>
+                        <div style="width: 50%" class="text-center">
+                            <h2 class="m-0 text-success">{{ $currency }}{{ $walletSummary['earnings_balance'] ?? '0.00' }}</h2>
+                            <span class="fs-6">{{__('Earnings')}}</span><br>
+                            <span class="fs-6 text-muted">{{ $currency }}{{ $walletSummary['earnings_available'] ?? '0.00' }} {{__('available')}} · {{ $currency }}{{ $walletSummary['earnings_on_hold'] ?? '0.00' }} {{__('on hold')}}</span>
+                        </div>
                     </div>
+                    <p class="font-12 mt-2 mb-0 text-muted">{{__('Earned lifetime')}}: {{ $currency }}{{ $walletSummary['earnings_lifetime'] ?? '0.00' }}</p>
                     <div class="d-flex aligh-items-center justify-content-center mt-3">
                         {{-- likes --}}
                         <div style="width: 100px" class="text-center">
@@ -135,9 +150,62 @@ use App\Models\GlobalFunction;
                             <span class="fs-6">{{__('Purchased')}}*</span>
                         </div>
                     </div>
-                    <p class="font-12 mt-2 mb-0">{{__('*lifetime')}}</p>
+                    <p class="font-12 mt-2 mb-0">{{__('*lifetime coins')}}</p>
                 </div>
 
+            </div>
+        </div>
+        {{-- Payout account (Creator Program) --}}
+        <div class="card">
+            <div class="card-header d-flex align-items-center border-bottom">
+                <h4 class="card-title header-title">{{ __('Payout Account')}}</h4>
+            </div>
+            <div class="card-body">
+                @if ($creatorProfile == null)
+                    <p class="text-muted mb-0">{{ __('No payout account registered yet.') }}</p>
+                @else
+                    <div class="row">
+                        <div class="col-4 text-end"><p class="text-muted mb-2 font-13"><strong>{{__('Legal name')}} :</strong></p></div>
+                        <p class="text-muted mb-2 font-13 col-8">{{ $creatorProfile->legal_name }}</p>
+                        <div class="col-4 text-end"><p class="text-muted mb-2 font-13"><strong>{{__('Mobile money')}} :</strong></p></div>
+                        <p class="text-muted mb-2 font-13 col-8">{{ \App\Services\Payments\MobileMoney::label($creatorProfile->payout_operator) }} · {{ $creatorProfile->payout_phone }}</p>
+                        <div class="col-4 text-end"><p class="text-muted mb-2 font-13"><strong>{{__('Registered to')}} :</strong></p></div>
+                        <p class="text-muted mb-2 font-13 col-8">
+                            {{ $creatorProfile->payout_account_name ?? __('not looked up') }}
+                            @if ($creatorProfile->name_match === 'match')
+                                <span class="badge bg-success">{{ __('matches') }}</span>
+                            @elseif ($creatorProfile->name_match === 'mismatch')
+                                <span class="badge bg-danger">{{ __('does not match') }}</span>
+                                @if (!empty($creatorProfile->name_override_by))
+                                    <span class="badge bg-secondary">{{ __('accepted by') }} {{ $creatorProfile->name_override_by }}</span>
+                                @endif
+                            @else
+                                <span class="badge bg-secondary">{{ __('unverified') }}</span>
+                            @endif
+                        </p>
+                        <div class="col-4 text-end"><p class="text-muted mb-2 font-13"><strong>{{__('Status')}} :</strong></p></div>
+                        <p class="text-muted mb-2 font-13 col-8">
+                            {{ $creatorProfile->status }}
+                            @if ($creatorProfile->payout_changed_at)
+                                · {{ __('number changed') }} {{ $creatorProfile->payout_changed_at->diffForHumans() }}
+                            @endif
+                        </p>
+                        @if (!empty($creatorProfile->notes))
+                            <div class="col-4 text-end"><p class="text-muted mb-2 font-13"><strong>{{__('Notes')}} :</strong></p></div>
+                            <p class="text-muted mb-2 font-13 col-8" style="white-space: pre-line">{{ $creatorProfile->notes }}</p>
+                        @endif
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        @if ($creatorProfile->name_match === 'mismatch' && empty($creatorProfile->name_override_by))
+                            <a href="#" class="btn btn-sm btn-outline-success creator-profile-action ms-1" data-action="accept_name">{{ __('Accept name') }}</a>
+                        @endif
+                        @if ($creatorProfile->status === 'suspended')
+                            <a href="#" class="btn btn-sm btn-outline-success creator-profile-action ms-1" data-action="unsuspend">{{ __('Allow payouts') }}</a>
+                        @else
+                            <a href="#" class="btn btn-sm btn-outline-danger creator-profile-action ms-1" data-action="suspend">{{ __('Suspend payouts') }}</a>
+                        @endif
+                    </div>
+                @endif
             </div>
         </div>
         {{-- Other details card --}}
@@ -312,6 +380,10 @@ use App\Models\GlobalFunction;
                                 aria-selected="true">
                                 <span class="d-md-block">{{__('Stories')}}</span>
                             </a>
+                            <a class="nav-link " id="v-pills-ledger-tab" data-bs-toggle="pill" href="#v-pills-ledger" role="tab" aria-controls="v-pills-ledger"
+                                aria-selected="false">
+                                <span class="d-md-block">{{__('Wallet ledger')}}</span>
+                            </a>
                         </div>
                     </h4>
             </div>
@@ -352,6 +424,22 @@ use App\Models\GlobalFunction;
                                     </table>
                                 </div>
                             </div>
+                            {{-- Wallet ledger: every coin and earnings movement --}}
+                            <div class="tab-pane fade " id="v-pills-ledger" role="tabpanel" aria-labelledby="v-pills-ledger-tab">
+                                <div class="table-responsive">
+                                    <table class="table table-centered table-hover w-100 dt-responsive nowrap mt-3" id="userLedgerTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>{{ __('Date')}}</th>
+                                                <th>{{ __('Type')}}</th>
+                                                <th>{{ __('Change')}}</th>
+                                                <th>{{ __('Balance after')}}</th>
+                                                <th>{{ __('Details')}}</th>
+                                            </tr>
+                                        </thead>
+                                    </table>
+                                </div>
+                            </div>
                         </div> <!-- end tab-content-->
                     </div> <!-- end col-->
                 </div>
@@ -368,17 +456,54 @@ use App\Models\GlobalFunction;
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h4 class="modal-title" id="standard-modalLabel">{{ __('Add Coins')}}</h4>
+                <h4 class="modal-title" id="standard-modalLabel">{{ __('Add or Remove Coins')}}</h4>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
             </div>
             <form id="addCoinsForm" method="POST">
                 <input type="hidden" name="user_id" value="{{$user->id}}">
                 <div class="modal-body">
+                    <p class="fs-6 text-muted">{{ __('Coins added here are free: they can be gifted but carry no cash value, so they never become a creator\'s earnings. To pay a creator, use Earnings instead. Use a negative number to remove coins.') }}</p>
                     <div class="mb-3">
                         <label for="coins" class="form-label">{{ __('Coins')}}</label>
-                        <input class="form-control" type="number" min="1" id="coins" name="coins" required>
+                        <input class="form-control" type="number" step="1" id="coins" name="coins" required>
                     </div>
+                    <div class="mb-3">
+                        <label for="coinsReason" class="form-label">{{ __('Reason (kept in the ledger)')}}</label>
+                        <input class="form-control" type="text" maxlength="255" id="coinsReason" name="reason" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Close')}}</button>
+                    <button type="submit" class="btn btn-primary">
+                        <span class="spinner-border spinner-border-sm me-1 spinner hide" role="status" aria-hidden="true"></span>
+                        {{ __('Save')}}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 
+{{-- Adjust Earnings Modal --}}
+<div id="adjustEarningsModal" class="modal fade" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">{{ __('Adjust Earnings')}}</h4>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-hidden="true"></button>
+            </div>
+            <form id="adjustEarningsForm" method="POST">
+                <input type="hidden" name="user_id" value="{{$user->id}}">
+                <div class="modal-body">
+                    <p class="fs-6 text-muted">{{ __('Earnings are real money the creator can withdraw. Positive adds, negative removes (e.g. after proven fraud). The reason is shown to the creator in their history.') }}</p>
+                    <div class="mb-3">
+                        <label for="earningsAmount" class="form-label">{{ __('Amount')}} ({{ \App\Models\GlobalSettings::first()->currency ?? '' }})</label>
+                        <input class="form-control" type="number" step="0.01" id="earningsAmount" name="amount" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="earningsReason" class="form-label">{{ __('Reason')}}</label>
+                        <input class="form-control" type="text" maxlength="255" id="earningsReason" name="reason" required>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-light" data-bs-dismiss="modal">{{ __('Close')}}</button>

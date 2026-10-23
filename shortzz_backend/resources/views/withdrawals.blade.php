@@ -48,7 +48,7 @@
                                         <tr>
                                             <th>{{ __('Request Number')}}</th>
                                             <th>{{ __('User')}}</th>
-                                            <th>{{ __('Coin Details')}}</th>
+                                            <th>{{ __('Amount')}}</th>
                                             <th>{{ __('Payment Details')}}</th>
                                             <th>{{ __('Created Date')}}</th>
                                             <th style="width: 200px;" class="text-end">{{ __('Action')}}</th>
@@ -65,7 +65,7 @@
                                     <tr>
                                         <th>{{ __('Request Number')}}</th>
                                         <th>{{ __('User')}}</th>
-                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Amount')}}</th>
                                         <th>{{ __('Payment Details')}}</th>
                                         <th>{{ __('Created Date')}}</th>
                                     </tr>
@@ -81,7 +81,7 @@
                                     <tr>
                                         <th>{{ __('Request Number')}}</th>
                                         <th>{{ __('User')}}</th>
-                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Amount')}}</th>
                                         <th>{{ __('Payment Details')}}</th>
                                         <th>{{ __('Created Date')}}</th>
                                     </tr>
@@ -97,7 +97,7 @@
                                     <tr>
                                         <th>{{ __('Request Number')}}</th>
                                         <th>{{ __('User')}}</th>
-                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Amount')}}</th>
                                         <th>{{ __('Payment Details')}}</th>
                                         <th>{{ __('Created Date')}}</th>
                                         <th style="width: 100px;" class="text-end">{{ __('Action')}}</th>
@@ -114,7 +114,7 @@
                                     <tr>
                                         <th>{{ __('Request Number')}}</th>
                                         <th>{{ __('User')}}</th>
-                                        <th>{{ __('Coin Details')}}</th>
+                                        <th>{{ __('Amount')}}</th>
                                         <th>{{ __('Payment Details')}}</th>
                                         <th>{{ __('Created Date')}}</th>
                                         <th style="width: 100px;" class="text-end">{{ __('Action')}}</th>

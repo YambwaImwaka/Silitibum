@@ -63,4 +63,9 @@ class ManualGateway implements PaymentGatewayInterface
             'message' => 'awaiting manual settlement',
         ];
     }
+
+    public function verifyPayout(string $reference): array
+    {
+        return $this->verify($reference);
+    }
 }

@@ -1219,4 +1219,41 @@ $(document).ready(function () {
             resetForm('#editOnBoardingScreenForm');
         });
 
+    // Creator Monetization: live "what does a fan's K10 pay out" preview.
+    function updateCreatorSharePreview() {
+        var share = parseInt($("#creator_share_percent").val(), 10);
+        if (isNaN(share) || share < 1 || share > 100) {
+            $("#creatorSharePreview").text("");
+            return;
+        }
+        var currency = ($("#currency").val() || "").trim();
+        $("#creatorSharePreview").text(
+            "A fan spends " + currency + "10.00 on gifts → creator " + currency + (share / 10).toFixed(2) +
+            ", platform " + currency + ((100 - share) / 10).toFixed(2) + " (before store and mobile-money fees)."
+        );
+    }
+    $("#creator_share_percent").on("input", updateCreatorSharePreview);
+    updateCreatorSharePreview();
+
+    $("#monetizationSettingForm").on("submit", function (event) {
+        event.preventDefault();
+        checkUserType(function () {
+            var formId = '#monetizationSettingForm';
+            var formdata = collectFormData(formId);
+            showFormSpinner(formId);
+            doAjax(`${domainUrl}saveMonetizationSettings`, formdata).then(function (response) {
+                hideFormSpinner(formId);
+                if (response.status) {
+                    $("#lenco_account_id").val("");
+                    showSuccessToast(response.message);
+                } else {
+                    showErrorToast(response.message);
+                }
+            }).catch(function (error) {
+                hideFormSpinner(formId);
+                showErrorToast((error.responseJSON && error.responseJSON.message) || 'Could not save the settings.');
+            });
+        });
+    });
+
 });

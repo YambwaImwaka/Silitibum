@@ -58,26 +58,101 @@ $(document).ready(function () {
         },
     });
 
-        $("#addCoinsForm").on("submit", function (e) {
+    // Every coin and earnings movement for this user (WalletLedger).
+    $("#userLedgerTable").DataTable({
+        autoWidth: false,
+        processing: true,
+        serverSide: true,
+        serverMethod: "post",
+        ordering: false,
+        searching: false,
+        language: {
+            paginate: {
+                previous: "<i class='mdi mdi-chevron-left'>",
+                next: "<i class='mdi mdi-chevron-right'>",
+            },
+        },
+        ajax: {
+            url: `${domainUrl}listUserWalletTransactions`,
+            data: function (data) {
+                data.user_id = user_id;
+            },
+            error: (error) => {
+                console.log(error);
+            },
+        },
+        drawCallback: function () {
+            $(".dataTables_paginate > .pagination").addClass(
+                "pagination-rounded"
+            );
+        },
+    });
+
+    // Wallet forms: reload on success; show server errors (validation, or a
+    // 403 for tester accounts) instead of leaving the spinner running.
+    function submitWalletForm(formId, action) {
+        checkUserType(() => {
+            var formdata = collectFormData(formId);
+            showFormSpinner(formId);
+            doAjax(`${domainUrl}${action}`, formdata).then(function (response) {
+                hideFormSpinner(formId);
+                if (response.status) {
+                    location.reload();
+                } else {
+                    showErrorToast(response.message);
+                }
+            }).catch(function (error) {
+                hideFormSpinner(formId);
+                showErrorToast((error.responseJSON && error.responseJSON.message) || 'Something went wrong.');
+            });
+        });
+    }
+
+    $("#addCoinsForm").on("submit", function (e) {
         e.preventDefault();
-            checkUserType(() => {
-                var formId = '#addCoinsForm';
-                var url =  `${domainUrl}addCoinsToUserWallet_FromAdmin`;
-                var formdata = collectFormData(formId);
-                showFormSpinner(formId);
-            try {
-                doAjax(url, formdata).then(function (response){
-                    hideFormSpinner(formId);
-                    if(response.status){
+        submitWalletForm('#addCoinsForm', 'addCoinsToUserWallet_FromAdmin');
+    });
+
+    $("#adjustEarningsForm").on("submit", function (e) {
+        e.preventDefault();
+        submitWalletForm('#adjustEarningsForm', 'adjustUserEarnings_FromAdmin');
+    });
+
+    // Payout account decisions: accept a checked name mismatch, or stop /
+    // allow this creator's withdrawals. A note is kept on the profile.
+    $(document).on("click", ".creator-profile-action", function (e) {
+        e.preventDefault();
+        var action = $(this).data("action");
+        var titles = {
+            accept_name: "Accept this payout account?",
+            suspend: "Suspend this creator's withdrawals?",
+            unsuspend: "Allow this creator's withdrawals again?",
+        };
+        checkUserType(() => {
+            Swal.fire({
+                icon: "info",
+                title: titles[action] || "Are you sure?",
+                input: "text",
+                inputPlaceholder: "Note (optional, admin only)",
+                showDenyButton: true,
+                denyButtonText: `Cancel`,
+                confirmButtonText: "Yes",
+            }).then((result) => {
+                if (!result.isConfirmed) return;
+                var formData = new FormData();
+                formData.append("user_id", user_id);
+                formData.append("action", action);
+                formData.append("note", result.value || "");
+                doAjax(`${domainUrl}updateCreatorProfile_Admin`, formData).then(function (response) {
+                    if (response.status) {
                         location.reload();
-                    }else{
+                    } else {
                         showErrorToast(response.message);
                     }
+                }).catch(function (error) {
+                    showErrorToast((error.responseJSON && error.responseJSON.message) || 'Something went wrong.');
                 });
-            } catch (error) {
-            console.log('Error! : ', error.message);
-                showErrorToast(error.message);
-            }
+            });
         });
     });
 

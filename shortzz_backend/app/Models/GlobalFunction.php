@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Jobs\TranscodeVideoJob;
 use App\Mail\VerificationCodeMail;
+use App\Services\Wallet\WalletLedger;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
@@ -86,7 +87,12 @@ class GlobalFunction extends Model
 
         // Other Data
         UserNotification::where('from_user_id', $user->id)->orWhere('to_user_id', $user->id)->delete();
-        RedeemRequests::where('user_id', $user->id)->delete();
+        // Money records are an audit trail: keep them, strip the person
+        // (same as AccountDeleter). This used to hard-delete every withdrawal
+        // request — open ones vanished from the admin queue unpaid, and
+        // completed ones took the payout history with them.
+        RedeemRequests::where('user_id', $user->id)->update(['user_id' => null]);
+        CoinTopUpRequests::where('user_id', $user->id)->update(['user_id' => null]);
         ReportUsers::where('user_id', $user->id)->orWhere('by_user_id', $user->id)->delete();
         ReportPosts::where('by_user_id', $user->id)->delete();
 
@@ -743,15 +749,16 @@ class GlobalFunction extends Model
         return $viewContent;
     }
 
+    /// Also the root of every payout reference a provider sees
+    /// (`{request_number}-{attempt}`), and Lenco only accepts [A-Za-z0-9._-]
+    /// and rejects any reference it has seen before. This used to be
+    /// `userId-rand(1000..9999)` with its uniqueness checked against
+    /// tbl_users.username — the wrong table entirely.
     public static function generateRedeemRequestNumber($userId)
     {
-        $number = $userId . '-' . rand(1000, 9999);
-        $count = Users::where('username', $number)->count();
-
-        while ($count >= 1) {
-            $number = $userId . '-' . rand(1000, 9999);
-            $count = Users::where('username', $number)->count();
-        }
+        do {
+            $number = 'WD' . (int) $userId . '-' . strtoupper(Str::random(8));
+        } while (RedeemRequests::where('request_number', $number)->exists());
         return $number;
     }
 
@@ -1669,42 +1676,38 @@ class GlobalFunction extends Model
         ];
     }
 
-    // Single wallet transaction for gifting — shared by misc/sendGift (chat &
-    // profile gifts) and livestream/sendStreamGift. Returns null on success
-    // or an error message string.
-    public static function transferGiftCoins($sender, $receiver, $gift)
+    // Single wallet transaction for gifting — shared by misc/sendGift (chat,
+    // profile and post gifts) and livestream/sendStreamGift. Returns null on
+    // success or an error message string. $context carries post_id /
+    // livestream_id so a creator can see what each video or live earned.
+    public static function transferGiftCoins($sender, $receiver, $gift, array $context = [])
     {
         if ($sender->id == $receiver->id) {
             return 'you can not gift yourself!';
         }
+        // Dummy accounts are admin-made demo profiles nobody owns: a gift to
+        // one is a fan's real money credited to no one.
+        if ($receiver->is_dummy == 1) {
+            return 'this account can not receive gifts';
+        }
+        if ($receiver->is_freez == 1) {
+            return 'this account can not receive gifts right now';
+        }
+        if (self::checkUserBlock($sender->id, $receiver->id)) {
+            return 'you can not send gifts to this user';
+        }
         $price = (int) $gift->coin_price;
 
-        // The debit IS the balance check: one conditional UPDATE. The old
-        // check-then-save() read the balance from an already-loaded model, so
-        // N simultaneous gifts all passed against the same coins and all
-        // credited the receiver — coins minted from nothing, then
-        // withdrawable. Both sides are relative `col = col ± n` writes, so a
-        // gift landing alongside any other wallet change cannot overwrite it.
-        $sent = DB::transaction(function () use ($sender, $receiver, $price) {
-            if ($price <= 0) {
-                return true; // a free gift moves nothing (and a 0 decrement affects 0 rows)
+        // The sender's coins become the receiver's EARNINGS (their share of
+        // what the coins cost), never the receiver's coins: coins are
+        // spend-only, so a gift can no longer be cashed out at a rate the
+        // platform never received. WalletLedger locks both rows, so N
+        // simultaneous gifts cannot spend the same coins twice.
+        if ($price > 0) {
+            $split = WalletLedger::transferGift((int) $sender->id, (int) $receiver->id, $price, (int) $gift->id, $context);
+            if ($split === null) {
+                return 'no enough coins in your wallet!';
             }
-            $debited = Users::where('id', $sender->id)
-                ->where('coin_wallet', '>=', $price)
-                ->decrement('coin_wallet', $price, [
-                    'coin_gifted_lifetime' => DB::raw('coin_gifted_lifetime + ' . $price),
-                ]);
-            if ($debited !== 1) {
-                return false;
-            }
-            Users::where('id', $receiver->id)->incrementEach([
-                'coin_wallet' => $price,
-                'coin_collected_lifetime' => $price,
-            ]);
-            return true;
-        });
-        if (!$sent) {
-            return 'no enough coins in your wallet!';
         }
 
         self::insertUserNotification(Constants::notify_gift_user, $sender->id, $receiver->id, $gift->id);

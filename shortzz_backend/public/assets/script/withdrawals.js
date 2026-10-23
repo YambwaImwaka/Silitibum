@@ -129,126 +129,98 @@ $(document).ready(function () {
         },
     });
 
-    $("#pendingWithdrawalsTable").on("click", ".complete", function (e) {
-        e.preventDefault();
+    const ALL_TABLES = ['pendingWithdrawalsTable', 'rejectedWithdrawalsTable', 'completedWithdrawalsTable', 'processingWithdrawalsTable', 'failedWithdrawalsTable'];
+
+    // One way to post an action: reload every tab on success, and surface
+    // server errors (including a 403 for tester accounts) instead of leaving
+    // the button looking like nothing happened.
+    function postWithdrawalAction(action, itemId, extra) {
+        var formData = new FormData();
+        formData.append('id', itemId);
+        Object.keys(extra || {}).forEach(function (key) {
+            formData.append(key, extra[key]);
+        });
+        doAjax(`${domainUrl}${action}`, formData).then(function (response) {
+            if (response.status) {
+                reloadDataTables(ALL_TABLES);
+                showSuccessToast(response.message);
+            } else {
+                showErrorToast(response.message);
+            }
+        }).catch(function (error) {
+            showErrorToast((error.responseJSON && error.responseJSON.message) || 'Something went wrong.');
+        });
+    }
+
+    function confirmThen(options, onConfirm) {
         checkUserType(() => {
-            Swal.fire({
+            Swal.fire(Object.assign({
                 icon: "info",
-                title: "Are you sure?",
-                text: 'Do you really want to complete this withdrawal?',
                 showDenyButton: true,
                 denyButtonText: `Cancel`,
                 confirmButtonText: "Yes",
-            }).then((result) => {
+            }, options)).then((result) => {
                 if (result.isConfirmed) {
-                    var item_id = $(this).attr("rel");
-                    var action_url =
-                        `${domainUrl}completeWithdrawal`;
-                        var formData = new FormData();
-                        formData.append('id', item_id);
-                        try {
-                            doAjax(action_url, formData).then(function (response){
-                                if(response.status){
-                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
-                                    showSuccessToast(response.message);
-                                }else{
-                                    showErrorToast(response.message);
-                                }
-                            });
-                        } catch (error) {
-                        console.log('Error! : ', error.message);
-                            showErrorToast(error.message);
-                        }
+                    onConfirm(result);
                 }
             });
         });
-    });
-    $("#pendingWithdrawalsTable").on("click", ".reject", function (e) {
+    }
+
+    // Manual payouts: the admin has sent the money by hand. Shown on Pending
+    // rows (manual provider) and on Processing rows parked by ManualGateway.
+    $("#pendingWithdrawalsTable, #processingWithdrawalsTable").on("click", ".complete", function (e) {
         e.preventDefault();
-        checkUserType(() => {
-            Swal.fire({
-                icon: "info",
-                title: "Are you sure?",
-                text: 'The coins will be returned to user wallet! Do you really want to reject this withdrawal? ',
-                showDenyButton: true,
-                denyButtonText: `Cancel`,
-                confirmButtonText: "Yes",
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    var item_id = $(this).attr("rel");
-                    var action_url =
-                        `${domainUrl}rejectWithdrawal`;
-                        var formData = new FormData();
-                        formData.append('id', item_id);
-                        try {
-                            doAjax(action_url, formData).then(function (response){
-                                if(response.status){
-                                    reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
-                                    showSuccessToast(response.message);
-                                }else{
-                                    showErrorToast(response.message);
-                                }
-                            });
-                        } catch (error) {
-                        console.log('Error! : ', error.message);
-                            showErrorToast(error.message);
-                        }
-                }
-            });
+        var itemId = $(this).attr("rel");
+        confirmThen({
+            title: "Mark as paid?",
+            text: "Only confirm once the mobile money transfer has been sent to the number shown.",
+        }, function () {
+            postWithdrawalAction('completeWithdrawal', itemId);
+        });
+    });
+
+    // The amount goes back to the creator's earnings; the reason is shown
+    // to them in the app.
+    $("#pendingWithdrawalsTable, #processingWithdrawalsTable").on("click", ".reject", function (e) {
+        e.preventDefault();
+        var itemId = $(this).attr("rel");
+        confirmThen({
+            title: "Reject this withdrawal?",
+            text: "The amount will be returned to the creator's earnings.",
+            input: "text",
+            inputPlaceholder: "Reason shown to the creator (optional)",
+        }, function (result) {
+            postWithdrawalAction('rejectWithdrawal', itemId, { reason: result.value || '' });
+        });
+    });
+
+    // Automated payouts: sends the money through the active provider now.
+    $("#pendingWithdrawalsTable").on("click", ".approve", function (e) {
+        e.preventDefault();
+        var itemId = $(this).attr("rel");
+        confirmThen({
+            title: "Approve and send?",
+            text: "The payout is sent immediately through the active payout provider.",
+        }, function () {
+            postWithdrawalAction('approveWithdrawal', itemId);
         });
     });
 
     $("#processingWithdrawalsTable").on("click", ".recheck", function (e) {
         e.preventDefault();
-        checkUserType(() => {
-            var item_id = $(this).attr("rel");
-            var formData = new FormData();
-            formData.append('id', item_id);
-            try {
-                doAjax(`${domainUrl}recheckWithdrawal`, formData).then(function (response){
-                    if(response.status){
-                        reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
-                        showSuccessToast(response.message);
-                    }else{
-                        showErrorToast(response.message);
-                    }
-                });
-            } catch (error) {
-                console.log('Error! : ', error.message);
-                showErrorToast(error.message);
-            }
-        });
+        var itemId = $(this).attr("rel");
+        checkUserType(() => postWithdrawalAction('recheckWithdrawal', itemId));
     });
+
     $("#failedWithdrawalsTable").on("click", ".retry", function (e) {
         e.preventDefault();
-        checkUserType(() => {
-            Swal.fire({
-                icon: "info",
-                title: "Retry this withdrawal?",
-                text: 'This will re-debit the coins and re-attempt payout via the currently active provider.',
-                showDenyButton: true,
-                denyButtonText: `Cancel`,
-                confirmButtonText: "Yes",
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    var item_id = $(this).attr("rel");
-                    var formData = new FormData();
-                    formData.append('id', item_id);
-                    try {
-                        doAjax(`${domainUrl}retryWithdrawal`, formData).then(function (response){
-                            if(response.status){
-                                reloadDataTables(['pendingWithdrawalsTable','rejectedWithdrawalsTable','completedWithdrawalsTable','processingWithdrawalsTable','failedWithdrawalsTable']);
-                                showSuccessToast(response.message);
-                            }else{
-                                showErrorToast(response.message);
-                            }
-                        });
-                    } catch (error) {
-                        console.log('Error! : ', error.message);
-                        showErrorToast(error.message);
-                    }
-                }
-            });
+        var itemId = $(this).attr("rel");
+        confirmThen({
+            title: "Retry this withdrawal?",
+            text: "The amount is taken from the creator's earnings again and sent through the currently active provider.",
+        }, function () {
+            postWithdrawalAction('retryWithdrawal', itemId);
         });
     });
 

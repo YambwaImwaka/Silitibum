@@ -1134,7 +1134,8 @@ class SettingsController extends Controller
         $setting = GlobalSettings::first();
 
         return view('privacy_policy', [
-            'data' => $setting->privacy_policy
+            'data' => $setting->privacy_policy,
+            'appName' => $setting->app_name ?? 'Silitibum',
         ]);
     }
     function terms_of_uses()
@@ -1142,7 +1143,53 @@ class SettingsController extends Controller
         $setting = GlobalSettings::first();
 
         return view('terms_of_uses', [
-            'data' => $setting->terms_of_uses
+            'data' => $setting->terms_of_uses,
+            'appName' => $setting->app_name ?? 'Silitibum',
+        ]);
+    }
+
+    // Public landing page at the site root. The root used to be the admin
+    // login, so a search for the app name returned a login form under the
+    // admin theme's stock "fully featured admin theme" description. The login
+    // now lives at /admin. The Play link is admin-editable and falls back to
+    // the listing URL so the button works while that setting is still empty.
+    function home()
+    {
+        $setting = GlobalSettings::first();
+        $appName = $setting->app_name ?? 'Silitibum';
+        $homeUrl = rtrim(config('app.url'), '/') . '/';
+        $playStoreUrl = optional($setting)->play_store_download_link
+            ?: 'https://play.google.com/store/apps/details?id=com.silitibum.app';
+        $description = $appName . ' is a social video app. Watch and share short videos, post photos and stories, go live, and chat with friends. Get it on Google Play.';
+
+        return view('home', [
+            'appName' => $appName,
+            'helpMail' => $setting->help_mail ?? 'help@silitibum.com',
+            'homeUrl' => $homeUrl,
+            'playStoreUrl' => $playStoreUrl,
+            'description' => $description,
+            // WebSite is what search engines read the site name from;
+            // without it they fall back to guessing from the <title>.
+            'schema' => [
+                '@context' => 'https://schema.org',
+                '@graph' => [
+                    [
+                        '@type' => 'WebSite',
+                        'name' => $appName,
+                        'url' => $homeUrl,
+                    ],
+                    [
+                        '@type' => 'MobileApplication',
+                        'name' => $appName,
+                        'description' => $description,
+                        'url' => $homeUrl,
+                        'operatingSystem' => 'Android',
+                        'applicationCategory' => 'SocialNetworkingApplication',
+                        'installUrl' => $playStoreUrl,
+                        'offers' => ['@type' => 'Offer', 'price' => '0', 'priceCurrency' => 'USD'],
+                    ],
+                ],
+            ],
         ]);
     }
 

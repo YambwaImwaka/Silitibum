@@ -77,7 +77,7 @@ class FlutterwaveGateway implements PaymentGatewayInterface
             ]);
             if (!$charge->successful()) {
                 Log::error('FlutterwaveGateway::charge failed: ' . $charge->body());
-                return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+                return GatewayResult::fromInitiationError($charge, null);
             }
             $status = $charge->json('data.status');
             $mapped = $status === 'succeeded' ? 'completed' : ($status === 'failed' ? 'failed' : 'processing');
@@ -89,7 +89,7 @@ class FlutterwaveGateway implements PaymentGatewayInterface
             ];
         } catch (\Throwable $e) {
             Log::error('FlutterwaveGateway::charge failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown(null);
         }
     }
 
@@ -114,10 +114,13 @@ class FlutterwaveGateway implements PaymentGatewayInterface
                     ],
                 ],
             ]);
+            if (!$response->successful()) {
+                return GatewayResult::fromInitiationError($response, $reference);
+            }
             return $this->mapTransferResponse($response);
         } catch (\Throwable $e) {
             Log::error('FlutterwaveGateway::payout failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_error'];
+            return GatewayResult::unknown($reference);
         }
     }
 
@@ -130,6 +133,9 @@ class FlutterwaveGateway implements PaymentGatewayInterface
             $response = $this->client()->get('/direct-transfers/' . $reference);
             if ($response->status() === 404) {
                 $response = $this->client()->get('/charges/' . $reference);
+                if (!$response->successful()) {
+                    return GatewayResult::fromVerifyError($response, $reference);
+                }
                 $status = $response->json('data.status');
                 $mapped = $status === 'succeeded' ? 'completed' : ($status === 'failed' ? 'failed' : 'processing');
                 return [
@@ -139,18 +145,26 @@ class FlutterwaveGateway implements PaymentGatewayInterface
                     'message' => $response->json('message'),
                 ];
             }
+            if (!$response->successful()) {
+                return GatewayResult::fromVerifyError($response, $reference);
+            }
             return $this->mapTransferResponse($response);
         } catch (\Throwable $e) {
             Log::error('FlutterwaveGateway::verify failed: ' . $e->getMessage());
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => $reference, 'message' => 'gateway_error'];
+            return GatewayResult::unknown($reference);
         }
     }
 
+    // verify() already asks the transfers resource first.
+    public function verifyPayout(string $reference): array
+    {
+        return $this->verify($reference);
+    }
+
+    // Only ever called with a 2xx — callers route HTTP errors through
+    // GatewayResult, which tells initiation errors from status-check errors.
     private function mapTransferResponse($response): array
     {
-        if (!$response->successful()) {
-            return ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => $response->json('message')];
-        }
         $status = $response->json('data.status');
         // Confirmed: initiation returns "NEW". SUCCESSFUL confirmed too.
         // Exact failure-state string NOT confirmed from docs — treat

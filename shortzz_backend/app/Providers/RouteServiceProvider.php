@@ -87,6 +87,16 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(10)->by($request->header('authtoken') ?: $request->ip());
         });
 
+        // Saving a payout account asks the payout provider whose name a
+        // number is registered to. Keyed on the USER (not the IP — Zambian
+        // carrier NAT puts whole neighbourhoods behind one address, and not
+        // the token — one user can hold several), so nobody can turn it into
+        // a name-lookup service.
+        RateLimiter::for('payout-account', function (Request $request) {
+            $user = \App\Models\GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+            return Limit::perDay(5)->by('payout-account:' . ($user->id ?? $request->ip()));
+        });
+
         // Admin panel login. Its own bucket rather than 'auth', so app users
         // signing in from the same network can't lock the admin out.
         RateLimiter::for('admin-login', function (Request $request) {

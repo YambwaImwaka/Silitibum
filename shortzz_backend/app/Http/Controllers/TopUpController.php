@@ -6,6 +6,7 @@ use App\Models\CoinPackages;
 use App\Models\CoinTopUpRequests;
 use App\Models\GlobalFunction;
 use App\Models\GlobalSettings;
+use App\Services\Payments\GatewayResult;
 use App\Services\Payments\PaymentGatewayFactory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -73,8 +74,10 @@ class TopUpController extends Controller
         try {
             $result = $gateway->charge($phone, (float) $package->coin_plan_price, $settings->currency ?? 'USD', 'topup_' . $topup->id);
         } catch (\Throwable $e) {
+            // Same rule as GatewayResult: an exception says nothing about
+            // whether the push reached the customer's phone.
             Log::error('TopUpController::initiateCharge threw: ' . $e->getMessage());
-            $result = ['success' => false, 'status' => 'failed', 'provider_reference' => null, 'message' => 'gateway_exception'];
+            $result = GatewayResult::unknown(null, 'gateway_exception');
         }
 
         $topup->provider_reference = $result['provider_reference'] ?? null;
@@ -93,9 +96,15 @@ class TopUpController extends Controller
         // never here — never trust the browser page/gateway's synchronous
         // response alone for something that moves money, same principle
         // WalletController::buyCoins uses for RevenueCat purchases.
+        //
+        // An unconfirmed start (timeout, provider error) stays open too: the
+        // topups:reconcile sweep asks the provider by 'topup_{id}' and either
+        // credits it or expires it, so the page keeps polling either way.
         return response()->json([
             'status' => true,
-            'message' => 'Check your phone to approve the payment.',
+            'message' => !empty($result['unconfirmed'])
+                ? 'We could not confirm the request yet. If a prompt appears on your phone, approve it and your coins will arrive automatically.'
+                : 'Check your phone to approve the payment.',
             'data' => ['topup_id' => $topup->id],
         ]);
     }

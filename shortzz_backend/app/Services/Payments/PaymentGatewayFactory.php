@@ -36,7 +36,9 @@ class PaymentGatewayFactory
                 return new DpoGateway($settings->dpo_company_token, $settings->dpo_service_type ?? '');
             case 'lenco':
                 if (empty($settings->lenco_api_key)) return null;
-                return new LencoGateway($settings->lenco_api_key);
+                // lenco_account_id is only needed for payouts (the Lenco
+                // account the money leaves from); collections work without it.
+                return new LencoGateway($settings->lenco_api_key, $settings->lenco_account_id ?? null);
             case 'paystack':
                 if (empty($settings->paystack_secret_key)) return null;
                 return new PaystackGateway($settings->paystack_secret_key);
