@@ -3,8 +3,12 @@
 namespace App\Services\Payments;
 
 use App\Models\CoinTopUpRequests;
+use App\Models\GlobalFunction;
+use App\Models\GlobalSettings;
+use App\Services\Verification\BlueTick;
 use App\Services\Wallet\Money;
 use App\Services\Wallet\WalletLedger;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -48,10 +52,12 @@ class TopUpReconciler
     public static function apply(CoinTopUpRequests $topup, string $verifiedStatus): bool
     {
         if ($verifiedStatus === 'completed') {
+            $isBlueTick = ($topup->purpose ?? 'coins') === 'verification';
+            $tickUntil = false;
             // Claim and credit commit together: a crash between them can
             // neither leave a 'completed' top-up without its coins nor let a
             // retry credit twice (the ledger key topup:{id} is the backstop).
-            $credited = DB::transaction(function () use ($topup) {
+            $credited = DB::transaction(function () use ($topup, $isBlueTick, &$tickUntil) {
                 $claimed = CoinTopUpRequests::where('id', $topup->id)
                     ->where('status', '!=', 'completed')
                     ->update(['status' => 'completed', 'updated_at' => now()]);
@@ -60,6 +66,13 @@ class TopUpReconciler
                 }
                 if ($topup->user_id === null) {
                     return false; // the buyer deleted their account meanwhile
+                }
+                if ($isBlueTick) {
+                    // A paid blue tick: one more period, from the end of the
+                    // current one (BlueTick). The claim above makes it once.
+                    $days = (int) (GlobalSettings::first()->verification_days ?? 30);
+                    $tickUntil = BlueTick::extendPaid((int) $topup->user_id, $days);
+                    return true;
                 }
                 // The coins carry what was paid for them; that is what a gift
                 // of them is worth to the creator who receives it.
@@ -73,7 +86,14 @@ class TopUpReconciler
                 );
             });
 
-            if ($credited) {
+            if ($credited && $isBlueTick) {
+                Log::info("TopUpReconciler: blue tick paid by user {$topup->user_id} (top-up {$topup->id})");
+                $body = $tickUntil instanceof Carbon
+                    ? 'Your blue tick is active until ' . $tickUntil->format('j M Y') . '.'
+                    : 'Your blue tick is now active.';
+                GlobalFunction::pushToUser((int) $topup->user_id, 'You are verified!', $body,
+                    ['type' => 'verification']);
+            } elseif ($credited) {
                 Log::info("TopUpReconciler: credited {$topup->coins} coins to user {$topup->user_id} for top-up {$topup->id}");
             }
             return $credited;

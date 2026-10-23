@@ -14,6 +14,7 @@ use App\Http\Controllers\AppUserLoginController;
 use App\Http\Controllers\PostsController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\TopUpController;
+use App\Http\Controllers\VerificationController;
 use App\Http\Controllers\RestrictionsController;
 use App\Http\Controllers\RevenueCatWebhookController;
 use App\Http\Controllers\SettingsController;
@@ -94,10 +95,16 @@ Route::post('webhooks/flutterwave', [PaymentWebhookController::class, 'flutterwa
 Route::get('topup/login', [AppUserLoginController::class, 'login'])->name('topup.login');
 Route::post('topup/login', [AppUserLoginController::class, 'checkLogin'])->name('topup.checkLogin');
 Route::get('topup/logout', [AppUserLoginController::class, 'logout'])->name('topup.logout');
+// Single-use sign-in link the app opens (misc/createWebLoginLink): works for
+// accounts made with Google/Apple sign-in, which have no password.
+Route::get('topup/auto', [AppUserLoginController::class, 'auto'])->name('topup.auto');
 Route::middleware(['checkAppUserLogin'])->group(function () {
     Route::get('topup', [TopUpController::class, 'show'])->name('topup.show');
     Route::post('topup/charge', [TopUpController::class, 'initiateCharge'])->name('topup.charge');
     Route::post('topup/status', [TopUpController::class, 'checkStatus'])->name('topup.status');
+    // The blue tick, paid with mobile money (VerificationController).
+    Route::get('verify', [VerificationController::class, 'show'])->name('verify.show');
+    Route::post('verify/charge', [VerificationController::class, 'charge'])->name('verify.charge');
 });
 
 Route::get('/.well-known/apple-app-site-association', function () {
@@ -199,6 +206,7 @@ Route::middleware(['checkLogin'])->group(function () {
     Route::get('viewUserDetails/{id}', [UserController::class, 'viewUserDetails'])->name('viewUserDetails');
     Route::post('deleteUserLink_Admin', [UserController::class, 'deleteUserLink_Admin'])->name('deleteUserLink_Admin');
     Route::post('changeUserModeratorStatus', [UserController::class, 'changeUserModeratorStatus'])->name('changeUserModeratorStatus');
+    Route::post('changeUserVerifyStatus', [UserController::class, 'changeUserVerifyStatus'])->name('changeUserVerifyStatus')->middleware('fullAdmin');
     Route::post('deleteUser_Admin', [UserController::class, 'deleteUser_Admin'])->name('deleteUser_Admin');
     Route::post('listUserPosts', [PostsController::class, 'listUserPosts'])->name('listUserPosts');
     Route::post('listUserStories', [StoryController::class, 'listUserStories'])->name('listUserStories');

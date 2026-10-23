@@ -348,8 +348,26 @@ class GlobalFunction extends Model
 
         switch ($deviceType) {
             case Constants::android:
+                // The `notification` block is what makes Android itself show
+                // the alert while the app is in the background or closed.
+                // These used to be data-only, which only appear if the app
+                // wakes up and draws them — and its background handler only
+                // does that on iOS, so on Android nothing appeared unless the
+                // app was open (and phones that kill background apps would
+                // drop them regardless). The data keeps the title/body and
+                // the routing fields the app reads when a notification is
+                // tapped or arrives in the foreground.
+                $messagePayload['notification'] = $notificationPayload;
                 $messagePayload['data'] = $data ? array_merge($notificationPayload, $data) : $notificationPayload;
-                $messagePayload['android'] = ['priority' => 'high'];
+                $messagePayload['android'] = [
+                    'priority' => 'high',
+                    'notification' => [
+                        // FirebaseNotificationManager's channel (also the
+                        // manifest's default_notification_channel_id).
+                        'channel_id' => 'shortzz',
+                        'default_sound' => true,
+                    ],
+                ];
                 break;
 
             case Constants::iOS:
@@ -506,6 +524,22 @@ class GlobalFunction extends Model
 
         return $moderatorSwitch;
     }
+    // Blue tick switch for the admin users list. A paid tick shows its end
+    // date beside it: switching it off ends what the user paid for.
+    public static function createUserVerifySwitch($user, $type = 'all')
+    {
+        $checked = $user->is_verify == 1 ? 'checked' : '';
+        $note = '';
+        if ($user->is_verify == 1 && ($user->verification_source ?? null) === 'paid') {
+            $note = "<div class='text-muted small'>paid"
+                . ($user->verified_until ? ' · until ' . e(\Illuminate\Support\Carbon::parse($user->verified_until)->format('j M Y')) : '')
+                . '</div>';
+        }
+
+        return "<input type='checkbox' id='verify-user-{$user->id}{$type}' rel='{$user->id}' class='verifyUser' {$checked} data-switch='none'/>
+                    <label for='verify-user-{$user->id}{$type}'></label>{$note}";
+    }
+
     public static function createUserFreezeSwitch($user, $type = 'all')
     {
         $checked = $user->is_freez == Constants::isFreeze ? 'checked' : '';

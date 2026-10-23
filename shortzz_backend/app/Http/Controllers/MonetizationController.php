@@ -26,6 +26,9 @@ class MonetizationController extends Controller
             'creator_min_account_age_days' => 'required|integer|min:0|max:365',
             'payout_change_hold_hours' => 'required|integer|min:0|max:720',
             'lenco_account_id' => 'nullable|string|max:64',
+            // The blue tick sold at /verify (BlueTick).
+            'verification_price' => 'required|numeric|min:1|max:100000',
+            'verification_days' => 'required|integer|min:0|max:3650',
         ]);
         if ($validator->fails()) {
             return GlobalFunction::sendSimpleResponse(false, $validator->errors()->first());
@@ -39,6 +42,9 @@ class MonetizationController extends Controller
         $setting->creator_min_account_age_days = (int) $request->creator_min_account_age_days;
         $setting->payout_change_hold_hours = (int) $request->payout_change_hold_hours;
         $setting->wallet_v2 = $request->boolean('wallet_v2') ? 1 : 0;
+        $setting->verification_enabled = $request->boolean('verification_enabled') ? 1 : 0;
+        $setting->verification_price = round((float) $request->verification_price, 2);
+        $setting->verification_days = (int) $request->verification_days;
         // The page never shows the stored id; an empty field keeps it.
         if ($request->filled('lenco_account_id')) {
             $setting->lenco_account_id = trim($request->lenco_account_id);

@@ -57,6 +57,12 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->runInBackground();
 
+        // Paid blue ticks end when their period does (BlueTick).
+        $schedule->command('verification:expire')
+            ->hourly()
+            ->withoutOverlapping()
+            ->runInBackground();
+
         // Views/shares are written as deduplicated rows per viewer per day and
         // folded into the tbl_post counters here, so a viral post takes one
         // row lock per run instead of one per viewer. Five minutes of

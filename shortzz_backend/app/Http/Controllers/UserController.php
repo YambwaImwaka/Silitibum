@@ -14,6 +14,7 @@ use App\Models\UserLinks;
 use App\Models\UsernameRestrictions;
 use App\Models\Users;
 use App\Models\VerificationCode;
+use App\Services\Verification\BlueTick;
 use App\Services\Wallet\WalletLedger;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -50,14 +51,20 @@ class UserController extends Controller
         $user->bio = $request->bio;
 
         if($user->is_dummy == 1){
-            if($request->has('is_verify')){
-                $user->is_verify = $request->is_verify;
-            }
             if($request->has('password')){
                 $user->password = $request->password;
             }
         }
        $user->save();
+       // The blue tick goes through BlueTick so its source is recorded — for
+       // any account now, not just dummies.
+       if ($request->has('is_verify') && (int) $request->is_verify !== (int) $user->is_verify) {
+           if ((int) $request->is_verify === 1) {
+               BlueTick::grantByAdmin((int) $user->id);
+           } else {
+               BlueTick::revokeByAdmin((int) $user->id);
+           }
+       }
        return GlobalFunction::sendSimpleResponse(true,'User details updated successfully');
     }
     public function users(){
@@ -97,10 +104,12 @@ class UserController extends Controller
             $user->identity = GlobalFunction::generateDummyUserIdentity();
             $user->username = $request->username;
             $user->password = $request->password;
-            $user->is_verify = $request->is_verify;
             $user->is_dummy = Constants::userDummy;
             $user->profile_photo = GlobalFunction::saveFileAndGivePath($request->profile_photo);
             $user->save();
+            if ((int) $request->is_verify === 1) {
+                BlueTick::grantByAdmin((int) $user->id);
+            }
 
             return GlobalFunction::sendSimpleResponse(true,'Dummy user added successfully');
     }
@@ -111,6 +120,24 @@ class UserController extends Controller
         $user->save();
 
         return GlobalFunction::sendSimpleResponse(true, 'changes applied successfully');
+    }
+
+    // The admin gives (or takes away) the blue tick of any account, free. An
+    // admin-given tick never expires and no purchase or lapse touches it
+    // (BlueTick).
+    public function changeUserVerifyStatus(Request $request){
+        $user = Users::find($request->user_id);
+        if ($user == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'User not found');
+        }
+        if ((int) $request->is_verify === 1) {
+            BlueTick::grantByAdmin((int) $user->id);
+            GlobalFunction::pushToUser((int) $user->id, 'You are verified!',
+                'Silitibum gave you the blue tick.', ['type' => 'verification']);
+            return GlobalFunction::sendSimpleResponse(true, 'Blue tick given');
+        }
+        BlueTick::revokeByAdmin((int) $user->id);
+        return GlobalFunction::sendSimpleResponse(true, 'Blue tick removed');
     }
 
     // Permanently deletes an app user and everything attached to them. See
@@ -805,6 +832,8 @@ class UserController extends Controller
 
             $moderator = GlobalFunction::createUserModeratorSwitch($item,'all');
 
+            $blueTick = GlobalFunction::createUserVerifySwitch($item, 'all');
+
             $userDetailsUrl = route('viewUserDetails', $item->id);
 
             $view = "<a href='$userDetailsUrl'
@@ -831,6 +860,7 @@ class UserController extends Controller
                 e($item->identity), // rendered as HTML by DataTables
                 $freeze,
                 $moderator,
+                $blueTick,
                 $action
             ];
         });

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\CoinPackages;
 use App\Models\Users;
 use App\Services\Payments\RevenueCatCoinSync;
+use App\Services\Verification\BlueTick;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -68,13 +69,14 @@ class RevenueCatWebhookController extends Controller
             return response()->json(['status' => true]);
         }
 
+        // Through BlueTick, which only ever touches a store-sourced tick: a
+        // lapsing subscription must not take away one the admin gave or one
+        // paid for with mobile money.
         $isRefund = $type === 'CANCELLATION' && ($event['cancel_reason'] ?? null) === 'CUSTOMER_SUPPORT';
         if (in_array($type, self::GRANTS)) {
-            $user->is_verify = 1;
-            $user->save();
+            BlueTick::grantByStore((int) $user->id);
         } elseif (in_array($type, self::REVOKES) || $isRefund) {
-            $user->is_verify = 0;
-            $user->save();
+            BlueTick::revokeStore((int) $user->id);
         }
         // Other event types (TRANSFER, NON_RENEWING_PURCHASE, etc.) are
         // intentionally ignored — they don't change verified-badge state.

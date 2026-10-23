@@ -5,8 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\GlobalFunction;
 use App\Models\Users;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Str;
 
 // Users-scoped web login for the mobile-money coin top-up page (see
 // TopUpController) — deliberately separate from LoginController/CheckLogin,
@@ -21,9 +23,53 @@ class AppUserLoginController extends Controller
     public function login()
     {
         if (Session::get('app_user_id')) {
-            return redirect(route('topup.show'));
+            return redirect(Session::pull('app_user_intended') ?: route('topup.show'));
         }
         return view('topup_login');
+    }
+
+    /** Lifetime of a sign-in link the app opens in the browser. */
+    private const LINK_TTL_MINUTES = 5;
+
+    /** Pages a sign-in link may land on. */
+    private const LINK_DESTINATIONS = ['topup' => 'topup.show', 'verify' => 'verify.show'];
+
+    // misc/createWebLoginLink (app, authtoken): a single-use link that signs
+    // this user into the web payment pages. The password form cannot serve
+    // accounts made with Google or Apple sign-in — they have no password.
+    public static function createLink(int $userId, string $next): string
+    {
+        $token = Str::random(48);
+        Cache::put('web_login:' . hash('sha256', $token), $userId, now()->addMinutes(self::LINK_TTL_MINUTES));
+        return route('topup.auto', ['t' => $token, 'next' => $next]);
+    }
+
+    public function createWebLoginLink(Request $request)
+    {
+        $user = GlobalFunction::getUserFromAuthToken($request->header('authtoken'));
+        if ($user == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'unauthorized');
+        }
+        $next = array_key_exists($request->next, self::LINK_DESTINATIONS) ? $request->next : 'topup';
+        return GlobalFunction::sendDataResponse(true, 'link created', [
+            'url' => self::createLink((int) $user->id, $next),
+        ]);
+    }
+
+    // The link itself. Cache::pull makes it single use; an expired or reused
+    // link falls back to the normal sign-in form.
+    public function auto(Request $request)
+    {
+        $token = (string) $request->query('t', '');
+        $userId = $token === '' ? null : Cache::pull('web_login:' . hash('sha256', $token));
+        $user = $userId ? Users::find($userId) : null;
+        if ($user == null || $user->is_freez == 1) {
+            return redirect(route('topup.login'));
+        }
+        $request->session()->regenerate();
+        Session::put('app_user_id', $user->id);
+        $route = self::LINK_DESTINATIONS[$request->query('next')] ?? 'topup.show';
+        return redirect(route($route));
     }
 
     public function checkLogin(Request $request)
@@ -65,8 +111,10 @@ class AppUserLoginController extends Controller
         }
 
         Session::put('app_user_id', $user->id);
+        $redirect = Session::pull('app_user_intended') ?: route('topup.show');
 
-        return response()->json(['status' => true, 'message' => 'Login successful', 'data' => ['id' => $user->id]]);
+        return response()->json(['status' => true, 'message' => 'Login successful',
+            'data' => ['id' => $user->id, 'redirect' => $redirect]]);
     }
 
     // Accounts are keyed by the canonical identity the app's signup builds:

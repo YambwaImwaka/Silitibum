@@ -15,6 +15,10 @@ class CheckAppUserLogin
         $user = $userId ? Users::find($userId) : null;
         if ($user == null || $user->is_freez == 1) {
             Session::pull('app_user_id');
+            // Back to the page they asked for (/topup or /verify) once signed in.
+            if ($request->isMethod('get')) {
+                Session::put('app_user_intended', $request->fullUrl());
+            }
             return redirect(route('topup.login'));
         }
         $request->attributes->set('appUser', $user);

@@ -44,6 +44,7 @@
                                 <th>{{ __('Identity')}}</th>
                                 <th>{{ __('Freeze')}}</th>
                                 <th>{{ __('Moderator')}}</th>
+                                <th>{{ __('Blue tick')}}</th>
                                 <th style="width: 200px;" class="text-end">{{ __('Action')}}</th>
                             </tr>
                         </thead>

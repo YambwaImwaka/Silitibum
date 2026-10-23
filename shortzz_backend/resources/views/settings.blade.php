@@ -1006,6 +1006,37 @@
                                         </div>
                                     </div>
                                 </div>
+                                {{-- Blue tick bought with mobile money at /verify (Lenco). The
+                                     admin can also give anyone a free one from the Users list. --}}
+                                <h5 class="mt-2">{{ __('Blue tick') }}</h5>
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label class="form-label">{{ __('Sell the blue tick') }}</label>
+                                            <div class="mb-0">
+                                                <input name="verification_enabled" type="checkbox" id="switchVerificationEnabled"
+                                                    {{ ($setting->verification_enabled ?? 1) == 1 ? 'checked' : '' }} data-switch="primary" />
+                                                <label for="switchVerificationEnabled"></label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="verification_price" class="form-label">{{ __('Price') }} ({{ $setting->currency }})</label>
+                                            <input type="number" min="1" max="100000" step="0.01" class="form-control" id="verification_price"
+                                                name="verification_price" value="{{ $setting->verification_price ?? '50.00' }}">
+                                            <span class="fs-6 text-muted">{{ __('Paid with mobile money on the Get Verified page.') }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <div class="mb-0 bg-secondary-lighten border p-2 rounded-3">
+                                            <label for="verification_days" class="form-label">{{ __('Days it lasts') }}</label>
+                                            <input type="number" min="0" max="3650" step="1" class="form-control" id="verification_days"
+                                                name="verification_days" value="{{ $setting->verification_days ?? 30 }}">
+                                            <span class="fs-6 text-muted">{{ __('0 = never expires. Paying again adds this many days.') }}</span>
+                                        </div>
+                                    </div>
+                                </div>
                                 <button type="submit" class="btn btn-primary">{{ __('Save') }}</button>
                             </form>
                         </div>

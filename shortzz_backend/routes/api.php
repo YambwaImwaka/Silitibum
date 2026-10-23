@@ -27,6 +27,7 @@ use App\Http\Controllers\SettingsController;
 use App\Http\Controllers\StoryController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WalletController;
+use App\Http\Controllers\AppUserLoginController;
 use Illuminate\Support\Facades\Route;
 
 // Group routes with common middleware
@@ -174,6 +175,9 @@ Route::middleware('checkHeader')->group(function () {
         // Creator earnings (see WalletLedger / CreatorProgram)
         Route::post('fetchWalletTransactions', [WalletController::class, 'fetchWalletTransactions'])->middleware('authorizeUser');
         Route::post('fetchCreatorStatus', [WalletController::class, 'fetchCreatorStatus'])->middleware('authorizeUser');
+        // A single-use link that signs the app's user into the web payment
+        // pages (coin top-up, blue tick) — see AppUserLoginController.
+        Route::post('createWebLoginLink', [AppUserLoginController::class, 'createWebLoginLink'])->middleware(['authorizeUser', 'throttle:20,1']);
         // Each save looks the number up with the payout provider; capped per
         // user so the endpoint cannot be used to probe numbers.
         Route::post('savePayoutAccount', [WalletController::class, 'savePayoutAccount'])->middleware(['authorizeUser', 'throttle:payout-account']);

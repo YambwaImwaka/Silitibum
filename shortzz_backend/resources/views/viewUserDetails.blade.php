@@ -235,6 +235,26 @@ use App\Models\GlobalFunction;
                                     <input name="is_moderator" type="checkbox" id="switchModeratorStatus" {{$user->is_moderator == 1? 'checked' : ''}} data-switch="primary"/>
                                     <label for="switchModeratorStatus" ></label>
                                 </div>
+                                {{-- Blue tick: free for any account at the admin's will --}}
+                                <div class="col-3 text-end">
+                                    <p class="text-muted mb-2 font-13 "><strong>{{__('Blue tick')}} :</strong></p>
+                                </div>
+                                <div class="mb-2 col-9">
+                                    <input name="is_verify" type="checkbox" id="switchVerifyStatus" {{$user->is_verify == 1? 'checked' : ''}} data-switch="primary"
+                                        data-paid="{{ ($user->is_verify == 1 && $user->verification_source === 'paid') ? 1 : 0 }}"/>
+                                    <label for="switchVerifyStatus" ></label>
+                                    @if ($user->is_verify == 1)
+                                        <span class="text-muted font-13 ms-1">
+                                            @if ($user->verification_source === 'paid')
+                                                {{ __('Paid') }}{{ $user->verified_until ? ' · ' . __('until') . ' ' . \Illuminate\Support\Carbon::parse($user->verified_until)->format('j M Y') : '' }}
+                                            @elseif ($user->verification_source === 'store')
+                                                {{ __('Store subscription') }}
+                                            @else
+                                                {{ __('Given by admin') }}
+                                            @endif
+                                        </span>
+                                    @endif
+                                </div>
                                 <div class="col-3 text-end">
                                     <p class="text-muted mb-2 font-13 "><strong>{{__('Identity')}} :</strong></p>
                                 </div>

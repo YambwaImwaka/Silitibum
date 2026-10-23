@@ -203,6 +203,40 @@ $(document).ready(function () {
                 });
         });
     });
+    // Blue tick for any account, free. Removing a paid one ends what the
+    // user paid for, so that asks first.
+    $(document).on("change", ".verifyUser", function () {
+        const checkbox = $(this);
+        const userId = checkbox.attr("rel");
+        const value = checkbox.is(":checked") ? 1 : 0;
+        const isPaid = checkbox.siblings("div").text().indexOf("paid") === 0;
+        if (value === 0 && isPaid && !confirm("This user paid for their blue tick. Remove it anyway?")) {
+            checkbox.prop("checked", true);
+            return;
+        }
+        checkUserType(() => {
+            $.ajax({
+                type: "POST",
+                url: `${domainUrl}changeUserVerifyStatus`,
+                data: {
+                    user_id: userId,
+                    is_verify: value,
+                },
+                success: function (response) {
+                    if (response.status) {
+                        showSuccessToast(response.message);
+                        reloadDataTables(['usersTable']);
+                    } else {
+                        somethingWentWrongToast(response.message);
+                    }
+                },
+                error: function () {
+                    alert("An error occurred.");
+                },
+            });
+        });
+    });
+
     $(document).on("change", ".moderatorUser", function () {
           checkUserType(() => {
         const userId = $(this).attr("rel");

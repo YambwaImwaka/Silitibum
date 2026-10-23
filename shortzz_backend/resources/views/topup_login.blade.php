@@ -74,7 +74,10 @@
                     processData: false,
                     success: function (response) {
                         if (response.status) {
-                            window.location.href = `${domainUrl}topup`;
+                            // Back to the page that asked for the sign-in
+                            // (/topup or /verify).
+                            window.location.href = (response.data && response.data.redirect)
+                                ? response.data.redirect : `${domainUrl}topup`;
                         } else {
                             $.NotificationApp.send("Oops", response.message, "top-right", "rgba(0,0,0,0.2)", "error", 3000);
                         }
