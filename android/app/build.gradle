@@ -146,6 +146,42 @@ android {
 dependencies {
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 }
+
+// Play scores how much of the DEX R8 optimised, and 1.2.0 shipped with the
+// optimizer off. A single -dontoptimize in any merged keep-rules file (a
+// library's consumer rules included) does that for the whole app, so after
+// R8 runs this names the file it came from in the build log. Read-only, and
+// it can never fail the build.
+tasks.configureEach { task ->
+    if (task.name == 'minifyReleaseWithR8') {
+        def configFile = layout.buildDirectory.file('outputs/mapping/release/configuration.txt')
+        task.doLast {
+            try {
+                def config = configFile.get().asFile
+                if (!config.exists()) {
+                    logger.warn('R8 check: configuration.txt not found')
+                    return
+                }
+                def marker = '# The proguard configuration file for the following section is '
+                def source = 'an unnamed section'
+                def found = false
+                config.eachLine { line ->
+                    if (line.startsWith(marker)) {
+                        source = line.substring(marker.length())
+                    } else if (line.trim() == '-dontoptimize') {
+                        found = true
+                        logger.warn("R8 check: -dontoptimize (optimizer OFF) comes from ${source}")
+                    }
+                }
+                if (!found) {
+                    logger.warn('R8 check: optimizer is ON (no -dontoptimize in the merged rules)')
+                }
+            } catch (Exception e) {
+                logger.warn("R8 check skipped: ${e.message}")
+            }
+        }
+    }
+}
 flutter {
     source = "../.."
 }
