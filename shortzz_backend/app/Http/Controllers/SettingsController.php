@@ -1168,6 +1168,8 @@ class SettingsController extends Controller
             'homeUrl' => $homeUrl,
             'playStoreUrl' => $playStoreUrl,
             'description' => $description,
+            'sharePercent' => (int) ($setting->creator_share_percent ?? 60),
+            'withdrawalsOn' => (bool) ($setting->is_withdrawal_on ?? false),
             // WebSite is what search engines read the site name from;
             // without it they fall back to guessing from the <title>.
             'schema' => [

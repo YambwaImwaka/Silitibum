@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Jobs\TranscodeVideoJob;
 use App\Mail\VerificationCodeMail;
+use App\Services\Notifications\PushRoute;
 use App\Services\Wallet\WalletLedger;
 use Firebase\JWT\JWK;
 use Firebase\JWT\JWT;
@@ -145,6 +146,21 @@ class GlobalFunction extends Model
                     return null;
                 }
                 $data['gift'] = $gift;
+                // The video the gift was sent on, so tapping the notification
+                // can open it: the ledger row the gift wrote at that moment.
+                $postId = WalletTransaction::where('user_id', $notifyItem->to_user_id)
+                    ->where('type', WalletLedger::TYPE_GIFT_RECEIVED)
+                    ->where('counterparty_user_id', $notifyItem->from_user_id)
+                    ->where('gift_id', $notifyItem->data_id)
+                    ->where('created_at', '<=', Carbon::parse($notifyItem->created_at)->addMinute())
+                    ->orderBy('id', 'desc')
+                    ->value('post_id');
+                if ($postId) {
+                    $post = GlobalFunction::preparePostFullData($postId);
+                    if ($post != null) {
+                        $data['post'] = $post;
+                    }
+                }
                 break;
             case Constants::notify_reply_comment:
             case Constants::notify_mention_reply:
@@ -310,6 +326,7 @@ class GlobalFunction extends Model
                 return false;
             }
 
+            // In the shape the app can open on tap (PushRoute).
             $payload = GlobalFunction::generatePushNotificationPayload(
                 $toUser->device,
                 Constants::pushTypeToken,
@@ -317,7 +334,7 @@ class GlobalFunction extends Model
                 $title,
                 $body,
                 null,
-                $data
+                PushRoute::forApp($data)
             );
 
             return GlobalFunction::sendPushNotification($payload);
@@ -1749,7 +1766,13 @@ class GlobalFunction extends Model
             $receiver->id,
             $sender->fullname ?: $sender->username,
             'sent you a gift',
-            ['type' => (string) Constants::notify_gift_user, 'id' => (string) $gift->id],
+            [
+                'type' => (string) Constants::notify_gift_user,
+                'id' => (string) $gift->id,
+                // So a tap opens the video it was sent on, or the sender.
+                'from_user_id' => (string) $sender->id,
+                'post_id' => isset($context['post_id']) ? (string) $context['post_id'] : '',
+            ],
             'notify_gift_received'
         );
         return null;
