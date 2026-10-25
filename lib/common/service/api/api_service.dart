@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -60,7 +61,15 @@ class ApiService {
   // CancelToken.cancel() only marks the result as ignorable — it never closed
   // the socket mid-flight even before this change — so sharing the client
   // does not alter cancellation behavior.
-  static final http.Client _sharedClient = http.Client();
+  //
+  // An idle connection is kept for 4s, not dart:io's default 15s. The server
+  // closes idle connections after 12-14s (measured 2026-10-25, though it
+  // advertises 5s), so a request sent 13-15s after the last one went out on a
+  // connection the server was closing and failed with "Connection closed
+  // before full header was received": the top Crashlytics issue, and an
+  // empty Snaps or a skipped settings load for the user.
+  static final http.Client _sharedClient =
+      IOClient(HttpClient()..idleTimeout = const Duration(seconds: 4));
 
   // Fail fast instead of letting a request hang forever on a dead connection;
   // callers already treat exceptions as network failures.
@@ -68,9 +77,9 @@ class ApiService {
   // 30s was too tight for the production host: a cold LSPHP start on the
   // shared hosting was measured at 18.8s to return even a 401, against ~0.5s
   // once warm. Add the flaky link to that box and first-hit calls were
-  // crossing the old budget and surfacing as timeouts. Not retried
-  // automatically — every endpoint here is POST, including addPost/buyCoins,
-  // so a blanket retry risks double-submitting.
+  // crossing the old budget and surfacing as timeouts. A timeout is not
+  // retried: every endpoint here is POST, including addPost/buyCoins, so a
+  // blanket retry risks double-submitting (see _post for the one retry).
   static const Duration _requestTimeout = Duration(seconds: 45);
 
   // Headers are built per call: a shared mutable map leaks the AUTHTOKEN of a
@@ -104,9 +113,7 @@ class ApiService {
     Loggers.info("header: $headers");
     Loggers.info("Parameters: ${params.isEmpty ? "Empty" : params}");
     try {
-      final response = await _sharedClient
-          .post(Uri.parse(url), headers: headers, body: params)
-          .timeout(_requestTimeout);
+      final response = await _post(url, headers, params);
       Loggers.success(response.statusCode);
       if (cancelToken?.isCancelled ?? false) {
         if (kDebugMode) {
@@ -193,6 +200,28 @@ class ApiService {
       Loggers.error("Unexpected error : $e");
       rethrow;
     }
+  }
+
+  /// Sends the request, and sends a read (every endpoint named fetch…) once
+  /// more if the connection failed before any response: on a fresh
+  /// connection it then goes through. Writes are never resent, as the server
+  /// may already have acted on them (a like, a gift, a purchase).
+  Future<http.Response> _post(String url, Map<String, String> headers,
+      Map<String, String> params) async {
+    Future<http.Response> send() => _sharedClient
+        .post(Uri.parse(url), headers: headers, body: params)
+        .timeout(_requestTimeout);
+    final bool isRead = Uri.parse(url).pathSegments.last.startsWith('fetch');
+    try {
+      return await send();
+    } on http.ClientException catch (e) {
+      if (!isRead) rethrow;
+      Loggers.error('Retrying $url after: $e');
+    } on SocketException catch (e) {
+      if (!isRead) rethrow;
+      Loggers.error('Retrying $url after: $e');
+    }
+    return send();
   }
 
   /// Some hosts echo a stray PHP warning/notice ahead of the JSON body on an
