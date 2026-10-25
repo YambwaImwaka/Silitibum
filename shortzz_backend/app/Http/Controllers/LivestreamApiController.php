@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\BaseBroadcastEvent;
 use App\Models\Gifts;
 use App\Models\GlobalFunction;
+use App\Models\GlobalSettings;
 use App\Models\Livestream;
 use App\Models\LivestreamComment;
 use App\Models\LivestreamUser;
@@ -44,6 +45,16 @@ class LivestreamApiController extends Controller
         $user = $this->me($request);
         if ($user->is_freez == 1) {
             return ['status' => false, 'message' => "this user is freezed!"];
+        }
+
+        // Apps before 1.2.3 go live on Zego, whose account has lapsed: their
+        // rooms never get video. Once admin Settings names a build on Play
+        // to update to, they are told so (they show this message as is)
+        // rather than left in a room that never starts. They send no rtc.
+        if ($request->rtc !== 'livekit'
+            && (int) (GlobalSettings::first()->android_latest_version ?? 0) > 0) {
+            return GlobalFunction::sendSimpleResponse(false,
+                'Update Silitibum from the Play Store to go live.');
         }
 
         // A host can only run one live room at a time.

@@ -65,6 +65,11 @@ class Setting {
   int? maxCommentPins;
   int? maxImagesPerPost;
   int? maxUserLinks;
+
+  /// Build numbers set in admin Settings (0 = off): below the latest the app
+  /// offers an update, below the minimum it requires one.
+  int? androidLatestVersion;
+  int? androidMinVersion;
   int? liveMinViewers;
   int? liveTimeout;
   int? liveBattle;
@@ -162,6 +167,8 @@ class Setting {
     this.maxCommentPins,
     this.maxImagesPerPost,
     this.maxUserLinks,
+    this.androidLatestVersion,
+    this.androidMinVersion,
     this.liveMinViewers,
     this.liveTimeout,
     this.liveBattle,
@@ -236,6 +243,8 @@ class Setting {
         maxCommentPins: asIntOrNull(json["max_comment_pins"]),
         maxImagesPerPost: asIntOrNull(json["max_images_per_post"]),
         maxUserLinks: asIntOrNull(json["max_user_links"]),
+        androidLatestVersion: asIntOrNull(json["android_latest_version"]),
+        androidMinVersion: asIntOrNull(json["android_min_version"]),
         liveMinViewers: asIntOrNull(json["live_min_viewers"]),
         liveTimeout: asIntOrNull(json["live_timeout"]),
         liveBattle: asIntOrNull(json["live_battle"]),
@@ -348,6 +357,8 @@ class Setting {
         "max_comment_pins": maxCommentPins,
         "max_images_per_post": maxImagesPerPost,
         "max_user_links": maxUserLinks,
+        "android_latest_version": androidLatestVersion,
+        "android_min_version": androidMinVersion,
         "live_min_viewers": liveMinViewers,
         "live_timeout": liveTimeout,
         "live_battle": liveBattle,

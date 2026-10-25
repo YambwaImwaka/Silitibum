@@ -97,6 +97,8 @@ dependencies:
 
   ### 🔗 Links & External Services
   url_launcher: ^6.3.2
+  # Already built in through wakelock_plus; read for the update prompt.
+  package_info_plus: ^9.0.1
   webview_flutter_plus: ^0.4.20
   http: ^1.6.0
   share_plus: ^12.0.2

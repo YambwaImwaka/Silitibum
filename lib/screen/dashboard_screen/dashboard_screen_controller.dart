@@ -7,6 +7,7 @@ import 'package:shortzz/common/controller/ads_controller.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
+import 'package:shortzz/common/manager/app_update_prompt.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
@@ -76,6 +77,8 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   @override
   void onReady() async {
     super.onReady();
+    // Guests too: an old build is old whoever is using it.
+    Future.delayed(const Duration(seconds: 2), AppUpdatePrompt.check);
     // Everything below needs a logged-in user: realtime channels keyed on
     // the user id, auth-only APIs, FCM topic subscriptions.
     if (isGuest) return;

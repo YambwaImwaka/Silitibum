@@ -859,6 +859,15 @@ class SettingsController extends Controller
         $setting->app_store_download_link = $request->app_store_download_link;
         $setting->play_store_download_link = $request->play_store_download_link;
         $setting->uri_scheme = $request->uri_scheme;
+        // Build numbers the app compares its own with (0 = off). Only when
+        // the form sent them, so an admin page loaded before they existed
+        // does not reset them.
+        if ($request->has('android_latest_version')) {
+            $setting->android_latest_version = max(0, (int) $request->android_latest_version);
+        }
+        if ($request->has('android_min_version')) {
+            $setting->android_min_version = max(0, (int) $request->android_min_version);
+        }
 
         $setting->save();
 

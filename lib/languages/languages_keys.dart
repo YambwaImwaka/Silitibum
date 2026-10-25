@@ -445,6 +445,14 @@ class LKey {
   static const String swipeUpForNextLive = "Swipe up for the next LIVE";
   static const String connectingToLive = "Connecting…";
   static const String backToYourLive = "Back to your LIVE";
+  static const String updateAvailableTitle = "A new Silitibum is ready";
+  static const String updateAvailableDescription =
+      "Update for the newest features and fixes.";
+  static const String updateRequiredTitle = "Update Silitibum";
+  static const String updateRequiredDescription =
+      "This version of Silitibum no longer works. Update it from the Play Store to keep using the app.";
+  static const String updateNow = "Update";
+  static const String notNow = "Not now";
   static const String notificationsOffTitle = "Notifications are off";
   static const String notificationsOffDescription =
       "Turn them on to know when someone follows you, sends you a gift or messages you.";

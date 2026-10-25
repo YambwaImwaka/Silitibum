@@ -145,6 +145,21 @@ class LiveKitTokenTest extends ApiTestCase
         $this->assertContains($oldApp, $forOldApps);
     }
 
+    public function test_old_apps_are_told_to_update_once_a_build_is_named_for_play(): void
+    {
+        $old = $this->tokenFor($this->makeUser());
+        // No build named in Settings yet: old apps create rooms as before.
+        $this->api('livestream/createLivestream', [], $old)->assertJsonPath('status', true);
+
+        DB::table('tbl_settings')->update(['android_latest_version' => 28]);
+
+        $this->api('livestream/createLivestream', [], $old)
+            ->assertJsonPath('status', false)
+            ->assertJsonPath('message', 'Update Silitibum from the Play Store to go live.');
+        $this->api('livestream/createLivestream', ['rtc' => 'livekit'], $this->tokenFor($this->makeUser()))
+            ->assertJsonPath('status', true);
+    }
+
     private function liveRoom(): string
     {
         $host = $this->makeUser();

@@ -1249,6 +1249,28 @@
                                         </div>
                                     </div>
                                 </div>
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <div class="mb-1">
+                                            <label for="android_latest_version"
+                                                class="form-label">{{ __('Android Latest Version Code') }}</label>
+                                            <input type="number" min="0" class="form-control"
+                                                id="android_latest_version" name="android_latest_version"
+                                                value="{{ $setting->android_latest_version ?? 0 }}">
+                                            <small class="text-muted">{{ __('Set to the new build number (e.g. 28) once it is live on Play. Older apps are asked to update, and apps too old to go live are told to update. 0 = off.') }}</small>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <div class="mb-1">
+                                            <label for="android_min_version"
+                                                class="form-label">{{ __('Android Minimum Version Code') }}</label>
+                                            <input type="number" min="0" class="form-control"
+                                                id="android_min_version" name="android_min_version"
+                                                value="{{ $setting->android_min_version ?? 0 }}">
+                                            <small class="text-muted">{{ __('Apps below this build must update before they can continue. Use only when an old build no longer works. 0 = off.') }}</small>
+                                        </div>
+                                    </div>
+                                </div>
                                 <hr>
                                 <button type="submit" class="btn btn-primary">
                                     <span class="spinner-border spinner-border-sm me-1 spinner hide" role="status"
