@@ -64,7 +64,7 @@ import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_c
 /// to the full room screen.
 class LiveFeedScreenController extends BaseController
     with WidgetsBindingObserver {
-  static const int liveTabIndex = 2;
+  static const int liveTabIndex = DashboardScreenController.liveTab;
 
   final RxList<Livestream> streams = <Livestream>[].obs;
   final RxInt currentIndex = 0.obs;
@@ -346,6 +346,34 @@ class LiveFeedScreenController extends BaseController
     previewView.value = VideoTrackRenderer(track,
         key: ObjectKey(track), fit: VideoViewFit.cover);
     isRendering.value = true;
+    _prefetchNext();
+  }
+
+  /// While one live plays, the next one's token is fetched, so swiping to it
+  /// skips that round trip. Only the token: holding a hidden connection to
+  /// the next room as well would double the LiveKit minutes every viewer
+  /// uses.
+  void _prefetchNext() {
+    final int next = currentIndex.value + 1;
+    if (next >= streams.length) return;
+    final String? roomId = streams[next].roomID;
+    if (roomId == null || roomId.isEmpty || endedRooms.contains(roomId)) return;
+    LiveVideo.prefetchToken(roomId, preview: true);
+  }
+
+  /// Gives the playing preview to the room screen, so joining shows the video
+  /// that is already playing instead of connecting all over again.
+  Room? _takePreview(String? roomId) {
+    if (roomId == null || roomId != _playingRoom) return null;
+    final Room? room = _previewRoom;
+    _previewRoom = null;
+    _playingRoom = null;
+    final listener = _previewEvents;
+    _previewEvents = null;
+    listener?.dispose();
+    previewView.value = null;
+    isRendering.value = false;
+    return room;
   }
 
   Future<void> _leave() async {
@@ -367,14 +395,18 @@ class LiveFeedScreenController extends BaseController
   Future<void> joinCurrent() async {
     final Livestream? stream = currentStream;
     if (stream == null || endedRooms.contains(stream.roomID)) return;
+    if (_navigating) return;
+    final bool mine = stream.hostId == SessionManager.instance.getUserID();
+    // Taken before _openOver stops the preview, which would close it.
+    final Room? playing = mine ? null : _takePreview(stream.roomID);
     // Watching is open to everyone; the room asks a guest to sign in at the
     // point they try to comment, gift or co-host.
     await _openOver(() async {
-      if (stream.hostId == SessionManager.instance.getUserID()) {
+      if (mine) {
         await Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
       } else {
-        await Get.to(
-            () => LiveStreamAudienceScreen(isHost: false, livestream: stream));
+        await Get.to(() => LiveStreamAudienceScreen(
+            isHost: false, livestream: stream, room: playing));
       }
     });
   }

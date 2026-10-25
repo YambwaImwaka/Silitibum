@@ -20,17 +20,20 @@ import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/camera_screen/camera_screen.dart';
 import 'package:shortzz/screen/feed_screen/feed_screen_controller.dart';
 import 'package:shortzz/screen/gif_sheet/gif_sheet_controller.dart';
-import 'package:shortzz/utilities/asset_res.dart';
+import 'package:shortzz/screen/profile_screen/profile_screen_controller.dart';
+import 'package:shortzz/screen/profile_screen/widget/post_options_sheet.dart';
 
 class DashboardScreenController extends BaseController with GetSingleTickerProviderStateMixin {
-  List<String> bottomIconList = [
-    AssetRes.icReel,
-    AssetRes.icPost,
-    AssetRes.icLiveStream,
-    AssetRes.icSearch,
-    AssetRes.icChat,
-    AssetRes.icProfile
-  ];
+  // The bottom bar's tabs; creating sits between Feed and Live but is a
+  // sheet, not a tab. Explore and Messages left the bar in 1.3.0.
+  static const int homeTab = 0;
+  static const int feedTab = 1;
+  static const int liveTab = 2;
+  static const int profileTab = 3;
+
+  /// Snaps and Live are full-screen video.
+  static bool isVideoTab(int index) => index == homeTab || index == liveTab;
+
   RxInt selectedPageIndex = 0.obs;
   RxDouble scaleValue = 1.0.obs;
   Function(int index)? onBottomIndexChanged;
@@ -128,11 +131,11 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   }
 
   onChanged(int index) {
-    // Messages (4) and Profile (5) need a session — prompt guests to sign in.
-    if ((index == 4 || index == 5) && !AuthGate.check()) return;
-    SystemChrome.setSystemUIOverlayStyle(
-        SystemUiOverlayStyle(statusBarBrightness: index == 0 || index == 2 ? Brightness.dark : Brightness.light));
-    if (index == 1) {
+    // The profile needs a session — prompt guests to sign in.
+    if (index == profileTab && !AuthGate.check()) return;
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+        statusBarBrightness: isVideoTab(index) ? Brightness.dark : Brightness.light));
+    if (index == feedTab) {
       onFeedPostScrollDown(index);
     }
     if (selectedPageIndex.value == index) return;
@@ -142,6 +145,21 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     animationController
       ..reset()
       ..forward();
+  }
+
+  /// The bar's ➕: post, story, snap or go live.
+  void openCreateSheet() {
+    if (!AuthGate.check()) return;
+    const tag = ProfileScreenController.tag;
+    final controller = Get.isRegistered<ProfileScreenController>(tag: tag)
+        ? Get.find<ProfileScreenController>(tag: tag)
+        : Get.put(
+            ProfileScreenController(
+                SessionManager.instance.getUser().obs, (user) {}),
+            tag: tag);
+    HapticFeedback.lightImpact();
+    Get.bottomSheet(PostOptionsSheet(controller: controller),
+        isScrollControlled: true);
   }
 
   onFeedPostScrollDown(int index) {

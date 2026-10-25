@@ -25,6 +25,8 @@ import 'package:livekit_client/livekit_client.dart'
         VideoTrack,
         VideoTrackRenderer,
         VideoViewFit;
+// Prefixed: Flutter has its own ConnectionState.
+import 'package:livekit_client/livekit_client.dart' as lk show ConnectionState;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
@@ -105,9 +107,13 @@ class LivestreamScreenController extends BaseController {
   TextEditingController textCommentController = TextEditingController();
 
   LivestreamScreenController(this.liveData, this.isHost,
-      {LocalVideoTrack? camera})
+      {LocalVideoTrack? camera, Room? room})
       : _camera = camera,
-        _cameraIsLent = camera != null;
+        _cameraIsLent = camera != null,
+        _handedRoom = room;
+
+  /// The Live tab's preview of this room, already connected and playing.
+  Room? _handedRoom;
 
   Future<LocalVideoTrack> _openCamera() async {
     final camera = await LiveVideo.createCamera(front: isFrontCamera);
@@ -498,10 +504,22 @@ class LivestreamScreenController extends BaseController {
 
   /// Joins the room's video, then publishes (host) or registers as a viewer.
   Future<void> loginRoom() async {
-    if (roomId.isEmpty) return;
+    final Room? handed = _handedRoom;
+    _handedRoom = null;
+    if (roomId.isEmpty) {
+      await LiveVideo.close(handed);
+      return;
+    }
     final Room room;
     try {
-      room = await LiveVideo.connect(roomId);
+      if (handed != null &&
+          handed.connectionState == lk.ConnectionState.connected) {
+        // Joining from the Live tab: the video is already playing.
+        room = handed;
+      } else {
+        await LiveVideo.close(handed);
+        room = await LiveVideo.connect(roomId);
+      }
     } on LiveVideoUnavailable catch (e) {
       Loggers.error('Live video unavailable: ${e.reason}');
       _onCannotConnect(ended: e.roomEnded);

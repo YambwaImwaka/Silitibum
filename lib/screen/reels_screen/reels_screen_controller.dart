@@ -8,7 +8,6 @@ import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
 import 'package:shortzz/common/functions/debounce_action.dart';
 import 'package:shortzz/common/manager/logger.dart';
-import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
 import 'package:shortzz/common/service/media/video_cache_service.dart';
 import 'package:shortzz/common/service/media/video_stall_watcher.dart';
@@ -16,8 +15,6 @@ import 'package:shortzz/model/post_story/comment/fetch_comment_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/comment_sheet/helper/comment_helper.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
-import 'package:shortzz/screen/profile_screen/profile_screen_controller.dart';
-import 'package:shortzz/screen/profile_screen/widget/post_options_sheet.dart';
 import 'package:shortzz/screen/reels_screen/reel/reel_page_controller.dart';
 import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
@@ -460,33 +457,6 @@ class ReelsScreenController extends BaseController {
           .reelData
           .update((val) => val?.updateCommentCount(1));
     }
-  }
-
-  void openPostOptionsSheet() {
-    if (!AuthGate.check()) return;
-    const tag = ProfileScreenController.tag;
-
-    final controller = Get.isRegistered<ProfileScreenController>(tag: tag)
-        ? Get.find<ProfileScreenController>(tag: tag)
-        : Get.put(ProfileScreenController(SessionManager.instance.getUser().obs, (user) {}),
-            tag: tag);
-
-    Get.bottomSheet(
-        PostOptionsSheet(
-          controller: controller,
-          onChanged: (type) {
-            if (type == PublishType.goLive) {
-              Future.delayed(
-                const Duration(seconds: 1),
-                () {
-                  final controller = Get.find<DashboardScreenController>();
-                  controller.onChanged(2);
-                },
-              );
-            }
-          },
-        ),
-        isScrollControlled: true);
   }
 
   onUpdateReelData(Post reel) {

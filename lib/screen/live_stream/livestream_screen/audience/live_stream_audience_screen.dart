@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:keyboard_avoider/keyboard_avoider.dart';
+import 'package:livekit_client/livekit_client.dart' show Room;
 import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/audience/widget/livestream_audience_top_view.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
@@ -15,13 +16,17 @@ class LiveStreamAudienceScreen extends StatelessWidget {
   final Livestream livestream;
   final bool isHost;
 
+  /// The Live tab's preview of this room, already playing; joining takes it
+  /// over instead of connecting again.
+  final Room? room;
+
   const LiveStreamAudienceScreen(
-      {super.key, required this.livestream, required this.isHost});
+      {super.key, required this.livestream, required this.isHost, this.room});
 
   @override
   Widget build(BuildContext context) {
-    final controller =
-        Get.put(LivestreamScreenController(livestream.obs, isHost));
+    final controller = Get.put(
+        LivestreamScreenController(livestream.obs, isHost, room: room));
 
     return Scaffold(
       backgroundColor: blackPure(context),

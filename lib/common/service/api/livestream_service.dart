@@ -29,10 +29,14 @@ class LivestreamService {
         .addAppUser(AppUser.fromJson(appUserJson));
   }
 
+  /// Media service this app broadcasts and plays on. The server lists only
+  /// rooms that use it: older apps' rooms are on Zego and carry no video.
+  static const String rtc = 'livekit';
+
   Future<List<Livestream>> fetchLivestreams({int limit = 50}) async {
     final raw = await ApiService.instance.call<Map<String, dynamic>>(
         url: WebService.livestream.fetchLivestreams,
-        param: {Params.limit: limit});
+        param: {Params.limit: limit, Params.rtc: rtc});
     final List<Livestream> streams = [];
     if (raw['status'] == true && raw['data'] is List) {
       for (final item in (raw['data'] as List)) {
@@ -68,6 +72,7 @@ class LivestreamService {
     return ApiService.instance.call(
         url: WebService.livestream.createLivestream,
         param: {
+          Params.rtc: rtc,
           Params.description: description,
           Params.type: type,
           Params.isRestrictToJoin: isRestrictToJoin,

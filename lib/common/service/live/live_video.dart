@@ -46,11 +46,40 @@ class LiveVideo {
         params: VideoParametersPresets.h720_169));
   }
 
+  /// Tokens fetched ahead for the live the viewer is likely to open next
+  /// (the next one in the Live tab), so that swipe skips a round trip to our
+  /// server. Kept briefly: a live can end, and the server is what says so.
+  static final Map<String, ({RtcTokenResult token, DateTime at})> _prefetched =
+      {};
+  static const Duration _prefetchFor = Duration(seconds: 60);
+
+  static String _key(String roomId, bool preview) => '$roomId|$preview';
+
+  static Future<void> prefetchToken(String roomId,
+      {bool preview = false}) async {
+    final String key = _key(roomId, preview);
+    final cached = _prefetched[key];
+    if (cached != null && DateTime.now().difference(cached.at) < _prefetchFor) {
+      return;
+    }
+    try {
+      final RtcTokenResult res = await LivestreamService.instance
+          .fetchRtcToken(roomId: roomId, preview: preview);
+      if (res.status == true && res.url != null && res.token != null) {
+        _prefetched[key] = (token: res, at: DateTime.now());
+      }
+    } catch (_) {}
+  }
+
   /// Joins [roomId]'s video. Throws [LiveVideoUnavailable] when the server
   /// has no token for it.
   static Future<Room> connect(String roomId, {bool preview = false}) async {
-    final RtcTokenResult res = await LivestreamService.instance
-        .fetchRtcToken(roomId: roomId, preview: preview);
+    final cached = _prefetched.remove(_key(roomId, preview));
+    final RtcTokenResult res =
+        cached != null && DateTime.now().difference(cached.at) < _prefetchFor
+            ? cached.token
+            : await LivestreamService.instance
+                .fetchRtcToken(roomId: roomId, preview: preview);
     final String? url = res.url;
     final String? token = res.token;
     if (res.status != true || url == null || token == null) {

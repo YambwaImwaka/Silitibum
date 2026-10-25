@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/common/widget/custom_search_text_field.dart';
 import 'package:shortzz/common/widget/custom_tab_switcher.dart';
 import 'package:shortzz/common/widget/error_retry_view.dart';
@@ -12,8 +13,24 @@ import 'package:shortzz/utilities/color_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
+/// Messages as its own screen, opened from the profile (it used to be a
+/// bottom-bar tab).
+class MessagesPage extends StatelessWidget {
+  const MessagesPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: scaffoldBackgroundColor(context),
+      body: const MessageScreen(showBack: true),
+    );
+  }
+}
+
 class MessageScreen extends StatelessWidget {
-  const MessageScreen({super.key});
+  final bool showBack;
+
+  const MessageScreen({super.key, this.showBack = false});
 
   @override
   Widget build(BuildContext context) {
@@ -28,9 +45,23 @@ class MessageScreen extends StatelessWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10.0),
-                  child: Text(LKey.messages.tr,
-                      style: TextStyleCustom.unboundedMedium500(
-                          fontSize: 15, color: textDarkGrey(context))),
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (showBack)
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: CustomBackButton(
+                              color: textDarkGrey(context),
+                              height: 26,
+                              width: 26,
+                              padding: const EdgeInsets.only(left: 12)),
+                        ),
+                      Text(LKey.messages.tr,
+                          style: TextStyleCustom.unboundedMedium500(
+                              fontSize: 15, color: textDarkGrey(context))),
+                    ],
+                  ),
                 ),
                 CustomTabSwitcher(
                   items: controller.chatCategories,

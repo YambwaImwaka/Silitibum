@@ -514,6 +514,12 @@ class LKey {
   static const String notifyReplyMentionedInComment =
       "has reply mentioned you in comment : @comment_description";
   static const String activitySentGift = "has sent you gift";
+  static const String activitySentGiftOnPost = "sent you a gift on your post";
+  static const String notifyPostedNewVideo = "posted a new video";
+  static const String notifyPostedNewPhoto = "posted a new photo";
+  static const String notifyPostedNewPost = "shared a new post";
+  static const String justNow = "now";
+  static const String profile = "Profile";
   static const String postCommentEmptyTitle = "No Comments Yet";
   static const String postCommentEmptyDescription =
       "This post doesn’t have any comments. Join in and share your thoughts.";

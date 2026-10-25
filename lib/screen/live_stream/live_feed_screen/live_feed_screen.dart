@@ -8,6 +8,7 @@ import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/widget/custom_image.dart';
 import 'package:shortzz/common/widget/full_name_with_blue_tick.dart';
 import 'package:shortzz/common/widget/loader_widget.dart';
+import 'package:shortzz/common/widget/top_bar_actions.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/model/livestream/livestream.dart';
@@ -76,6 +77,8 @@ class _TopBar extends StatelessWidget {
                 style: TextStyleCustom.unboundedMedium500(
                     color: whitePure(context), fontSize: 15)),
             const Spacer(),
+            TopBarActions(color: whitePure(context)),
+            const SizedBox(width: 6),
             InkWell(
               onTap: controller.onGoLive,
               child: Container(

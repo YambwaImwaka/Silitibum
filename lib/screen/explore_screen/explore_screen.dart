@@ -5,6 +5,7 @@ import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
 import 'package:shortzz/common/service/api/post_service.dart';
+import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/common/widget/custom_image.dart';
 import 'package:shortzz/common/widget/gradient_text.dart';
 import 'package:shortzz/common/widget/loader_widget.dart';
@@ -21,8 +22,24 @@ import 'package:shortzz/utilities/style_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
+/// Explore as its own screen, opened from the search icon on the main tabs'
+/// top bars (it used to be a bottom-bar tab).
+class ExplorePage extends StatelessWidget {
+  const ExplorePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: scaffoldBackgroundColor(context),
+      body: const ExploreScreen(showBack: true),
+    );
+  }
+}
+
 class ExploreScreen extends StatelessWidget {
-  const ExploreScreen({super.key});
+  final bool showBack;
+
+  const ExploreScreen({super.key, this.showBack = false});
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +48,7 @@ class ExploreScreen extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SearchScreenTopView(controller: controller),
+        SearchScreenTopView(controller: controller, showBack: showBack),
         Expanded(
           child: Obx(() {
             final isLoading = controller.isLoading.value;
@@ -138,8 +155,10 @@ class TrendingPostGrid extends StatelessWidget {
 
 class SearchScreenTopView extends StatelessWidget {
   final ExploreScreenController controller;
+  final bool showBack;
 
-  const SearchScreenTopView({super.key, required this.controller});
+  const SearchScreenTopView(
+      {super.key, required this.controller, this.showBack = false});
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +179,12 @@ class SearchScreenTopView extends StatelessWidget {
       bottom: false,
       child: Row(
         children: [
+          if (showBack)
+            CustomBackButton(
+                color: textDarkGrey(context),
+                height: 26,
+                width: 26,
+                padding: const EdgeInsets.only(left: 12)),
           Expanded(
             child: InkWell(
               onTap: () => Get.to(() => const SearchScreen()),

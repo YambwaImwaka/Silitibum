@@ -21,11 +21,15 @@ import 'package:shortzz/model/post_story/post_model.dart';
 import 'package:shortzz/screen/chat_screen/chat_screen.dart';
 import 'package:shortzz/screen/chat_screen/chat_screen_controller.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
+import 'package:shortzz/screen/earnings_screen/earnings_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/audience/live_stream_audience_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/livestream_host_screen.dart';
+import 'package:shortzz/screen/notification_screen/notification_screen.dart';
+import 'package:shortzz/screen/payout_account_screen/payout_account_screen.dart';
 import 'package:shortzz/screen/post_screen/single_post_screen.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
+import 'package:shortzz/screen/withdrawals_screen/withdrawals_screen.dart';
 import 'package:shortzz/utilities/const_res.dart';
 
 @pragma('vm:entry-point')
@@ -168,34 +172,56 @@ class FirebaseNotificationManager {
         payload: jsonEncode(message.toMap()));
   }
 
+  /// Opens what a tapped push is about.
   Future<void> handleNotification(String payload) async {
     final RemoteMessage message = RemoteMessage.fromMap(jsonDecode(payload));
-    final dataType = message.data['type'];
-    final dataString = message.data['notification_data'];
+    final String? dataType = message.data['type']?.toString();
+    final String dataString = message.data['notification_data']?.toString() ?? '';
     Loggers.info('DATA TYPE : $dataType');
     Loggers.info('DATA STRING : $dataString');
-    if (dataType == null || dataString == null || dataString.isEmpty) return;
+    if (dataType == null) return;
     final controller = Get.put(DashboardScreenController());
     switch (dataType) {
       case 'chat':
-        Future.delayed(const Duration(milliseconds: 500), () async {
-          controller.selectedPageIndex.value = 4;
-          await _handleChatNotification(dataString);
-        });
-
+        if (dataString.isEmpty) return;
+        Future.delayed(const Duration(milliseconds: 500),
+            () => _handleChatNotification(dataString));
         break;
       case 'post':
-        await _handlePostNotification(dataString, controller);
+        if (dataString.isEmpty) return;
+        await _handlePostNotification(dataString);
         break;
       case 'user':
-        controller.selectedPageIndex.value = 5;
+        if (dataString.isEmpty) return;
         await _handleUserNotification(dataString);
         break;
       case 'live_stream':
-        controller.selectedPageIndex.value = 2;
+        if (dataString.isEmpty) return;
+        controller.selectedPageIndex.value = DashboardScreenController.liveTab;
         await _handleLivestreamNotification(dataString);
         break;
+      case 'verification':
+        // The blue tick: given, renewed or about to lapse.
+        controller.selectedPageIndex.value =
+            DashboardScreenController.profileTab;
+        break;
+      case 'withdrawal':
+        Get.to(() => const WithdrawalsScreen());
+        break;
+      case 'payout_account':
+        Get.to(() => const PayoutAccountScreen());
+        break;
+      case 'wallet':
+        Get.to(() => const EarningsScreen());
+        break;
       default:
+        // Activity pushes sent before the server translated them carry the
+        // bare type number and nothing to open; the list shows what they
+        // were about.
+        if (int.tryParse(dataType) != null) {
+          Get.to(() => const NotificationScreen());
+          return;
+        }
         Loggers.warning('Unknown notification type: $dataType');
     }
   }
@@ -216,7 +242,7 @@ class FirebaseNotificationManager {
     }
   }
 
-  Future<void> _handlePostNotification(String data, DashboardScreenController controller) async {
+  Future<void> _handlePostNotification(String data) async {
     try {
       NotificationInfo notificationInfo = NotificationInfo.fromJson(jsonDecode(data));
       final int postId = notificationInfo.id ?? -1;
@@ -230,7 +256,6 @@ class FirebaseNotificationManager {
         if (post == null) return;
 
         if (post.postType == PostType.reel) {
-          controller.selectedPageIndex.value = 5;
           Get.to(() => ReelsScreen(
                 reels: [post].obs,
                 position: 0,
@@ -238,7 +263,6 @@ class FirebaseNotificationManager {
                 pageType: ReelPageType.notification,
               ));
         } else if ([PostType.text, PostType.image, PostType.video].contains(post.postType)) {
-          controller.selectedPageIndex.value = 1;
           await Get.to(() =>
               SinglePostScreen(post: post, postByIdData: result.data, isFromNotification: true));
         }

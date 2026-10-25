@@ -56,6 +56,8 @@ class LivestreamApiController extends Controller
         $stream->host_id = $user->id;
         $stream->description = GlobalFunction::cleanString($request->description ?? '');
         $stream->type = $request->type ?? 'LIVESTREAM';
+        // Apps from 1.2.3 broadcast on LiveKit; older ones on lapsed Zego.
+        $stream->rtc = $request->rtc === 'livekit' ? 'livekit' : 'zego';
         $stream->battle_type = 'INITIATE';
         $stream->battle_duration = (int) ($request->battle_duration ?? 5);
         $stream->is_restrict_to_join = (int) ($request->is_restrict_to_join ?? 0);
@@ -82,7 +84,13 @@ class LivestreamApiController extends Controller
     // broadcasting (LivestreamLiveness).
     public function fetchLivestreams(Request $request)
     {
-        $streams = LivestreamLiveness::listed()
+        $query = LivestreamLiveness::listed();
+        // A LiveKit app can only play LiveKit rooms; an older app's room
+        // never has video now that its Zego account has lapsed.
+        if ($request->rtc === 'livekit') {
+            $query->where('rtc', 'livekit');
+        }
+        $streams = $query
             ->orderBy('watching_count', 'desc')
             ->orderBy('id', 'desc')
             ->limit((int) ($request->limit ?? 50))

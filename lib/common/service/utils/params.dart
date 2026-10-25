@@ -38,6 +38,7 @@ class Params {
   static const String lastMsgAt = 'last_msg_at';
   static const String roomId = 'room_id';
   static const String guestId = 'guest_id';
+  static const String rtc = 'rtc';
   static const String preview = 'preview';
   static const String snapshot = 'snapshot';
   static const String chunk = 'chunk';

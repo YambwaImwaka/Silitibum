@@ -1,20 +1,16 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:proste_indexed_stack/proste_indexed_stack.dart';
-import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/banner_ads_custom.dart';
-import 'package:shortzz/common/widget/gradient_border.dart';
-import 'package:shortzz/common/widget/gradient_icon.dart';
+import 'package:shortzz/common/widget/top_bar_actions.dart';
+import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
-import 'package:shortzz/screen/explore_screen/explore_screen.dart';
 import 'package:shortzz/screen/feed_screen/feed_screen.dart';
 import 'package:shortzz/screen/home_screen/home_screen.dart';
 import 'package:shortzz/screen/live_stream/live_feed_screen/live_feed_screen.dart';
-import 'package:shortzz/screen/message_screen/message_screen.dart';
 import 'package:shortzz/screen/profile_screen/profile_screen.dart';
+import 'package:shortzz/utilities/asset_res.dart';
 import 'package:shortzz/utilities/style_res.dart';
 import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
@@ -31,189 +27,244 @@ class DashboardScreen extends StatelessWidget {
       backgroundColor: scaffoldBackgroundColor(context),
       resizeToAvoidBottomInset: true,
       body: Obx(() {
+        final int index = controller.selectedPageIndex.value;
         return Column(
           children: [
             Expanded(
               child: ProsteIndexedStack(
-                index: controller.selectedPageIndex.value,
+                index: index,
                 children: [
-                  // Home is index 0 — the initially active tab always builds
-                  // immediately regardless of its own preload flag (it's the
-                  // current index), so it doesn't need preload:true here.
-                  // The other tabs previously all preloaded eagerly, meaning
-                  // every heavy screen (video players, story lists, live
-                  // search, chat, profile) was built and kept resident from
-                  // the moment the dashboard opened, well before the user
-                  // ever visited them — a large chunk of the app's baseline
-                  // memory/CPU footprint for the whole session. Building
-                  // them lazily on first visit instead removes that upfront
-                  // cost with no behavior change: once visited, a tab still
-                  // stays alive for the rest of the session exactly as before.
+                  // Tabs build on first visit and then stay alive; building
+                  // them all up front kept every heavy screen (video players,
+                  // story lists, profile) resident from launch.
                   IndexedStackChild(child: const HomeScreen(), preload: false),
-                  IndexedStackChild(child: FeedScreen(myUser: myUser), preload: false),
-                  IndexedStackChild(child: const LiveFeedScreen(), preload: false),
-                  IndexedStackChild(child: const ExploreScreen(), preload: false),
-                  IndexedStackChild(child: const MessageScreen(), preload: false),
                   IndexedStackChild(
-                      child: ProfileScreen(isDashBoard: true, user: myUser, isTopBarVisible: false),
-                      preload: false)
+                      child: FeedScreen(myUser: myUser), preload: false),
+                  IndexedStackChild(
+                      child: const LiveFeedScreen(), preload: false),
+                  IndexedStackChild(
+                      child: ProfileScreen(
+                          isDashBoard: true,
+                          user: myUser,
+                          isTopBarVisible: false),
+                      preload: false),
                 ],
               ),
             ),
-            if (controller.selectedPageIndex.value != 0)
+            // Not over full-screen video (Snaps, Live).
+            if (!DashboardScreenController.isVideoTab(index))
               const BannerAdsCustom(),
           ],
         );
       }),
-      bottomNavigationBar: _buildBottomNavigationBar(context, controller),
+      bottomNavigationBar: _BottomBar(controller: controller),
     );
   }
+}
 
-  Widget _buildBottomNavigationBar(
-      BuildContext context, DashboardScreenController controller) {
+/// Snaps · Feed · ➕ · Live · Profile, on a floating pill. Creating sits in the
+/// middle of the bar (it used to hide in the Snaps top bar); Explore is the
+/// search icon on each tab's top bar and Messages is on the profile.
+class _BottomBar extends StatelessWidget {
+  final DashboardScreenController controller;
+
+  const _BottomBar({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
     return Obx(() {
-      PostUploadingProgress postUpload = controller.postProgress.value;
-      bool isPostUploading =
-          postUpload.uploadType == UploadType.none ? false : true;
-      return AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        color: blackPure(context),
-        padding: const EdgeInsets.only(top: 5),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: List.generate(
-                controller.bottomIconList.length,
-                (index) {
-                  return _buildBottomNavItem(
-                      context, controller, index, isPostUploading);
-                },
-              ),
-            ),
-            SafeArea(
-              top: false,
-              bottom: isPostUploading ? true : false,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 100),
-                height: isPostUploading ? 30 : 0,
-                margin: Platform.isAndroid || !isPostUploading
-                    ? EdgeInsets.zero
-                    : const EdgeInsets.only(bottom: 20, top: 5),
-                color: Colors.white,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    Container(height: 30, decoration: BoxDecoration(gradient: StyleRes.themeGradient)),
-                    Align(
-                      alignment: AlignmentDirectional.centerEnd,
-                      child: LayoutBuilder(builder: (context, constraints) {
-                        double progress = (constraints.maxWidth * postUpload.progress) / 100;
-                        return AnimatedContainer(
-                          height: 30,
-                          width: constraints.maxWidth - progress,
-                          duration: const Duration(milliseconds: 250),
-                          decoration: BoxDecoration(color: textDarkGrey(context)),
-                        );
-                      }),
-                    ),
-                    Align(
-                      alignment: Alignment.center,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          if (postUpload.uploadType != UploadType.error)
-                            Text('${postUpload.progress.toInt()}%',
-                                style: TextStyleCustom.outFitMedium500(
-                                  color: whitePure(context),
-                                  fontSize: 16,
-                                )),
-                          Text(' ${postUpload.uploadType.title(postUpload.type)}',
-                              style: TextStyleCustom.outFitLight300(color: whitePure(context), fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  ],
+      final PostUploadingProgress upload = controller.postProgress.value;
+      final bool isUploading = upload.uploadType != UploadType.none;
+      final bool onVideo = DashboardScreenController.isVideoTab(
+          controller.selectedPageIndex.value);
+      return Container(
+        color: onVideo ? Colors.black : scaffoldBackgroundColor(context),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isUploading) _UploadProgressStrip(upload: upload),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                child: Container(
+                  height: 64,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1C1C1E),
+                    borderRadius: BorderRadius.circular(32),
+                    border: Border.all(color: Colors.white.withValues(alpha: .06)),
+                    boxShadow: const [
+                      BoxShadow(
+                          color: Color(0x40000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 6)),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      _NavItem(
+                          controller: controller,
+                          tab: DashboardScreenController.homeTab,
+                          icon: AssetRes.icReel,
+                          label: LKey.reels.tr),
+                      _NavItem(
+                          controller: controller,
+                          tab: DashboardScreenController.feedTab,
+                          icon: AssetRes.icPost,
+                          label: LKey.feed.tr),
+                      _CreateButton(onTap: controller.openCreateSheet),
+                      _NavItem(
+                          controller: controller,
+                          tab: DashboardScreenController.liveTab,
+                          icon: AssetRes.icLiveStream,
+                          label: LKey.live.tr),
+                      _NavItem(
+                          controller: controller,
+                          tab: DashboardScreenController.profileTab,
+                          icon: AssetRes.icProfile,
+                          label: LKey.profile.tr,
+                          // Messages live on the profile now.
+                          badge: controller.unReadCount),
+                    ],
+                  ),
                 ),
               ),
-            )
-          ],
-        ),
-      );
-    });
-  }
-
-  Widget _buildBottomNavItem(BuildContext context,
-      DashboardScreenController controller, int index, bool isPostUploading) {
-    return Obx(() {
-      final isSelected = controller.selectedPageIndex.value == index;
-      final scaleValue = isSelected ? controller.scaleValue.value : 1.0;
-
-      return SafeArea(
-        bottom: isPostUploading ? false : true,
-        child: GradientBorder(
-          onPressed: () => controller.onChanged(index),
-          strokeWidth: isSelected ? 2 : 0,
-          radius: 30,
-          gradient: isSelected ? StyleRes.themeGradient : null,
-          child: Padding(
-            padding: const EdgeInsets.all(3),
-            child: AnimatedScale(
-              scale: scaleValue,
-              duration: const Duration(milliseconds: 300),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  GradientIcon(
-                    gradient: isSelected
-                        ? null
-                        : StyleRes.bottomBarInactiveGradient(),
-                    child: Image.asset(controller.bottomIconList[index],
-                        height: 38, width: 38),
-                  ),
-                  if (index == 4) _buildUnreadCount(controller, context),
-                  if (index == 1) _buildActivityDot(context),
-                  // Moved to a separate function
-                ],
-              ),
-            ),
+            ],
           ),
         ),
       );
     });
   }
+}
 
-  /// New follows, gifts, likes or comments: the bell that lists them sits on
-  /// the Feed tab, so the tab itself carries a dot.
-  Widget _buildActivityDot(BuildContext context) {
-    return Obx(() {
-      if (SessionManager.instance.notifyCount.value <= 0) {
-        return const SizedBox();
-      }
-      return Positioned(
-        top: 4,
-        right: 4,
-        child: Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(
-              color: themeAccentSolid(context), shape: BoxShape.circle),
-        ),
-      );
-    });
+class _NavItem extends StatelessWidget {
+  final DashboardScreenController controller;
+  final int tab;
+  final String icon;
+  final String label;
+  final RxInt? badge;
+
+  const _NavItem(
+      {required this.controller,
+      required this.tab,
+      required this.icon,
+      required this.label,
+      this.badge});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkResponse(
+        onTap: () => controller.onChanged(tab),
+        radius: 34,
+        child: Obx(() {
+          final bool selected = controller.selectedPageIndex.value == tab;
+          final Color color = selected
+              ? themeAccentSolid(context)
+              : Colors.white.withValues(alpha: .62);
+          Widget image = Image.asset(icon, width: 26, height: 26, color: color);
+          final RxInt? count = badge;
+          if (count != null) {
+            image = CountBadge(count: count.value, child: image);
+          }
+          return Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              AnimatedScale(
+                scale: selected ? controller.scaleValue.value : 1.0,
+                duration: const Duration(milliseconds: 300),
+                child: image,
+              ),
+              const SizedBox(height: 3),
+              Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyleCustom.outFitMedium500(
+                      fontSize: 11,
+                      color: selected
+                          ? Colors.white
+                          : Colors.white.withValues(alpha: .62))),
+            ],
+          );
+        }),
+      ),
+    );
   }
+}
 
-  Widget _buildUnreadCount(
-      DashboardScreenController controller, BuildContext context) {
-    return Obx(() {
-      final count = controller.unReadCount.value;
-      return count > 0
-          ? Text(count > 9 ? '9+' : '$count',
-              style: TextStyleCustom.outFitRegular400(
-                  color: whitePure(context), fontSize: 12))
-          : const SizedBox();
-    });
+class _CreateButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _CreateButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: InkResponse(
+        onTap: onTap,
+        radius: 30,
+        child: Container(
+          width: 50,
+          height: 50,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: StyleRes.themeGradient,
+            boxShadow: const [
+              BoxShadow(
+                  color: Color(0x55E05514),
+                  blurRadius: 12,
+                  offset: Offset(0, 4)),
+            ],
+          ),
+          child: const Icon(Icons.add_rounded, color: Colors.white, size: 32),
+        ),
+      ),
+    );
+  }
+}
+
+/// Upload progress for a post or story being published in the background.
+class _UploadProgressStrip extends StatelessWidget {
+  final PostUploadingProgress upload;
+
+  const _UploadProgressStrip({required this.upload});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 30,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(decoration: BoxDecoration(gradient: StyleRes.themeGradient)),
+          Align(
+            alignment: AlignmentDirectional.centerEnd,
+            child: LayoutBuilder(builder: (context, constraints) {
+              final double done =
+                  (constraints.maxWidth * upload.progress) / 100;
+              return AnimatedContainer(
+                height: 30,
+                width: constraints.maxWidth - done,
+                duration: const Duration(milliseconds: 250),
+                decoration: BoxDecoration(color: textDarkGrey(context)),
+              );
+            }),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (upload.uploadType != UploadType.error)
+                Text('${upload.progress.toInt()}%',
+                    style: TextStyleCustom.outFitMedium500(
+                        color: whitePure(context), fontSize: 16)),
+              Text(' ${upload.uploadType.title(upload.type)}',
+                  style: TextStyleCustom.outFitLight300(
+                      color: whitePure(context), fontSize: 14)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }

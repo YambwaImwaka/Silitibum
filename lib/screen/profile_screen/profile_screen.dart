@@ -6,6 +6,7 @@ import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/common/widget/my_refresh_indicator.dart';
 import 'package:shortzz/common/widget/text_button_custom.dart';
+import 'package:shortzz/common/widget/top_bar_actions.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/profile_screen/profile_screen_controller.dart';
@@ -49,10 +50,12 @@ class ProfileScreen extends StatelessWidget {
           bottom: false,
           child: Column(
             children: [
-              Obx(() => _TopViewForOtherUser(
-                  user: controller.userData.value,
-                  isTopBarVisible: isTopBarVisible,
-                  controller: controller)),
+              Obx(() => isDashBoard
+                  ? _OwnProfileTopBar(user: controller.userData.value)
+                  : _TopViewForOtherUser(
+                      user: controller.userData.value,
+                      isTopBarVisible: isTopBarVisible,
+                      controller: controller)),
               Expanded(
                 child: Stack(
                   children: [
@@ -143,6 +146,37 @@ class ProfileScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The Profile tab's own bar: your username, Messages (moved here from the
+/// bottom bar, with its unread count) and the activity bell.
+class _OwnProfileTopBar extends StatelessWidget {
+  final User? user;
+
+  const _OwnProfileTopBar({this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(15, 6, 8, 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              user?.username ?? '',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyleCustom.unboundedSemiBold600(
+                  fontSize: 17, color: textDarkGrey(context)),
+            ),
+          ),
+          MessagesButton(color: textDarkGrey(context)),
+          const SizedBox(width: 4),
+          NotificationBell(color: textDarkGrey(context)),
+        ],
       ),
     );
   }

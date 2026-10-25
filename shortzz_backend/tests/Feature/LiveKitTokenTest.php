@@ -128,6 +128,23 @@ class LiveKitTokenTest extends ApiTestCase
             && $request['room'] === $roomId);
     }
 
+    public function test_livekit_apps_list_only_rooms_that_broadcast_on_livekit(): void
+    {
+        $newApp = $this->api('livestream/createLivestream', ['rtc' => 'livekit'], $this->tokenFor($this->makeUser()))
+            ->json('data.livestream.room_id');
+        $oldApp = $this->api('livestream/createLivestream', [], $this->tokenFor($this->makeUser()))
+            ->json('data.livestream.room_id');
+        $this->flushHeaders();
+
+        $forNewApps = collect($this->api('livestream/fetchLivestreams', ['rtc' => 'livekit'])->json('data'))->pluck('room_id');
+        $this->assertContains($newApp, $forNewApps);
+        $this->assertNotContains($oldApp, $forNewApps);
+
+        $forOldApps = collect($this->api('livestream/fetchLivestreams', [])->json('data'))->pluck('room_id');
+        $this->assertContains($newApp, $forOldApps);
+        $this->assertContains($oldApp, $forOldApps);
+    }
+
     private function liveRoom(): string
     {
         $host = $this->makeUser();

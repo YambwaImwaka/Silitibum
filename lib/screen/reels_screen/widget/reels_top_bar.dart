@@ -2,12 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
+import 'package:shortzz/common/widget/top_bar_actions.dart';
 import 'package:shortzz/screen/reels_screen/reels_screen_controller.dart';
 import 'package:shortzz/screen/reels_screen/widget/ad_slot.dart';
 import 'package:shortzz/screen/reels_screen/widget/reel_page_type.dart';
-import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:shortzz/utilities/text_style_custom.dart';
 import 'package:shortzz/utilities/theme_res.dart';
 
 class ReelsTopBar extends StatelessWidget {
@@ -18,70 +17,101 @@ class ReelsTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // The screen's Stack expands its children: anchor the bar to the top
+    // rather than letting it fill (and centre itself in) the whole video.
+    if (controller.reelPageType == ReelPageType.home) {
+      return Align(
+          alignment: Alignment.topCenter,
+          child: _HomeTopBar(controller: controller, center: widget));
+    }
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SafeArea(
+      bottom: false,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            CustomBackButton(
+                color: whitePure(context),
+                height: 30,
+                width: 30,
+                padding: EdgeInsets.zero,
+                image: AssetRes.icBackArrow_1),
+            if (widget != null) Flexible(child: widget!),
+            Obx(() {
+              if (controller.reels.isEmpty) {
+                return const SizedBox(width: 30, height: 30);
+              }
+
+              bool isVisible = controller.reels[controller.position.value].userId !=
+                  SessionManager.instance.getUserID();
+
+              return Visibility(
+                visible: isVisible,
+                replacement: const SizedBox(width: 30, height: 30),
+                child: InkWell(
+                  onTap: controller.onReportTap,
+                  child: Image.asset(AssetRes.icAlert, width: 30, height: 30),
+                ),
+              );
+            })
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+}
+
+/// The Snaps tab's bar: the feed picker (Discover/Following…) centred, and
+/// report, search and the activity bell on the right. A soft shade behind it
+/// keeps it readable over a bright video. The ➕ moved to the bottom bar and
+/// the "Snaps" title went with it — the bottom bar already says where you are.
+class _HomeTopBar extends StatelessWidget {
+  final ReelsScreenController controller;
+  final Widget? center;
+
+  const _HomeTopBar({required this.controller, this.center});
+
+  @override
+  Widget build(BuildContext context) {
     return Stack(
       children: [
+        // Decoration only: taps go through to the video underneath.
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0x99000000), Color(0x00000000)],
+                ),
+              ),
+            ),
+          ),
+        ),
         SafeArea(
           bottom: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 15.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
+          child: SizedBox(
+            height: 52,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                if (controller.reelPageType == ReelPageType.home)
-                  // The feed's wordmark, top-left — the way Instagram labels
-                  // Reels. The report action this slot used to hold now sits
-                  // beside the add button on the right.
-                  Text(
-                    LKey.reels.tr,
-                    style: TextStyleCustom.unboundedBold700(
-                        fontSize: 20, color: whitePure(context)),
-                  )
-                else
-                  Visibility(
-                    visible: controller.reelPageType != ReelPageType.home,
-                    replacement: const SizedBox(width: 30),
-                    child: CustomBackButton(
-                        color: whitePure(context),
-                        height: 30,
-                        width: 30,
-                        padding: EdgeInsets.zero,
-                        image: AssetRes.icBackArrow_1),
-                  ),
-                if (widget != null) Flexible(child: widget!),
-                if (controller.reelPageType == ReelPageType.home)
-                  Row(
+                if (center != null) center!,
+                Positioned(
+                  right: 10,
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    spacing: 12,
                     children: [
                       _ReportAction(controller: controller),
-                      InkWell(
-                          onTap: controller.openPostOptionsSheet,
-                          child: Image.asset(
-                            AssetRes.icAdd,
-                            width: 30,
-                            height: 30,
-                          )),
+                      TopBarActions(color: whitePure(context)),
                     ],
-                  )
-                else
-                  Obx(() {
-                    if (controller.reels.isEmpty) {
-                      return const SizedBox(width: 30, height: 30);
-                    }
-
-                    bool isVisible = controller.reels[controller.position.value].userId !=
-                        SessionManager.instance.getUserID();
-
-                    return Visibility(
-                      visible: isVisible,
-                      replacement: const SizedBox(width: 30, height: 30),
-                      child: InkWell(
-                        onTap: controller.onReportTap,
-                        child: Image.asset(AssetRes.icAlert, width: 30, height: 30),
-                      ),
-                    );
-                  })
+                  ),
+                ),
               ],
             ),
           ),
@@ -110,16 +140,16 @@ class _ReportAction extends StatelessWidget {
           index < 0 ||
           index >= reels.length ||
           AdSlot.isAdSlot(reels[index])) {
-        return const SizedBox(width: 30, height: 30);
+        return const SizedBox();
       }
 
       if (reels[index].userId == SessionManager.instance.getUserID()) {
-        return const SizedBox(width: 30, height: 30);
+        return const SizedBox();
       }
 
-      return InkWell(
+      return TopBarIcon(
         onTap: controller.onReportTap,
-        child: Image.asset(AssetRes.icAlert, width: 30, height: 30),
+        child: Image.asset(AssetRes.icAlert, width: 24, height: 24),
       );
     });
   }
