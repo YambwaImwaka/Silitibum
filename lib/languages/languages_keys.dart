@@ -607,6 +607,10 @@ class LKey {
   static const String liveStreamNotificationBody =
       "Hurry up and join before it ends.";
   static const String livestreamHasEnded = "Livestream has ended.";
+  static const String liveVideoUnavailable =
+      "Live video isn't available right now. Please try again in a moment.";
+  static const String liveConnectionLost =
+      "You lost connection to the live.";
   static const String theHostHasTurnedOffYourVideo =
       "The host has turned off your Video.";
   static const String theHostHasTurnedOffYourAudio =

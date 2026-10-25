@@ -52,4 +52,16 @@ return [
         'allow_sandbox' => (bool) env('RC_ALLOW_SANDBOX', false),
     ],
 
+    /*
+     * LiveKit carries live video from app 1.2.3 on; Zego's free trial ran
+     * out and froze every room login. LIVEKIT_URL is the project's wss://
+     * address. The secret never leaves the server: the app asks
+     * livestream/fetchRtcToken for a token scoped to one room.
+     */
+    'livekit' => [
+        'url' => env('LIVEKIT_URL'),
+        'api_key' => env('LIVEKIT_API_KEY'),
+        'api_secret' => env('LIVEKIT_API_SECRET'),
+    ],
+
 ];

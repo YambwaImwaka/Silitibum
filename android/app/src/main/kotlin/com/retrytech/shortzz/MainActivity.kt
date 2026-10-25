@@ -11,8 +11,8 @@ class MainActivity : FlutterActivity() {
     // It must not go back to hand-registering plugins. FlutterActivity's own
     // implementation (called via super below) already runs
     // GeneratedPluginRegistrant, which registers every plugin in pubspec.yaml —
-    // including purchases_flutter, sqflite, video_player, zego_express_engine,
-    // permission_handler, just_audio and retrytech_plugin. This class used to
+    // including purchases_flutter, sqflite, video_player, the live video
+    // plugin, permission_handler, just_audio and retrytech_plugin. This class used to
     // call super and THEN add those seven again by hand. FlutterEngine refuses
     // the duplicates ("Attempted to register plugin ... but it was already
     // registered"), so it bought nothing, but each `add()` still had to load and

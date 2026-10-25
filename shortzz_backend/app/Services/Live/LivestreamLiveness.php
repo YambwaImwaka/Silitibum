@@ -98,6 +98,7 @@ class LivestreamLiveness
         }
         BaseBroadcastEvent::fire('livestream.ended', ['room_id' => $stream->room_id],
             [new PresenceChannel('livestream.' . $stream->room_id)]);
+        LiveKit::closeRoom($stream->room_id);
         return true;
     }
 

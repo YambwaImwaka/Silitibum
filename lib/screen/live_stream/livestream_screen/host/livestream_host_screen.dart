@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:keyboard_avoider/keyboard_avoider.dart';
+import 'package:livekit_client/livekit_client.dart' show LocalVideoTrack;
 import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/widget/live_stream_host_top_view.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
@@ -13,20 +14,19 @@ import 'package:shortzz/utilities/theme_res.dart';
 
 class LivestreamHostScreen extends StatelessWidget {
   final Livestream livestream;
-  final Widget? hostPreview;
+
+  /// The go-live screen's camera, already running. Absent when a host comes
+  /// back to their own live; the room then opens the camera itself.
+  final LocalVideoTrack? camera;
   final bool isHost;
 
   const LivestreamHostScreen(
-      {super.key,
-      this.hostPreview,
-      required this.livestream,
-      required this.isHost});
+      {super.key, this.camera, required this.livestream, required this.isHost});
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.put(LivestreamScreenController(
-        livestream.obs, isHost,
-        hostPreview: hostPreview));
+    final controller = Get.put(
+        LivestreamScreenController(livestream.obs, isHost, camera: camera));
 
     return Scaffold(
       backgroundColor: blackPure(context),

@@ -17,11 +17,14 @@
 -keep class io.flutter.plugins.** { *; }
 -dontwarn io.flutter.embedding.**
 
-# ---- ZEGO (livestream) -------------------------------------------------
-# Native engine calls back into these by reflection.
--keep class **.zego.** { *; }
--keep class im.zego.** { *; }
--dontwarn im.zego.**
+# ---- LiveKit / WebRTC (livestream) -------------------------------------
+# libjingle calls back into these Java classes over JNI by name; R8 must
+# neither rename nor strip them.
+-keep class org.webrtc.** { *; }
+-dontwarn org.webrtc.**
+-keep class com.cloudwebrtc.webrtc.** { *; }
+-keep class io.livekit.** { *; }
+-dontwarn io.livekit.**
 
 # ---- DeepAR (camera filters) -------------------------------------------
 -keep class ai.deepar.** { *; }

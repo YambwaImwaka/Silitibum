@@ -1,11 +1,30 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:livekit_client/livekit_client.dart'
+    show
+        DisconnectReason,
+        EventsListener,
+        LocalVideoTrack,
+        CameraPosition,
+        LocalVideoTrackExt,
+        ParticipantDisconnectedEvent,
+        ParticipantPermissionsUpdatedEvent,
+        RemoteParticipant,
+        Room,
+        RoomDisconnectedEvent,
+        RoomEvent,
+        TrackSubscribedEvent,
+        TrackUnsubscribedEvent,
+        VideoTrack,
+        VideoTrackRenderer,
+        VideoViewFit;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/ads_controller.dart';
@@ -19,6 +38,7 @@ import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/livestream_service.dart';
 import 'package:shortzz/common/service/api/notification_service.dart';
+import 'package:shortzz/common/service/live/live_video.dart';
 import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/widget/confirmation_dialog.dart';
 import 'package:shortzz/languages/languages_keys.dart';
@@ -38,13 +58,23 @@ import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 import 'package:shortzz/utilities/app_res.dart';
 import 'package:shortzz/utilities/asset_res.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-import 'package:zego_express_engine/zego_express_engine.dart';
 
 /// Livestream room over the MySQL backend: REST for state changes, presence
 /// channel events for live updates, polling fallback while the WebSocket is
-/// down. Media transport is Zego, untouched by the Firebase removal.
+/// down. Media runs on LiveKit (see [LiveVideo]).
 class LivestreamScreenController extends BaseController {
-  ZegoExpressEngine zegoEngine = ZegoExpressEngine.instance;
+  /// This screen's connection to the room's video.
+  Room? _room;
+  EventsListener<RoomEvent>? _roomEvents;
+
+  /// The host's or co-host's own camera. The go-live screen lends the one it
+  /// previewed, so the camera never restarts, and stops it itself; a camera
+  /// opened here is stopped here.
+  LocalVideoTrack? _camera;
+  bool _cameraIsLent;
+
+  bool _loggedOut = false;
+  bool _hostGone = false;
 
   final cacheController = Get.find<AppUserCacheController>();
   final adsController = Get.find<AdsController>();
@@ -66,12 +96,6 @@ class LivestreamScreenController extends BaseController {
   /// to — every write path checks this and prompts for sign-in instead.
   bool get isGuest => !AuthGate.isLoggedIn;
 
-  /// Zego identity for this session. Guests get a stable per-install id
-  /// because Zego evicts duplicate user ids from a room, and every signed-out
-  /// viewer would otherwise log in as user "0".
-  String get zegoUserId =>
-      isGuest ? SessionManager.instance.getGuestStreamId() : '$myUserId';
-
   RxBool isMinViewerTimeout = false.obs;
   RxBool isTextEmpty = true.obs;
   bool isJoinSheetOpen = false;
@@ -80,9 +104,27 @@ class LivestreamScreenController extends BaseController {
 
   TextEditingController textCommentController = TextEditingController();
 
-  Widget? hostPreview;
+  LivestreamScreenController(this.liveData, this.isHost,
+      {LocalVideoTrack? camera})
+      : _camera = camera,
+        _cameraIsLent = camera != null;
 
-  LivestreamScreenController(this.liveData, this.isHost, {this.hostPreview});
+  Future<LocalVideoTrack> _openCamera() async {
+    final camera = await LiveVideo.createCamera(front: isFrontCamera);
+    _camera = camera;
+    _cameraIsLent = false;
+    return camera;
+  }
+
+  /// Stops this screen's camera unless it was lent by the go-live screen.
+  Future<void> _releaseCamera() async {
+    final LocalVideoTrack? camera = _camera;
+    _camera = null;
+    if (camera == null || _cameraIsLent) return;
+    try {
+      await camera.stop();
+    } catch (_) {}
+  }
 
   int totalBattleSecond = 0;
 
@@ -135,9 +177,7 @@ class LivestreamScreenController extends BaseController {
         Duration(minutes: liveData.value.battleDuration).inSeconds;
     remainingBattleSeconds.value = totalBattleSecond;
     _knownLikeCount = liveData.value.likeCount ?? 0;
-    zegoEngine.setAudioDeviceMode(ZegoAudioDeviceMode.General);
     loginRoom();
-    startListenEvent();
     initAudioPlayer();
     _startRealtime();
     if (isHost) {
@@ -263,9 +303,10 @@ class LivestreamScreenController extends BaseController {
         }
         break;
       case 'livestream.ended':
-        // The Zego stream-delete callback drives the exit UX; this event is
-        // just a log marker (and keeps polling from spinning).
+        // Usually the video room closing gets there first; this covers a
+        // close that never reached LiveKit.
         Loggers.info('livestream.ended received for room $roomId');
+        _onHostLeft();
         break;
     }
   }
@@ -298,6 +339,7 @@ class LivestreamScreenController extends BaseController {
           .fetchStreamState(roomId: roomId, afterCommentId: _lastCommentId);
       if (res.status != true && res.message == 'livestream_ended') {
         _pollTimer?.cancel();
+        _onHostLeft();
         return;
       }
       _applyStateResult(res, replaceComments: false, replaceUsers: true);
@@ -411,10 +453,16 @@ class LivestreamScreenController extends BaseController {
   }
 
   // ---------------------------------------------------------------------
-  // ZEGO ROOM (unchanged mechanics)
+  // VIDEO ROOM (LiveKit)
   // ---------------------------------------------------------------------
 
+  /// Leaves the room once, however the screen is left: the stop sheet, the
+  /// viewer's exit, the host ending and the screen closing all arrive here.
+  /// It used to run for each of them, telling the server a viewer left twice
+  /// (the watching count dropped by two) and ending a host's room twice.
   Future<void> logoutRoom() async {
+    if (_loggedOut) return;
+    _loggedOut = true;
     if (isHost) {
       _endStreamOnServer();
       // Placed here rather than in hostEndStream() so every way a host can
@@ -422,10 +470,10 @@ class LivestreamScreenController extends BaseController {
       // backing out of the screen all funnel through this method. The call is
       // a no-op unless a recording is actually running.
       //
-      // Awaited so the recorder has closed the file before the teardown below
-      // stops publishing and logs out of the room: an MP4 whose engine is
-      // destroyed mid-write never gets its header and is unplayable. Only the
-      // stop is awaited — the upload it starts runs on past this screen.
+      // Awaited so the recorder has closed the file before the camera is
+      // stopped below: an MP4 whose source goes away mid-write never gets its
+      // header and is unplayable. Only the stop is awaited — the upload it
+      // starts runs on past this screen.
       await LiveRecordingManager.instance
           .stopAndSave(description: liveData.value.description);
     } else if (roomId.isNotEmpty) {
@@ -437,201 +485,240 @@ class LivestreamScreenController extends BaseController {
         }
       }();
     }
-    stopPreview();
-    stopPublish();
-    zegoEngine.logoutRoom(roomId);
+    await _closeVideo();
   }
 
-  Future<ZegoRoomLoginResult> loginRoom() async {
-    final user = ZegoUser(zegoUserId, myUser.value?.username ?? 'Guest');
+  Future<void> _closeVideo() async {
+    stopListenEvent();
+    final Room? room = _room;
+    _room = null;
+    await LiveVideo.close(room);
+    await _releaseCamera();
+  }
 
-    final roomConfig = ZegoRoomConfig.defaultConfig()
-      ..isUserStatusNotify = true;
-
+  /// Joins the room's video, then publishes (host) or registers as a viewer.
+  Future<void> loginRoom() async {
+    if (roomId.isEmpty) return;
+    final Room room;
     try {
-      final result =
-          await zegoEngine.loginRoom(roomId, user, config: roomConfig);
-
-      if (result.errorCode != 0) {
-        if (result.errorCode == 1001005) {
-          showSnackBar(
-              'Please check AppSign is correct or not on ZEGO manage console');
-        } else {
-          showSnackBar('loginRoom failed: ${result.errorCode}');
-        }
-        Loggers.error('Login Error : ${result.errorCode}');
-        return result;
-      }
-
-      if (isHost) {
-        startHostPublish();
-        return result;
-      }
-
-      // Audience: register with the backend and pull the full room snapshot
-      // (participants + last comments) in one round trip.
-      try {
-        final res =
-            await LivestreamService.instance.joinLivestream(roomId: roomId);
-        if (res.status == true) {
-          _applyStateResult(res, replaceComments: true);
-        } else if (res.message == 'livestream_ended') {
-          showSnackBar(LKey.livestreamHasEnded.tr);
-          Get.back();
-        }
-      } catch (e) {
-        Loggers.error('joinLivestream failed: $e');
-      }
-      return result;
+      room = await LiveVideo.connect(roomId);
+    } on LiveVideoUnavailable catch (e) {
+      Loggers.error('Live video unavailable: ${e.reason}');
+      _onCannotConnect(ended: e.roomEnded);
+      return;
     } catch (e) {
-      Loggers.error('Error in loginRoom: $e');
-      showSnackBar('Something went wrong while joining the room.');
-      rethrow;
+      Loggers.error('Live video connect failed: $e');
+      _onCannotConnect(ended: false);
+      return;
+    }
+    if (isClosed || _loggedOut) {
+      await LiveVideo.close(room);
+      return;
+    }
+    _room = room;
+    startListenEvent();
+    _showRemoteCameras(room);
+
+    if (isHost) {
+      await startHostPublish();
+      return;
+    }
+
+    // Audience: register with the backend and pull the full room snapshot
+    // (participants + last comments) in one round trip.
+    try {
+      final res =
+          await LivestreamService.instance.joinLivestream(roomId: roomId);
+      if (res.status == true) {
+        _applyStateResult(res, replaceComments: true);
+      } else if (res.message == 'livestream_ended') {
+        _onHostLeft();
+      }
+    } catch (e) {
+      Loggers.error('joinLivestream failed: $e');
     }
   }
 
-  void startListenEvent() async {
-    // Callback for updates on the status of other users in the room.
-    ZegoExpressEngine.onRoomUserUpdate =
-        (roomID, updateType, List<ZegoUser> userList) {
-      if (userList.length > 1) {
-        ZegoExpressEngine.instance.setAudioRouteToSpeaker(true);
-      }
-      if (isHost && updateType == ZegoUpdateType.Delete) {
-        // Watching counts are server-maintained (join/leave endpoints); the
-        // host only cleans up co-host slots when someone drops off Zego.
-        Livestream stream = liveData.value;
-        for (var element in userList) {
-          int coHostId = int.tryParse(element.userID) ?? -1;
-          bool isCoHostExist = stream.coHostIds?.contains(coHostId) ?? false;
-          if (isCoHostExist) {
-            updateUserStateToFirestore(coHostId,
-                type: LivestreamUserType.audience,
-                audioStatus: VideoAudioStatus.on,
-                videoStatus: VideoAudioStatus.on);
-          }
+  /// There is no video for this room. A host's room is pointless without
+  /// it, so it is ended rather than left listed with nothing to watch.
+  void _onCannotConnect({required bool ended}) {
+    if (isClosed) return;
+    if (isHost) _endStreamOnServer();
+    _leaveScreen();
+    showSnackBar(ended
+        ? LKey.livestreamHasEnded.tr
+        : LKey.liveVideoUnavailable.tr);
+  }
+
+  /// Closes this screen along with any sheet or snackbar over it. A plain
+  /// Get.back() only closes an open snackbar and leaves the screen up, so
+  /// "Livestream has ended" used to show over a dead room.
+  void _leaveScreen() => Get.back(closeOverlays: true);
+
+  void startListenEvent() {
+    final Room? room = _room;
+    if (room == null) return;
+    _roomEvents?.dispose();
+    final EventsListener<RoomEvent> listener = room.createListener();
+    _roomEvents = listener;
+    listener
+      ..on<TrackSubscribedEvent>((event) {
+        final track = event.track;
+        if (track is VideoTrack) _putCamera(event.participant.identity, track);
+      })
+      ..on<TrackUnsubscribedEvent>((event) {
+        if (event.track is VideoTrack) {
+          streamViews.removeWhere(
+              (view) => view.streamId == event.participant.identity);
         }
-      }
-      Loggers.info(
-          'onRoomUserUpdate: roomID: $roomID, updateType: ${updateType.name}, userList: ${userList.map((e) => e.userID)}');
-    };
-    // Callback for updates on the status of the streams in the room.
-    ZegoExpressEngine.onRoomStreamUpdate =
-        (roomID, updateType, List<ZegoStream> streamList, extendedData) async {
-      String priorityId = liveData.value.hostId.toString();
-
-      streamList.sort((a, b) {
-        if (a.streamID == priorityId) return -1; // a goes first
-        if (b.streamID == priorityId) return 1; // b goes first
-        return a.streamID.compareTo(b.streamID); // regular sorting
-      });
-      Loggers.info(
-          'onRoomStreamUpdate: roomID: $roomID, updateType: $updateType, streamList: ${streamList.map((e) => e.streamID)}, extendedData: $extendedData');
-      switch (updateType) {
-        case ZegoUpdateType.Add:
-          for (final stream in streamList) {
-            startPlayStream(stream.streamID);
-          }
-          break;
-        case ZegoUpdateType.Delete:
-          for (final stream in streamList) {
-            if (liveData.value.roomID == stream.streamID) {
-              if (Get.isBottomSheetOpen == false) {
-                Get.back();
-              }
-              for (var element in liveUsersStates) {
-                if (element.type == LivestreamUserType.coHost) {
-                  streamEnded();
-                }
-              }
-              // Empty LiveData
-              logoutRoom();
-              stopListenEvent();
-              liveData.value = Livestream();
-            }
-            streamViews
-                .removeWhere((element) => element.streamId == stream.streamID);
-            stopPlayStream(stream.streamID);
-          }
-          break;
-      }
-    };
-    // Callback for updates on the current user's room connection status.
-    ZegoExpressEngine.onRoomStateUpdate =
-        (roomID, state, errorCode, extendedData) {
-      Loggers.info(
-          'onRoomStateUpdate: roomID: $roomID, state: ${state.name}, errorCode: $errorCode, extendedData: $extendedData');
-    };
-
-    // Callback for updates on the current user's stream publishing changes.
-    ZegoExpressEngine.onPublisherStateUpdate =
-        (streamID, state, errorCode, extendedData) {
-      switch (state) {
-        case ZegoPublisherState.NoPublish:
-          streamViews.removeWhere((element) => element.streamId == streamID);
-        case ZegoPublisherState.PublishRequesting:
-        case ZegoPublisherState.Publishing:
-      }
-      debugPrint(
-          'onPublisherStateUpdate: streamID: $streamID, state: ${state.name}, errorCode: $errorCode, extendedData: $extendedData');
-    };
+      })
+      ..on<ParticipantDisconnectedEvent>(
+          (event) => _onParticipantLeft(event.participant))
+      ..on<RoomDisconnectedEvent>((event) => _onDisconnected(event.reason));
   }
 
   void stopListenEvent() {
-    ZegoExpressEngine.onRoomUserUpdate = null;
-    ZegoExpressEngine.onRoomStreamUpdate = null;
-    ZegoExpressEngine.onRoomStateUpdate = null;
-    ZegoExpressEngine.onPublisherStateUpdate = null;
+    _roomEvents?.dispose();
+    _roomEvents = null;
+  }
+
+  /// Cameras that were already on when this screen joined.
+  void _showRemoteCameras(Room room) {
+    for (final participant in room.remoteParticipants.values) {
+      final VideoTrack? track = LiveVideo.cameraOf(participant);
+      if (track != null) _putCamera(participant.identity, track);
+    }
+  }
+
+  /// Shows [identity]'s camera. Views are keyed by identity, which is the
+  /// user id; the host's view leads every layout.
+  void _putCamera(String identity, VideoTrack track) {
+    final view = StreamView(
+        identity,
+        VideoTrackRenderer(track,
+            key: ObjectKey(track), fit: VideoViewFit.cover),
+        false);
+    final int index = streamViews.indexWhere((v) => v.streamId == identity);
+    if (index != -1) {
+      view.isMuted = streamViews[index].isMuted;
+      streamViews[index] = view;
+    } else if (identity == '${liveData.value.hostId}') {
+      streamViews.insert(0, view);
+    } else {
+      streamViews.add(view);
+    }
+  }
+
+  void _onParticipantLeft(RemoteParticipant participant) {
+    streamViews.removeWhere((view) => view.streamId == participant.identity);
+    final int? userId = LiveVideo.userIdOf(participant);
+    if (userId == null) return;
+    if (userId == liveData.value.hostId) {
+      _onHostLeft();
+      return;
+    }
+    // A co-host who dropped off the video gives up their slot; only the host
+    // tidies that up.
+    if (isHost && (liveData.value.coHostIds?.contains(userId) ?? false)) {
+      updateUserStateToFirestore(userId,
+          type: LivestreamUserType.audience,
+          audioStatus: VideoAudioStatus.on,
+          videoStatus: VideoAudioStatus.on);
+    }
+  }
+
+  /// LiveKit gave up on the connection, or the room was closed (the server
+  /// closes it when the host ends the live).
+  void _onDisconnected(DisconnectReason? reason) {
+    if (_loggedOut || isClosed) return;
+    Loggers.info('Live video disconnected: $reason');
+    if (isHost) {
+      // The broadcast has stopped either way: end it and show the summary.
+      hostEndStream();
+      return;
+    }
+    _onHostLeft(connectionLost: reason != DisconnectReason.roomDeleted);
+  }
+
+  /// The host is gone — they ended the live, or their app did. Viewers are
+  /// taken out of the room. A co-host sees their summary, which closes the
+  /// screen when dismissed because the room is emptied here (closing it
+  /// first as well used to pop the screen underneath too).
+  void _onHostLeft({bool connectionLost = false}) {
+    if (isHost || _hostGone || isClosed) return;
+    _hostGone = true;
+    final bool wasCoHost = liveUsersStates.any((element) =>
+        element.userId == myUserId &&
+        element.type == LivestreamUserType.coHost);
+    if (wasCoHost) {
+      streamEnded();
+    } else {
+      _leaveScreen();
+    }
+    logoutRoom();
+    liveData.value = Livestream();
+    if (!wasCoHost) {
+      showSnackBar(connectionLost
+          ? LKey.liveConnectionLost.tr
+          : LKey.livestreamHasEnded.tr);
+    }
   }
 
   Future<void> startHostPublish() async {
-    if (roomId.isEmpty) {
-      return Loggers.error('No ID FOUND');
-    }
-    String streamID = roomId;
-    if (hostPreview == null) {
-      _endStreamOnServer();
-      Get.back();
+    final Room? room = _room;
+    if (room == null || roomId.isEmpty) return;
+    try {
+      // Rejoining your own live (from the Live tab or a notification) comes
+      // without the go-live screen's camera: open one.
+      if (_camera == null) {
+        if (!await requestPermission()) {
+          _leaveScreen();
+          _showPermissionSheet();
+          return;
+        }
+        await _openCamera();
+      }
+      await room.localParticipant?.publishVideoTrack(_camera!);
+      await room.localParticipant?.setMicrophoneEnabled(true);
+    } catch (e) {
+      Loggers.error('Could not publish the live: $e');
+      _onCannotConnect(ended: false);
       return;
     }
-    streamViews.add(StreamView(
-        streamID, liveData.value.hostViewID ?? -1, hostPreview!, false));
-    await zegoEngine.enableCamera(true);
-    await zegoEngine.mutePublishStreamAudio(false); // Ensure audio is not muted
+    _putCamera('$myUserId', _camera!);
     startMinViewerTimeoutCheck(); //  Check time to Min. Viewers Required to continue live
     pushNotificationToFollowers(liveData.value);
-    await zegoEngine.startPublishingStream(streamID);
     _captureRetentionSnapshot();
     // Records what is being broadcast so the live is not gone when the room
     // closes. Owned by LiveRecordingManager, not this controller: the upload
     // runs for minutes after the host is moved to the end screen and this
     // controller is disposed.
-    LiveRecordingManager.instance.start(roomId: roomId);
+    LiveRecordingManager.instance.start(roomId: roomId, camera: _camera!);
   }
 
   /// Captures the one frame that outlives the broadcast.
   ///
-  /// The stream itself is never recorded — Zego carries the media and it is
-  /// gone once the room closes — so this still is all that remains of an ended
-  /// live. Taken a few seconds after publishing starts rather than at the end:
-  /// by then the encoder has real frames, whereas at end-of-stream the capture
-  /// would race the teardown of the surface being captured.
+  /// Taken a few seconds after publishing starts rather than at the end: by
+  /// then the camera has real frames, whereas at end-of-stream the capture
+  /// would race the teardown of the camera being captured.
   ///
   /// Entirely best-effort. A failure here must never disturb a live broadcast,
   /// so every path swallows its error.
   void _captureRetentionSnapshot() {
     Future.delayed(const Duration(seconds: 5), () async {
-      if (isClosed || roomId.isEmpty) return;
+      final LocalVideoTrack? camera = _camera;
+      if (isClosed || roomId.isEmpty || camera == null) return;
       try {
-        final result = await zegoEngine.takePublishStreamSnapshot();
-        final bytes = result.image?.bytes;
-        if (result.errorCode != 0 || bytes == null || bytes.isEmpty) {
-          Loggers.error('Livestream snapshot capture failed: ${result.errorCode}');
+        final ByteBuffer frame = await camera.mediaStreamTrack.captureFrame();
+        final Uint8List bytes = frame.asUint8List();
+        if (bytes.isEmpty) {
+          Loggers.error('Livestream snapshot capture was empty');
           return;
         }
 
+        // captureFrame writes a PNG.
         final dir = await getTemporaryDirectory();
-        final file = File('${dir.path}/live_${roomId.replaceAll('/', '_')}.jpg');
+        final file = File('${dir.path}/live_${roomId.replaceAll('/', '_')}.png');
         await file.writeAsBytes(bytes, flush: true);
 
         await LivestreamService.instance
@@ -642,67 +729,18 @@ class LivestreamScreenController extends BaseController {
     });
   }
 
-  Future<void> stopPublish() async {
-    return zegoEngine.stopPublishingStream();
-  }
-
-  Future<void> startPlayStream(String streamID) async {
-    Loggers.info('Starting to play stream: $streamID');
-    int streamViewId = -1;
-    try {
-      await zegoEngine.createCanvasView((viewID) async {
-        Loggers.info('Created remote view with ID: $viewID');
-        streamViewId = viewID;
-        ZegoCanvas canvas =
-            ZegoCanvas(viewID, viewMode: ZegoViewMode.AspectFill);
-        ZegoPlayerConfig config = ZegoPlayerConfig.defaultConfig();
-        config.resourceMode = ZegoStreamResourceMode.Default; // live streaming(cdn)
-
-        try {
-          await zegoEngine.startPlayingStream(streamID, canvas: canvas, config: config);
-        } catch (e) {
-          Loggers.error(e);
-        }
-      }).then((canvasViewWidget) {
-        if (canvasViewWidget != null) {
-          streamViews
-              .add(StreamView(streamID, streamViewId, canvasViewWidget, false));
-        }
-        Loggers.success('Stream playback started successfully for: $streamID');
-      });
-    } catch (e, stackTrace) {
-      Loggers.error('Failed to start playing stream: $e');
-      Loggers.error('StackTrace: $stackTrace');
-    }
-  }
-
-  Future<void> stopPlayStream(String streamID) async {
-    Loggers.info('Stopping playback for stream: $streamID');
-
-    try {
-      zegoEngine.stopPlayingStream(streamID);
-      Loggers.success('Stopped playing stream: $streamID');
-
-      StreamView? stream = streamViews
-          .firstWhereOrNull((element) => element.streamId == streamID);
-
-      if (stream?.streamViewId != null) {
-        Loggers.info('Destroying remote view with ID: ${stream?.streamViewId}');
-        await zegoEngine.destroyCanvasView(stream!.streamViewId);
-        Loggers.success('Remote view destroyed successfully.');
+  /// Stops sending this phone's camera and microphone into the room.
+  Future<void> _stopPublishing() async {
+    final Room? room = _room;
+    if (room != null) {
+      await LiveVideo.stopMicrophone(room);
+      try {
+        await room.localParticipant?.unpublishAllTracks();
+      } catch (e) {
+        Loggers.error('unpublish failed: $e');
       }
-    } catch (e, stackTrace) {
-      Loggers.error('Failed to stop playing stream: $e');
-      Loggers.error('StackTrace: $stackTrace');
     }
-  }
-
-  Future<void> stopPreview({int? viewId}) async {
-    int id = viewId ?? -1;
-    zegoEngine.stopPreview();
-    if (id != -1) {
-      await zegoEngine.destroyCanvasView(id);
-    }
+    await _releaseCamera();
   }
 
   // ---------------------------------------------------------------------
@@ -768,14 +806,16 @@ class LivestreamScreenController extends BaseController {
     }
   }
 
-  void toggleCamera() {
-    isFrontCamera = !isFrontCamera;
-    zegoEngine.useFrontCamera(isFrontCamera, channel: ZegoPublishChannel.Main);
-  }
+  void toggleCamera() => toggleFlipCamera();
 
   void toggleFlipCamera() {
+    final LocalVideoTrack? camera = _camera;
+    if (camera == null) return;
     isFrontCamera = !isFrontCamera;
-    zegoEngine.useFrontCamera(isFrontCamera, channel: ZegoPublishChannel.Main);
+    camera
+        .setCameraPosition(
+            isFrontCamera ? CameraPosition.front : CameraPosition.back)
+        .catchError((e) => Loggers.error('Camera switch failed: $e'));
   }
 
   void toggleMic(LivestreamUserState? state) async {
@@ -788,10 +828,10 @@ class LivestreamScreenController extends BaseController {
     if (isAudioOn) {
       updateUserStateToFirestore(myUserId,
           audioStatus: VideoAudioStatus.offByMe);
-      zegoEngine.muteMicrophone(true);
+      await _room?.localParticipant?.setMicrophoneEnabled(false);
     } else {
       updateUserStateToFirestore(myUserId, audioStatus: VideoAudioStatus.on);
-      zegoEngine.muteMicrophone(false);
+      await _room?.localParticipant?.setMicrophoneEnabled(true);
     }
   }
 
@@ -800,25 +840,31 @@ class LivestreamScreenController extends BaseController {
       return showSnackBar(LKey.theHostHasTurnedOffYourVideo.tr);
     }
     bool isVideoOn = state?.videoStatus == VideoAudioStatus.on;
+    // Muting keeps the camera published, so turning it back on is instant.
     if (isVideoOn) {
       updateUserStateToFirestore(myUserId,
           videoStatus: VideoAudioStatus.offByMe);
-      await zegoEngine.enableCamera(false);
+      await _camera?.mute();
     } else {
       updateUserStateToFirestore(myUserId, videoStatus: VideoAudioStatus.on);
-      await zegoEngine.enableCamera(true);
+      await _camera?.unmute();
     }
   }
 
+  /// Mutes someone in the room for this viewer only, by no longer receiving
+  /// their audio.
   void toggleStreamAudio(int? userId) {
     int index =
         streamViews.indexWhere((element) => element.ownerUserId == userId);
     if (index == -1) return;
     StreamView view = streamViews[index];
 
-    // Mute against the id the stream is actually published under (the room id
-    // for the host), not the user id we looked it up by.
-    zegoEngine.mutePlayStreamAudio(view.streamId, !view.isMuted);
+    final participant = _room?.getParticipantByIdentity(view.streamId);
+    if (participant is RemoteParticipant) {
+      for (final publication in participant.audioTrackPublications) {
+        view.isMuted ? publication.enable() : publication.disable();
+      }
+    }
     view.isMuted = !view.isMuted;
     streamViews[index] = view;
     streamViews.refresh();
@@ -1032,54 +1078,72 @@ class LivestreamScreenController extends BaseController {
 
   void publishCoHostStream(int streamId) async {
     bool isPermissionGranted = await requestPermission();
-    if (isPermissionGranted) {
-      int canvasViewID = -1;
-
-      // ✅ Enable camera and microphone
-      await zegoEngine.enableCamera(true);
-      await zegoEngine.mutePublishStreamAudio(false);
-      zegoEngine.muteMicrophone(false);
-
-      // ✅ Create preview canvas and start preview
-      await zegoEngine.createCanvasView((viewID) async {
-        canvasViewID = viewID;
-        ZegoCanvas previewCanvas =
-            ZegoCanvas(canvasViewID, viewMode: ZegoViewMode.AspectFill);
-        zegoEngine.startPreview(canvas: previewCanvas);
-      }).then((canvasViewWidget) {
-        if (canvasViewWidget != null) {
-          streamViews.add(
-            StreamView('$streamId', canvasViewID, canvasViewWidget, false),
-          );
-        }
-      });
-
-      // ✅ Publish the stream
-      await zegoEngine.startPublishingStream('$streamId');
-
-      // ✅ Force audio output to speaker (after stream starts)
-      Future.delayed(const Duration(milliseconds: 300), () {
-        zegoEngine.setAudioRouteToSpeaker(true);
-      });
-
-      // Server side already flipped this user to CO-HOST (that's what
-      // triggered this publish) — just announce it in the feed.
-      _sendComment(type: LivestreamCommentType.joinedCoHost);
-    } else {
-      Get.bottomSheet(ConfirmationSheet(
-        title: LKey.cameraMicrophonePermissionTitle.tr,
-        description: LKey.cameraMicrophonePermissionDescription.tr,
-        onTap: openAppSettings,
-      ));
+    if (!isPermissionGranted) {
+      _showPermissionSheet();
+      return;
     }
+    final Room? room = _room;
+    if (room == null) return;
+    try {
+      await _ensureCanPublish();
+      if (_camera == null) await _openCamera();
+      await _room?.localParticipant?.publishVideoTrack(_camera!);
+      await _room?.localParticipant?.setMicrophoneEnabled(true);
+    } catch (e) {
+      Loggers.error('Co-host publish failed: $e');
+      showSnackBar(LKey.somethingWentWrong.tr);
+      return;
+    }
+    _putCamera('$streamId', _camera!);
+
+    // Server side already flipped this user to CO-HOST (that's what
+    // triggered this publish) — just announce it in the feed.
+    _sendComment(type: LivestreamCommentType.joinedCoHost);
+  }
+
+  /// The server lets a new co-host publish on their live connection before
+  /// it tells the room about the promotion, but that change can still be on
+  /// its way. Waits for it briefly, then rejoins with a fresh token (which
+  /// carries the permission) as a last resort.
+  Future<void> _ensureCanPublish() async {
+    final Room? room = _room;
+    if (room == null) return;
+    if (room.localParticipant?.permissions.canPublish == true) return;
+    final granted = Completer<void>();
+    final listener = room.createListener();
+    listener.on<ParticipantPermissionsUpdatedEvent>((event) {
+      if (event.permissions.canPublish && !granted.isCompleted) {
+        granted.complete();
+      }
+    });
+    try {
+      await granted.future.timeout(const Duration(seconds: 6));
+      return;
+    } on TimeoutException {
+      Loggers.info('Publish permission did not arrive; rejoining');
+    } finally {
+      await listener.dispose();
+    }
+    stopListenEvent();
+    await LiveVideo.close(room);
+    _room = await LiveVideo.connect(roomId);
+    startListenEvent();
+    _showRemoteCameras(_room!);
+  }
+
+  void _showPermissionSheet() {
+    Get.bottomSheet(ConfirmationSheet(
+      title: LKey.cameraMicrophonePermissionTitle.tr,
+      description: LKey.cameraMicrophonePermissionDescription.tr,
+      onTap: openAppSettings,
+    ));
   }
 
   void closeCoHostStream(int? streamId) {
     StreamView? view = streamViews
         .firstWhereOrNull((element) => element.streamId == '$streamId');
     if (view != null) {
-      stopPreview(viewId: view.streamViewId);
-      stopPublish();
+      _stopPublishing();
       // The joined-co-host line disappears locally.
       comments.removeWhere((element) =>
           element.senderId == myUserId &&
@@ -1089,7 +1153,6 @@ class LivestreamScreenController extends BaseController {
           audioStatus: VideoAudioStatus.offByMe,
           videoStatus: VideoAudioStatus.offByMe);
       streamViews.removeWhere((element) => element.streamId == '$streamId');
-      stopPlayStream(streamId.toString());
       streamEnded();
     }
   }
@@ -1231,7 +1294,7 @@ class LivestreamScreenController extends BaseController {
     userState?.user = user;
     int viewers = liveUsersStates.length;
     if (isHost) {
-      Get.back();
+      _leaveScreen();
       Get.off(() => LiveStreamEndScreen(
           userState: userState,
           isHost: isHost,
@@ -1247,7 +1310,7 @@ class LivestreamScreenController extends BaseController {
           updateUserStateToFirestore(myUserId,
               type: LivestreamUserType.audience);
           if (roomId.isEmpty) {
-            Get.back();
+            _leaveScreen();
           }
         });
       }
@@ -1325,6 +1388,11 @@ class LivestreamScreenController extends BaseController {
             closeCoHostStream(myUserId);
           }
           logoutRoom();
+          // A co-host's summary sheet closes the screen itself once dismissed
+          // (it checks for an emptied room); otherwise close it now. Zego used
+          // to do this by reporting the host's stream gone on logout.
+          liveData.value = Livestream();
+          if (Get.isBottomSheetOpen != true) _leaveScreen();
         }));
   }
 
@@ -1349,23 +1417,17 @@ class LivestreamScreenController extends BaseController {
   }
 }
 
+/// One person's camera in the room. [streamId] is their LiveKit identity,
+/// which is their user id.
 class StreamView {
   String streamId;
-  int streamViewId;
   Widget streamView;
   bool isMuted;
 
-  StreamView(this.streamId, this.streamViewId, this.streamView, this.isMuted);
+  StreamView(this.streamId, this.streamView, this.isMuted);
 
   /// The owner of this view, or null if the id isn't one we recognise.
-  ///
-  /// A stream id is NOT a user id and must never be parsed as one. The host
-  /// publishes under the room id — '<hostId>_<millis>', built server-side by
-  /// LivestreamApiController — while co-hosts publish under their bare
-  /// numeric user id. `int.parse` on the host's id is what threw
-  /// "FormatException: invalid radix-10 number ... 40_1785236249170" and took
-  /// the Go Live screen down; comparing it to '$hostId' silently never
-  /// matched, which is why the host's own name and avatar went missing.
-  /// Both forms start with the owner's id, so resolve through this getter.
+  /// Under Zego the host published under the room id ('<hostId>_<millis>'),
+  /// so ids are still read up to the first '_'.
   int? get ownerUserId => int.tryParse(streamId.split('_').first);
 }

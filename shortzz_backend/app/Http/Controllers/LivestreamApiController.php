@@ -9,6 +9,7 @@ use App\Models\Livestream;
 use App\Models\LivestreamComment;
 use App\Models\LivestreamUser;
 use App\Models\Users;
+use App\Services\Live\LiveKit;
 use App\Services\Live\LivestreamLiveness;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Http\Request;
@@ -17,7 +18,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
 // Livestream signalling over MySQL + presence-channel broadcasting
-// (replaces the Firestore livestreams tree; Zego still carries the media).
+// (replaces the Firestore livestreams tree). LiveKit carries the media from
+// app 1.2.3; older apps still try Zego, whose account has lapsed.
 // The admin panel's dummy-live CRUD lives in LiveStreamController — untouched.
 class LivestreamApiController extends Controller
 {
@@ -245,6 +247,54 @@ class LivestreamApiController extends Controller
         return GlobalFunction::sendSimpleResponse(true, 'left livestream');
     }
 
+    // Guest-open, like watching itself: the token that connects the app to
+    // the room's video. Only the host and current co-hosts may publish. A
+    // `preview` token (the Live tab playing a room before you join) is
+    // hidden from the room and never publishes.
+    public function fetchRtcToken(Request $request)
+    {
+        $validator = Validator::make($request->all(), ['room_id' => 'required']);
+        if ($validator->fails()) {
+            return response()->json(['status' => false, 'message' => $validator->errors()->first()]);
+        }
+        if (!LiveKit::isConfigured()) {
+            return GlobalFunction::sendSimpleResponse(false, 'live_unavailable');
+        }
+        $user = GlobalFunction::getUserOrGuest($request->header('authtoken'));
+        if ($user->is_freez == 1) {
+            return ['status' => false, 'message' => "this user is freezed!"];
+        }
+        $stream = $this->liveStream($request->room_id);
+        if ($stream == null) {
+            return GlobalFunction::sendSimpleResponse(false, 'livestream_ended');
+        }
+
+        if ($user->id == 0) {
+            // Apps make a stable per-install id for signed-out viewers; the
+            // prefix keeps it from ever reading as a user id.
+            $guestId = substr(preg_replace('/[^A-Za-z0-9]/', '', (string) $request->guest_id), 0, 40);
+            $identity = 'guest_' . ($guestId !== '' ? $guestId : bin2hex(random_bytes(8)));
+            $name = 'Guest';
+            $canPublish = false;
+        } else {
+            $identity = (string) $user->id;
+            $name = (string) ($user->username ?? '');
+            $canPublish = $user->id == $stream->host_id
+                || LivestreamUser::where('livestream_id', $stream->id)
+                    ->where('user_id', $user->id)
+                    ->where('type', LivestreamUser::TYPE_CO_HOST)
+                    ->exists();
+        }
+        $hidden = $request->boolean('preview');
+
+        return GlobalFunction::sendDataResponse(true, 'rtc token issued', [
+            'url' => LiveKit::url(),
+            'token' => LiveKit::token($stream->room_id, $identity, $name, $canPublish, $hidden),
+            'identity' => $identity,
+            'can_publish' => $canPublish && !$hidden,
+        ]);
+    }
+
     // Polling fallback + full snapshot on join. The host's own polls are its
     // heartbeat.
     public function fetchStreamState(Request $request)
@@ -437,6 +487,7 @@ class LivestreamApiController extends Controller
         }
 
         if ($request->filled('type')) {
+            $wasCoHost = $participant->type == LivestreamUser::TYPE_CO_HOST;
             $participant->type = $request->type;
             $coHosts = $stream->coHostIdsArray();
             if ($request->type == LivestreamUser::TYPE_CO_HOST) {
@@ -446,6 +497,12 @@ class LivestreamApiController extends Controller
                 $stream->setCoHostIdsArray(array_diff($coHosts, [$targetId]));
             }
             $stream->save();
+            // Before the room hears about it: the new co-host's app starts
+            // publishing as soon as the state change reaches it.
+            $isCoHost = $request->type == LivestreamUser::TYPE_CO_HOST;
+            if ($isCoHost != $wasCoHost && $targetId != $stream->host_id) {
+                LiveKit::setCanPublish($stream->room_id, (string) $targetId, $isCoHost);
+            }
         }
         if ($request->filled('audio_status')) {
             $participant->audio_status = $request->audio_status;
@@ -570,6 +627,9 @@ class LivestreamApiController extends Controller
 
         BaseBroadcastEvent::fire('livestream.ended',
             ['room_id' => $stream->room_id], $this->channel($stream->room_id));
+        // After the response, so the host's end screen never waits on it.
+        $roomId = $stream->room_id;
+        app()->terminating(fn () => LiveKit::closeRoom($roomId));
 
         $host = LivestreamUser::where('livestream_id', $stream->id)
             ->where('user_id', $stream->host_id)->first();

@@ -16,13 +16,11 @@ import 'package:shortzz/common/service/api/user_service.dart';
 import 'package:shortzz/common/service/realtime/realtime_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/languages/languages_keys.dart';
-import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
 import 'package:shortzz/screen/camera_screen/camera_screen.dart';
 import 'package:shortzz/screen/feed_screen/feed_screen_controller.dart';
 import 'package:shortzz/screen/gif_sheet/gif_sheet_controller.dart';
 import 'package:shortzz/utilities/asset_res.dart';
-import 'package:zego_express_engine/zego_express_engine.dart';
 
 class DashboardScreenController extends BaseController with GetSingleTickerProviderStateMixin {
   List<String> bottomIconList = [
@@ -75,11 +73,6 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   @override
   void onReady() async {
     super.onReady();
-    // Zego is NOT created here any more. Building the engine allocates
-    // native audio/video resources on every cold start, for every user,
-    // including the majority who never open the Live tab in that session.
-    // ensureZegoEngine() is called lazily when Live is actually opened.
-
     // Everything below needs a logged-in user: realtime channels keyed on
     // the user id, auth-only APIs, FCM topic subscriptions.
     if (isGuest) return;
@@ -137,8 +130,6 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
   onChanged(int index) {
     // Messages (4) and Profile (5) need a session — prompt guests to sign in.
     if ((index == 4 || index == 5) && !AuthGate.check()) return;
-    // Live (2): build the Zego engine on first visit rather than at startup.
-    if (index == 2) ensureZegoEngine();
     SystemChrome.setSystemUIOverlayStyle(
         SystemUiOverlayStyle(statusBarBrightness: index == 0 || index == 2 ? Brightness.dark : Brightness.light));
     if (index == 1) {
@@ -188,46 +179,6 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
       requestUnReadCount.value = counts.requestUnreadThreadCount;
     } catch (e) {
       Loggers.error('fetchUnreadCounts failed: $e');
-    }
-  }
-
-  /// True once the Zego engine has been built for this app session.
-  bool _isZegoEngineReady = false;
-
-  /// Creates the Zego engine on first use.
-  ///
-  /// This used to run for everyone during dashboard startup, allocating native
-  /// A/V resources on every cold launch even though most sessions never open
-  /// the Live tab. Called from onChanged() when Live is selected, and again
-  /// defensively before going live, so it is ready by the time a room is
-  /// joined without costing anything to users who never go there.
-  Future<void> ensureZegoEngine() {
-    if (_isZegoEngineReady) return Future.value();
-    // Selecting the tab and the Live feed's first room both ask at once;
-    // sharing the call in flight keeps the engine from being created twice.
-    return _zegoEngineCreation ??=
-        _createZegoEngine().whenComplete(() => _zegoEngineCreation = null);
-  }
-
-  Future<void>? _zegoEngineCreation;
-
-  Future<void> _createZegoEngine() async {
-    Setting? appSetting = SessionManager.instance.getSettings();
-    // tryParse, not parse. zego_app_id is a nullable settings column, and an
-    // unconfigured one comes back as "" — which is not null, so `?? '0'` never
-    // fired and int.parse threw FormatException the moment a user opened the
-    // Live tab. The `appId == 0` guard below was written for exactly that case
-    // and was unreachable.
-    int appId = int.tryParse(appSetting?.zegoAppId ?? '') ?? 0;
-    if (appId == 0) {
-      return Loggers.info('The Zego App ID is not configured.');
-    }
-    try {
-      await ZegoExpressEngine.createEngineWithProfile(
-          ZegoEngineProfile(appId, ZegoScenario.Default, appSign: appSetting?.zegoAppSign));
-      _isZegoEngineReady = true;
-    } on MissingPluginException catch (e) {
-      Loggers.error('Create Zego Engine : ${e.message}');
     }
   }
 

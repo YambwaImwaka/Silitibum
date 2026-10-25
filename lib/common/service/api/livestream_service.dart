@@ -1,6 +1,9 @@
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
+import 'package:shortzz/common/functions/auth_gate.dart';
+import 'package:shortzz/common/functions/json_parse.dart';
+import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/api_service.dart';
 import 'package:shortzz/common/service/utils/params.dart';
 import 'package:shortzz/common/service/utils/web_service.dart';
@@ -10,7 +13,7 @@ import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/model/livestream/livestream_comment.dart';
 import 'package:shortzz/model/livestream/livestream_user_state.dart';
 
-/// REST layer for MySQL livestream signalling (media stays on Zego; live
+/// REST layer for MySQL livestream signalling (media is on LiveKit; live
 /// deltas arrive via RealtimeService presence channels, these endpoints are
 /// the source of truth and the polling fallback).
 class LivestreamService {
@@ -97,6 +100,22 @@ class LivestreamService {
           Params.afterCommentId: afterCommentId,
         },
         fromJson: StreamStateResult.fromJson);
+  }
+
+  /// The token that connects to the room's video. Signed-out viewers send
+  /// their per-install id so the room sees one stable guest. A [preview]
+  /// (the Live tab playing a room before joining) is hidden from the room.
+  Future<RtcTokenResult> fetchRtcToken(
+      {required String roomId, bool preview = false}) async {
+    return ApiService.instance.call(
+        url: WebService.livestream.fetchRtcToken,
+        param: {
+          Params.roomId: roomId,
+          if (preview) Params.preview: 1,
+          if (!AuthGate.isLoggedIn)
+            Params.guestId: SessionManager.instance.getGuestStreamId(),
+        },
+        fromJson: RtcTokenResult.fromJson);
   }
 
   Future<SendCommentResult> sendComment(
@@ -254,6 +273,29 @@ class SendCommentResult {
             (commentJson['sender_user'] as Map).cast<String, dynamic>()));
       }
       comment = LivestreamComment.fromJson(commentJson);
+    }
+  }
+}
+
+/// Result of [LivestreamService.fetchRtcToken]. `message` is
+/// `livestream_ended` or `live_unavailable` when there is no token.
+class RtcTokenResult {
+  bool? status;
+  String? message;
+  String? url;
+  String? token;
+  String? identity;
+  bool canPublish = false;
+
+  RtcTokenResult.fromJson(Map<String, dynamic> json) {
+    status = asBoolOrNull(json['status']);
+    message = asStringOrNull(json['message']);
+    final data = json['data'];
+    if (data is Map) {
+      url = asStringOrNull(data['url']);
+      token = asStringOrNull(data['token']);
+      identity = asStringOrNull(data['identity']);
+      canPublish = asBoolOrNull(data['can_publish']) ?? false;
     }
   }
 }

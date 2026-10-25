@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.2.2+22
+version: 1.2.3+23
 
 environment:
   sdk: ^3.5.4
@@ -124,7 +124,12 @@ dependencies:
   flutter_widget_from_html_core: ^0.17.2
   wakelock_plus: ^1.4.0
   permission_handler: ^12.0.1
-  zego_express_engine: ^3.24.1
+  # Live video. Replaced zego_express_engine in 1.2.3: Zego's free trial ran
+  # out and froze every room login, so no live could start.
+  livekit_client: ^2.13.1
+  # The recorder that saves a host's live (LiveRecordingManager). livekit_client
+  # pins the exact version; this only has to stay compatible with it.
+  flutter_webrtc: ^1.6.2
   rxdart: ^0.28.0
   image: ^4.8.0
 

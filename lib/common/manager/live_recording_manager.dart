@@ -8,7 +8,9 @@ import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/api/livestream_recording_service.dart';
 import 'package:shortzz/model/general/settings_model.dart';
 import 'package:shortzz/model/post_story/post_model.dart';
-import 'package:zego_express_engine/zego_express_engine.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart'
+    show MediaRecorder, RecorderAudioChannel;
+import 'package:livekit_client/livekit_client.dart' show LocalVideoTrack;
 
 /// How far along storing an ended live is, for the end screen to report.
 enum LiveRecordingState { idle, recording, uploading, saved, failed }
@@ -20,10 +22,8 @@ enum LiveRecordingState { idle, recording, uploading, saved, failed }
 /// and the controller is disposed the moment the host is moved to the end
 /// screen. Anything holding the recording had to survive that disposal.
 ///
-/// It also owns Zego's `onCapturedDataRecordStateUpdate` handler for the same
-/// reason — LivestreamScreenController.stopListenEvent() nulls the room
-/// handlers on dispose, which would drop the very callback that says the MP4
-/// has finished being written.
+/// It records the host's camera and microphone with WebRTC's own recorder
+/// (Android only), the same frames LiveKit is broadcasting.
 class LiveRecordingManager {
   LiveRecordingManager._();
 
@@ -44,7 +44,7 @@ class LiveRecordingManager {
   String? _description;
   int? _startedAtMs;
   Timer? _capTimer;
-  Timer? _finalizeFallback;
+  MediaRecorder? _recorder;
   bool _handedOff = false;
 
   Setting? get _settings => SessionManager.instance.getSettings();
@@ -60,9 +60,10 @@ class LiveRecordingManager {
   ///
   /// Best-effort throughout: a broadcast must never fail because it could not
   /// be recorded, so every path here swallows its error and leaves the stream
-  /// running.
-  Future<void> start({required String roomId}) async {
-    if (!isEnabled || roomId.isEmpty) return;
+  /// running. WebRTC's recorder exists on Android only.
+  Future<void> start(
+      {required String roomId, required LocalVideoTrack camera}) async {
+    if (!isEnabled || roomId.isEmpty || !Platform.isAndroid) return;
     if (state.value == LiveRecordingState.recording) return;
 
     try {
@@ -84,11 +85,11 @@ class LiveRecordingManager {
       publishedPostId.value = null;
       progress.value = 0;
 
-      ZegoExpressEngine.onCapturedDataRecordStateUpdate =
-          _onRecordStateUpdate;
-
-      await ZegoExpressEngine.instance.startRecordingCapturedData(
-          ZegoDataRecordConfig(path, ZegoDataRecordType.Default));
+      final recorder = MediaRecorder();
+      await recorder.start(path,
+          videoTrack: camera.mediaStreamTrack,
+          audioChannel: RecorderAudioChannel.INPUT);
+      _recorder = recorder;
 
       state.value = LiveRecordingState.recording;
       Loggers.info('Live recording started: $path');
@@ -108,67 +109,48 @@ class LiveRecordingManager {
     }
   }
 
-  /// Stops recording and starts the upload once the file is finalized.
+  /// Stops recording, then starts the upload in the background.
   ///
   /// Safe to call more than once — the host ending a stream and the duration
-  /// cap firing can both land here.
+  /// cap firing can both land here. Returns once the MP4 is finalized, so the
+  /// caller can stop the camera without truncating it.
   Future<void> stopAndSave({String? description}) async {
     if (state.value != LiveRecordingState.recording) return;
     _description ??= description;
     _capTimer?.cancel();
-
-    try {
-      await ZegoExpressEngine.instance.stopRecordingCapturedData();
-    } catch (e) {
-      Loggers.error('stopRecordingCapturedData failed: $e');
-    }
-
-    // The Success callback is the reliable signal that the MP4 header has been
-    // written, but it is a native callback that has been seen not to arrive at
-    // all when the engine is torn down immediately afterwards. Upload from
-    // whatever is on disk if it goes quiet.
-    _finalizeFallback?.cancel();
-    _finalizeFallback = Timer(const Duration(seconds: 4), () {
-      Loggers.info('Record-state callback did not arrive; uploading anyway');
-      _handOff();
-    });
+    await _stopRecorder();
+    unawaited(_handOff());
   }
 
   /// Abandons the recording without uploading it — used when the host's live
   /// never really started, so there is nothing worth publishing.
   Future<void> cancel() async {
     _capTimer?.cancel();
-    _finalizeFallback?.cancel();
     if (state.value == LiveRecordingState.recording) {
-      try {
-        await ZegoExpressEngine.instance.stopRecordingCapturedData();
-      } catch (e) {
-        Loggers.error('stopRecordingCapturedData failed on cancel: $e');
-      }
+      await _stopRecorder();
     }
     await _deleteLocalFile();
     state.value = LiveRecordingState.idle;
     _reset();
   }
 
-  void _onRecordStateUpdate(ZegoDataRecordState recordState, int errorCode,
-      ZegoDataRecordConfig config, ZegoPublishChannel channel) {
-    if (errorCode != 0) {
-      Loggers.error('Live recording error: $errorCode');
-    }
-    if (recordState == ZegoDataRecordState.Success) {
-      _finalizeFallback?.cancel();
-      _handOff();
+  /// The recorder answers once the file is closed. Bounded, because uploading
+  /// whatever is on disk beats waiting forever on a native call.
+  Future<void> _stopRecorder() async {
+    final MediaRecorder? recorder = _recorder;
+    _recorder = null;
+    if (recorder == null) return;
+    try {
+      await recorder.stop().timeout(const Duration(seconds: 6));
+    } catch (e) {
+      Loggers.error('Stopping the live recording failed: $e');
     }
   }
 
-  /// Uploads the finished file. Guarded by [_handedOff] because the Success
-  /// callback and the fallback timer race each other by design.
+  /// Uploads the finished file, once.
   Future<void> _handOff() async {
     if (_handedOff) return;
     _handedOff = true;
-    _finalizeFallback?.cancel();
-    ZegoExpressEngine.onCapturedDataRecordStateUpdate = null;
 
     final roomId = _roomId;
     final path = _filePath;
@@ -242,9 +224,8 @@ class LiveRecordingManager {
 
   void _reset() {
     _capTimer?.cancel();
-    _finalizeFallback?.cancel();
     _capTimer = null;
-    _finalizeFallback = null;
+    _recorder = null;
     _roomId = null;
     _filePath = null;
     _description = null;

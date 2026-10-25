@@ -237,6 +237,8 @@ Route::middleware('checkHeader')->group(function () {
         Route::post('joinLivestream', [LivestreamApiController::class, 'joinLivestream']);
         Route::post('leaveLivestream', [LivestreamApiController::class, 'leaveLivestream']);
         Route::post('fetchStreamState', [LivestreamApiController::class, 'fetchStreamState']);
+        // The room's video connection (LiveKit); guests get watch-only tokens.
+        Route::post('fetchRtcToken', [LivestreamApiController::class, 'fetchRtcToken']);
         Route::post('createLivestream', [LivestreamApiController::class, 'createLivestream'])->middleware('authorizeUser');
         // Host-only still frame, captured seconds into the broadcast; doubles
         // as the thumbnail for the recording below.

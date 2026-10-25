@@ -25,6 +25,7 @@ class _Livestream {
   String joinLivestream = "${apiURL}livestream/joinLivestream";
   String leaveLivestream = "${apiURL}livestream/leaveLivestream";
   String fetchStreamState = "${apiURL}livestream/fetchStreamState";
+  String fetchRtcToken = "${apiURL}livestream/fetchRtcToken";
   String sendComment = "${apiURL}livestream/sendComment";
   String addLikes = "${apiURL}livestream/addLikes";
   String sendStreamGift = "${apiURL}livestream/sendStreamGift";
