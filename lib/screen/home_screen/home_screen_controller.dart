@@ -185,6 +185,8 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
   }
 
   onToggleDropDown() {
+    // Closed, its animation controller is disposed and forward() throws.
+    if (isClosed) return;
     if (animation.status != AnimationStatus.completed) {
       controller.forward();
       isAnimateTab.value = true;
@@ -195,6 +197,7 @@ class HomeScreenController extends BaseController with GetSingleTickerProviderSt
 
   onAnimationBack() {
     isAnimateTab.value = false;
+    if (isClosed) return;
     controller.animateBack(0, duration: const Duration(milliseconds: 250), curve: Curves.linear);
   }
 

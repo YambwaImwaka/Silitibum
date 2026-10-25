@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -47,7 +48,7 @@ class FollowFollowingScreenController extends BaseController {
   @override
   void onReady() {
     super.onReady();
-    pageController.animateToPage(selectedTabIndex.value,
+    pageController.animateToPageIfAttached(selectedTabIndex.value,
         duration: const Duration(milliseconds: 250), curve: Curves.linear);
     fetchScrollData();
   }
@@ -87,7 +88,7 @@ class FollowFollowingScreenController extends BaseController {
     } else {
       followFollowingType = FollowFollowingType.following;
     }
-    pageController.animateToPage(value,
+    pageController.animateToPageIfAttached(value,
         duration: const Duration(milliseconds: 250), curve: Curves.linear);
   }
 

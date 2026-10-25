@@ -288,7 +288,7 @@ class PhoneForgotPasswordSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = Get.find<AuthScreenController>();
+    final controller = AuthScreenController.current;
     return Container(
       height: 380,
       margin: EdgeInsets.only(top: AppBar().preferredSize.height * 2),

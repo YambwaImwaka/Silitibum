@@ -40,10 +40,15 @@ class ReelController extends BaseController {
 
   ReelController(this.reelData, this.onUpdateReelData);
 
+  StreamSubscription<Post>? _reelDataSub;
+
   @override
   void onReady() {
     super.onReady();
-    reelData.listen((p0) {
+    // onReady runs a frame after creation; a reel scrolled straight past is
+    // already closed by then.
+    if (isClosed) return;
+    _reelDataSub = reelData.listen((p0) {
       if (p0.postType == PostType.video &&
           Get.isRegistered<PostScreenController>(tag: '${p0.id}')) {
         final controller = Get.find<PostScreenController>(tag: '${p0.id}');
@@ -56,7 +61,10 @@ class ReelController extends BaseController {
   @override
   void onClose() {
     super.onClose();
-    reelData.close();
+    // reelData is not closed: the page's widgets can still be subscribed
+    // while they unmount, and GetX throws a null-check error on a closed
+    // stream (GetStream.addSubscription / removeSubscription crashes).
+    _reelDataSub?.cancel();
     _debounce?.cancel();
   }
 

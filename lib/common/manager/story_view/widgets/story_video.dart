@@ -75,13 +75,20 @@ class StoryVideoState extends State<StoryVideo> {
     widget.storyController?.pause();
 
     widget.videoLoader.loadVideo(() {
+      // The story may have been closed while the video downloaded.
+      final File? file = widget.videoLoader.videoFile;
+      if (!mounted || file == null) return;
       if (widget.videoLoader.state == LoadState.success) {
-        playerController =
-            VideoPlayerController.file(widget.videoLoader.videoFile!);
+        playerController = VideoPlayerController.file(file);
 
+        // A file the player cannot read fails here; unhandled, that was an
+        // app crash (VideoError: Source error).
         playerController?.initialize().then((v) {
+          if (!mounted) return;
           setState(() {});
           widget.storyController?.play();
+        }, onError: (Object e) {
+          debugPrint('Story video failed to load: $e');
         });
 
         if (widget.storyController != null) {

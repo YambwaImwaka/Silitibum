@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/screen/profile_screen/profile_screen_controller.dart';
 import 'package:shortzz/utilities/asset_res.dart';
@@ -36,7 +37,7 @@ class ProfileTabs extends StatelessWidget {
             onTap: (value) {
               controller.userData.value?.checkIsBlocked(() {
                 controller.onTabChanged(value);
-              controller.pageController.animateToPage(value,
+              controller.pageController.animateToPageIfAttached(value,
                   duration: const Duration(milliseconds: 300), curve: Curves.linear);
               });
             },

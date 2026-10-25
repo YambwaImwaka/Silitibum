@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
@@ -43,7 +44,7 @@ class HashtagScreenController extends BaseController {
     List<Post> posts = result[1];
 
     if (reels.isEmpty && posts.isNotEmpty) {
-      pageController.animateToPage(1,
+      pageController.animateToPageIfAttached(1,
           duration: const Duration(milliseconds: 300), curve: Curves.linear);
     }
   }

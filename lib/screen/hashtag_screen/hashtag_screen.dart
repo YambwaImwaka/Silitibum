@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/extensions/common_extension.dart';
 import 'package:shortzz/common/extensions/string_extension.dart';
@@ -41,7 +42,7 @@ class HashtagScreen extends StatelessWidget {
                   onTap: (index) {
                     controller.onChangeTab(index);
                     controller.pageController
-                        .animateToPage(index, duration: const Duration(milliseconds: 200), curve: Curves.linear);
+                        .animateToPageIfAttached(index, duration: const Duration(milliseconds: 200), curve: Curves.linear);
                   },
                 ));
           }),

@@ -155,9 +155,17 @@ class CameraEditScreenController extends BaseController {
 
     await videoPlayerController.value?.initialize();
 
-    hasAudio = await RetrytechPlugin.shared
-            .hasAudio(inputPath: content.value.content ?? '') ??
-        true;
+    // The plugin reads the file with MediaMetadataRetriever, which throws
+    // ("setDataSource failed") on files the player itself can play; assume
+    // sound rather than crash.
+    try {
+      hasAudio = await RetrytechPlugin.shared
+              .hasAudio(inputPath: content.value.content ?? '') ??
+          true;
+    } catch (e) {
+      Loggers.error('hasAudio failed: $e');
+      hasAudio = true;
+    }
     videoPlayerController.refresh();
     videoPlayerController.value?.setLooping(true);
     content.update((val) => val?.duration =

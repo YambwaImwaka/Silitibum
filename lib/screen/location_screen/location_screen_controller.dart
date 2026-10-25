@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
@@ -42,7 +43,7 @@ class LocationScreenController extends BaseController {
     List<Post> posts = result[1];
 
     if (reels.isEmpty && posts.isNotEmpty) {
-      pageController.animateToPage(1,
+      pageController.animateToPageIfAttached(1,
           duration: const Duration(milliseconds: 300), curve: Curves.linear);
     }
   }

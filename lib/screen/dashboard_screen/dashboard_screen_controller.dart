@@ -142,6 +142,10 @@ class DashboardScreenController extends BaseController with GetSingleTickerProvi
     HapticFeedback.lightImpact();
     onBottomIndexChanged?.call(index);
     selectedPageIndex.value = index;
+    // A closed controller's animation is disposed, and reset() then throws
+    // a null-check error (Crashlytics' second biggest issue, on every tab
+    // tap after signing in; see DashboardHandoff for how it got closed).
+    if (isClosed) return;
     animationController
       ..reset()
       ..forward();

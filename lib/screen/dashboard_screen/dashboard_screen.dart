@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:proste_indexed_stack/proste_indexed_stack.dart';
 import 'package:shortzz/common/widget/banner_ads_custom.dart';
+import 'package:shortzz/common/widget/loader_widget.dart';
 import 'package:shortzz/common/widget/top_bar_actions.dart';
 import 'package:shortzz/languages/languages_keys.dart';
 import 'package:shortzz/model/user_model/user_model.dart';
@@ -69,6 +70,51 @@ class DashboardScreen extends StatelessWidget {
         );
       }),
       bottomNavigationBar: _BottomBar(controller: controller),
+    );
+  }
+}
+
+/// Opens a new dashboard once the one it replaces has gone, after signing in.
+///
+/// Signing in from guest browsing used to swap dashboards in one Get.offAll.
+/// The new dashboard then put its controllers (the same types as the old
+/// one's) while the old route still held them, and GetX, disposing the old
+/// route, closed the *new* instances instead. After every sign-in, every tab
+/// tap threw a null-check error (Crashlytics' second biggest issue), the
+/// unread badges stopped updating, and the Snaps dropdown, ads and GIF sheet
+/// were left closed. Waiting here until the old route has let go of its
+/// controllers means the new dashboard starts from fresh ones.
+class DashboardHandoff extends StatefulWidget {
+  final User? myUser;
+
+  const DashboardHandoff({super.key, this.myUser});
+
+  @override
+  State<DashboardHandoff> createState() => _DashboardHandoffState();
+}
+
+class _DashboardHandoffState extends State<DashboardHandoff> {
+  @override
+  void initState() {
+    super.initState();
+    _open();
+  }
+
+  Future<void> _open() async {
+    for (int i = 0;
+        i < 40 && Get.isRegistered<DashboardScreenController>();
+        i++) {
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+    if (!mounted) return;
+    Get.off(() => DashboardScreen(myUser: widget.myUser));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: scaffoldBackgroundColor(context),
+      body: const LoaderWidget(),
     );
   }
 }

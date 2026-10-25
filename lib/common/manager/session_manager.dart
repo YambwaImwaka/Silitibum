@@ -85,7 +85,8 @@ class SessionManager {
   void listenNotifyCount() {
     notifyCount.value = getNotifyCount;
     storage.listenKey(SessionKeys.notifyCount, (value) {
-      notifyCount.value = value;
+      // Null once the key is removed (signing out clears the store).
+      notifyCount.value = value is int ? value : 0;
     });
   }
 

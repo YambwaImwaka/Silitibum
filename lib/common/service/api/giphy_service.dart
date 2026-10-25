@@ -38,26 +38,38 @@ class GiphyService {
     required int startCount,
     GiphyRating giphyRating = GiphyRating.g,
   }) async {
+    if (apiKey.isEmpty) return [];
     String url =
         'https://api.giphy.com/v1/stickers/search?api_key=$apiKey&q=$keyWord&limit=$paginationLimit&offset=$startCount&rating=${giphyRating.title}';
-    http.Response response = await http.get(Uri.parse(url));
     Loggers.info(url);
-    if (response.statusCode == 200) {
-      return GiphyModel.fromJson(jsonDecode(response.body)).data ?? [];
-    }
-    return [];
+    return _fetch(url);
   }
 
   Future<List<GiphyData>> trending(
       {required String apiKey,
       GiphyRating giphyRating = GiphyRating.g,
       required int startCount}) async {
+    // No key is set in the admin panel: Giphy can only refuse, and this ran
+    // on every app start (the GIF sheet preloads).
+    if (apiKey.isEmpty) return [];
     String url =
         'https://api.giphy.com/v1/stickers/trending?api_key=$apiKey&limit=$paginationLimit&offset=$startCount&rating=${giphyRating.title}';
     Loggers.info(url);
-    http.Response response = await http.get(Uri.parse(url));
-    if (response.statusCode == 200) {
-      return GiphyModel.fromJson(jsonDecode(response.body)).data ?? [];
+    return _fetch(url);
+  }
+
+  /// No GIFs, rather than an error, when Giphy is slow or unreachable: the
+  /// timeouts were reported as app crashes.
+  Future<List<GiphyData>> _fetch(String url) async {
+    try {
+      final http.Response response = await http
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        return GiphyModel.fromJson(jsonDecode(response.body)).data ?? [];
+      }
+    } catch (e) {
+      Loggers.error('Giphy request failed: $e');
     }
     return [];
   }

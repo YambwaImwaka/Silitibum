@@ -1,4 +1,5 @@
 import 'package:expandable_page_view/expandable_page_view.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:figma_squircle_updated/figma_squircle.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -199,7 +200,7 @@ class LocationScreen extends StatelessWidget {
             items: [LKey.reels.tr, LKey.feed.tr],
             onTap: (index) {
               controller.onPageChanged(index);
-              controller.pageController.animateToPage(index,
+              controller.pageController.animateToPageIfAttached(index,
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.linear);
             },

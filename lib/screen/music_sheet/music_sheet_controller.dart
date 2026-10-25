@@ -1,4 +1,5 @@
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:get/get.dart';
@@ -61,7 +62,7 @@ class MusicSheetController extends BaseController {
 
   onChangedMusicCategories(int index) {
     selectedMusicCategory.value = index;
-    pageController.animateToPage(index,
+    pageController.animateToPageIfAttached(index,
         duration: const Duration(milliseconds: 250), curve: Curves.easeIn);
 
     // search field cancel

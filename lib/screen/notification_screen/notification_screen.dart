@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/widget/custom_app_bar.dart';
@@ -36,7 +37,7 @@ class NotificationScreen extends StatelessWidget {
                       const EdgeInsets.only(left: 15, right: 15, bottom: 15),
                   onTap: (index) {
                     controller.onTabChange(index);
-                    controller.pageController.animateToPage(index,
+                    controller.pageController.animateToPageIfAttached(index,
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.linear);
                   })),

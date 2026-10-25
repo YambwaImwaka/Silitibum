@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/manager/ads_manager.dart';
+import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 
@@ -24,8 +25,10 @@ class AdsController extends BaseController {
         (Platform.isAndroid && setting?.admobAndroidStatus == 0) ||
             (Platform.isIOS && setting?.admobIosStatus == 0);
 
+    final InterstitialAd? ad = interstitialAd;
+
     // Early return if ads are disabled or user is subscribed or ad is not loaded
-    if (isAdDisabled || isSubscribe.value || interstitialAd == null) {
+    if (isAdDisabled || isSubscribe.value || ad == null) {
       if (!isPopScope) {
         Get.back();
       }
@@ -34,7 +37,17 @@ class AdsController extends BaseController {
     if (!isPopScope) {
       Get.back();
     }
-    await interstitialAd!.show(); // Safe to use `!` after null check
+    // An ad shows once and is disposed when it closes; its callbacks load
+    // the next. Kept here, the disposed ad was shown again next time and
+    // the plugin threw (NullPointerException in Integer.intValue()).
+    interstitialAd = null;
+    try {
+      await ad.show();
+    } catch (e) {
+      Loggers.error('Interstitial ad failed to show: $e');
+      ad.dispose();
+      loadInterstitialAd();
+    }
   }
 
   Future<void> loadInterstitialAd() async {

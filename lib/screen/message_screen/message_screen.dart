@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/widget/custom_back_button.dart';
 import 'package:shortzz/common/widget/custom_search_text_field.dart';
@@ -67,7 +68,7 @@ class MessageScreen extends StatelessWidget {
                   items: controller.chatCategories,
                   onTap: (index) {
                     controller.onPageChanged(index);
-                    controller.pageController.animateToPage(index,
+                    controller.pageController.animateToPageIfAttached(index,
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.linear);
                   },

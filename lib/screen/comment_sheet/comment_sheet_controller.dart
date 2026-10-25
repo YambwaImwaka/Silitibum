@@ -110,7 +110,8 @@ class CommentSheetController extends BaseController {
   void onClose() {
     super.onClose();
     scrollController.dispose();
-    post.close();
+    // post is not closed: widgets still subscribed while the sheet unmounts
+    // hit a null-check error in GetX on a closed stream.
   }
 
   initData() {

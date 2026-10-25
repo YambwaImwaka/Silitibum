@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shortzz/common/extensions/page_controller_extension.dart';
 import 'package:get/get.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/manager/logger.dart';
@@ -83,7 +84,7 @@ class StoryViewScreenController extends BaseController {
     if (userIndex == 0) {
       return;
     }
-    pageController.animateToPage(userIndex - 1,
+    pageController.animateToPageIfAttached(userIndex - 1,
         duration: const Duration(milliseconds: 300), curve: Curves.linear);
     update();
   }
@@ -93,7 +94,7 @@ class StoryViewScreenController extends BaseController {
       Get.back(result: users[userIndex]);
       return;
     }
-    pageController.animateToPage(userIndex + 1,
+    pageController.animateToPageIfAttached(userIndex + 1,
         duration: const Duration(milliseconds: 300), curve: Curves.linear);
     update();
   }

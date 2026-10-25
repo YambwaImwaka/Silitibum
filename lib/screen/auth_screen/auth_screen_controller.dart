@@ -43,6 +43,14 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 /// - GOOGLE/APPLE  : the provider's ID token is sent to the backend, which
 ///   verifies it directly against Google/Apple.
 class AuthScreenController extends BaseController {
+  /// For the password-reset sheets: the controller of the sign-in screen or
+  /// sheet they opened from, or a new one if that has already closed and
+  /// taken its controller with it (Get.find threw "not found" there).
+  static AuthScreenController get current =>
+      Get.isRegistered<AuthScreenController>()
+          ? Get.find<AuthScreenController>()
+          : Get.put(AuthScreenController());
+
   TextEditingController fullNameController = TextEditingController();
   TextEditingController emailController = TextEditingController();
   TextEditingController forgetEmailController = TextEditingController();
@@ -615,7 +623,9 @@ class AuthScreenController extends BaseController {
     // this point — see _authenticate above. This only debounces the actual
     // route change.
     DebounceAction.tagged('auth_navigate').call(() async {
-      Get.offAll(() => DashboardScreen(myUser: data));
+      // Not straight to a new dashboard: see DashboardHandoff.
+      Get.offAll(() => DashboardHandoff(myUser: data),
+          transition: Transition.noTransition);
     }, milliseconds: 250);
   }
 }
