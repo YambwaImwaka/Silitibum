@@ -1,12 +1,16 @@
 package com.silitibum.app
 
+import android.util.Log
+import com.deepar.ai.DeepArPlugin
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugins.googlemobileads.GoogleMobileAdsPlugin
 
 class MainActivity : FlutterActivity() {
 
-    // The override exists ONLY to register the native ad factory.
+    // The override exists to register the native ad factory and to make the
+    // DeepAR plugin safe to tear down.
     //
     // It must not go back to hand-registering plugins. FlutterActivity's own
     // implementation (called via super below) already runs
@@ -27,6 +31,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
+        guardDeepArDetach(flutterEngine)
+
         GoogleMobileAdsPlugin.registerNativeAdFactory(
             flutterEngine,
             NATIVE_AD_FACTORY_ID,
@@ -39,6 +45,33 @@ class MainActivity : FlutterActivity() {
         // to a torn-down engine leaks the Activity.
         GoogleMobileAdsPlugin.unregisterNativeAdFactory(flutterEngine, NATIVE_AD_FACTORY_ID)
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    // deepar_flutter_plus 0.2.1 (the latest release) creates its two method
+    // channels only when the activity attaches and when the filter camera
+    // opens, yet its onDetachedFromEngine uses both without a null check. So
+    // whenever the engine was torn down before the filter camera had been
+    // used — Android recreating the activity for a system change such as a
+    // SIM swap or new wallpaper colours, or Back on Android 11 and older — the
+    // app crashed with a NullPointerException. Placeholder channels make that
+    // teardown safe; the plugin still replaces them with its real channels
+    // exactly as before. proguard-rules.pro keeps the plugin's field names.
+    private fun guardDeepArDetach(engine: FlutterEngine) {
+        val plugin = engine.plugins.get(DeepArPlugin::class.java) ?: return
+        for (name in arrayOf("channel", "cameraXChannel")) {
+            try {
+                val field = DeepArPlugin::class.java.getDeclaredField(name)
+                field.isAccessible = true
+                if (field.get(plugin) == null) {
+                    field.set(
+                        plugin,
+                        MethodChannel(engine.dartExecutor.binaryMessenger, "silitibum/deep_ar_placeholder/$name")
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("MainActivity", "DeepAR teardown guard skipped $name: $e")
+            }
+        }
     }
 
     private companion object {

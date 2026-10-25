@@ -29,6 +29,9 @@
 # ---- DeepAR (camera filters) -------------------------------------------
 -keep class ai.deepar.** { *; }
 -dontwarn ai.deepar.**
+# The plugin itself: MainActivity.guardDeepArDetach sets two of its fields
+# by name, so they must not be renamed.
+-keep class com.deepar.ai.** { *; }
 
 # ---- RevenueCat (purchases) --------------------------------------------
 # Billing/entitlement models are deserialized reflectively; a stripped field
