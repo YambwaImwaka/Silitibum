@@ -27,7 +27,7 @@ class BattleStartCountdownOverlay extends StatefulWidget {
 class _BattleStartCountdownOverlayState
     extends State<BattleStartCountdownOverlay>
     with SingleTickerProviderStateMixin {
-  final controller = Get.find<LivestreamScreenController>();
+  final controller = LivestreamScreenController.current;
 
   late AnimationController _animationController;
   RxInt countDownValue = AppRes.battleStartInSecond.obs;

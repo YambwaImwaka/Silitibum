@@ -2,18 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:get/get.dart';
-import 'package:livekit_client/livekit_client.dart'
-    show
-        DisconnectReason,
-        EventsListener,
-        ParticipantDisconnectedEvent,
-        Room,
-        RoomDisconnectedEvent,
-        RoomEvent,
-        TrackSubscribedEvent,
-        VideoTrack,
-        VideoTrackRenderer,
-        VideoViewFit;
 import 'package:shortzz/common/controller/app_user_cache_controller.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
@@ -26,9 +14,9 @@ import 'package:shortzz/model/livestream/app_user.dart';
 import 'package:shortzz/model/livestream/livestream.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
 import 'package:shortzz/screen/live_stream/create_live_stream_screen/create_live_stream_screen.dart';
-import 'package:shortzz/screen/live_stream/livestream_screen/audience/live_stream_audience_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/livestream_host_screen.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
+import 'package:shortzz/screen/report_sheet/report_sheet.dart';
 
 /// A fresh list of live rooms in the order the viewer already sees them:
 /// rooms on screen keep their place, new rooms join the end, and rooms no
@@ -54,32 +42,36 @@ import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_c
   return (rooms: rooms, currentEnded: currentEnded);
 }
 
-/// The Live tab: one live room at a time, full screen and already playing —
-/// swipe up for the next, tap to join — and a plain "no one is live" when
-/// nobody is, instead of stale cards.
+/// The Live tab, Snaps style: one live at a time, full screen, swipe up for
+/// the next. The live on screen is the room itself — video, comments, gifts
+/// and likes — joined as a viewer, with no separate screen to open; nobody
+/// live shows a plain "no one is live" instead of stale cards.
 ///
-/// The playing room is a preview: a hidden participant in the room's video
-/// that plays the host's camera without joining on the server, so it neither
-/// counts as a viewer nor shows up in the host's audience. Joining hands over
-/// to the full room screen.
+/// Your own live is not joined here: its page offers to go back to it.
 class LiveFeedScreenController extends BaseController
     with WidgetsBindingObserver {
   static const int liveTabIndex = DashboardScreenController.liveTab;
+
+  /// The tab's room is registered under this tag, so a room screen opened
+  /// over the tab (your own live) never gets it back from Get.put.
+  static const String roomTag = 'live_feed_room';
 
   final RxList<Livestream> streams = <Livestream>[].obs;
   final RxInt currentIndex = 0.obs;
   final RxBool hasLoaded = false.obs;
   final PageController pageController = PageController();
 
-  /// The current room's video, once the host's camera arrives.
-  final Rx<Widget?> previewView = Rx<Widget?>(null);
+  /// The room on the current page, once joined.
+  final Rxn<LivestreamScreenController> room = Rxn<LivestreamScreenController>();
 
-  /// Set once the host's camera arrives; until then the room's placeholder
-  /// shows.
-  final RxBool isRendering = false.obs;
+  /// While you co-host the room on screen, swiping would drop you out of it.
+  final RxBool isCoHosting = false.obs;
 
   /// Rooms that ended while they were on screen.
   final RxSet<String> endedRooms = <String>{}.obs;
+
+  /// Rooms whose video could not be reached; tapping tries again.
+  final RxSet<String> failedRooms = <String>{}.obs;
 
   final AppUserCacheController appUserCacheController =
       Get.find<AppUserCacheController>();
@@ -87,21 +79,29 @@ class LiveFeedScreenController extends BaseController
   Timer? _refreshTimer;
   Timer? _routeWatchdog;
   Timer? _advanceTimer;
+  Timer? _dropTimer;
+  Timer? _settleTimer;
+  Worker? _coHostWatch;
 
-  // What should be playing, and what is. Every join and leave runs through
-  // _ops, one at a time, so a fast swipe can never leave two rooms
+  // Which room should be joined, and which is. Every join and leave runs
+  // through _ops, one at a time, so a fast swipe can never leave two rooms
   // half-joined.
   String? _wantedRoom;
-  String? _playingRoom;
-  Room? _previewRoom;
-  EventsListener<RoomEvent>? _previewEvents;
+  String? _roomId;
   Future<void> _ops = Future.value();
 
   bool _appResumed = true;
   bool _navigating = false;
-  String? _dashboardRoute;
 
-  Timer? _dropTimer;
+  /// The route the tab is on (the dashboard's), named by the tab from its
+  /// own context. Get.currentRoute when the tab was first built is not it
+  /// when a tapped push opened the tab under another screen, and the tab
+  /// then counted itself covered for good.
+  String? dashboardRoute;
+
+  /// A live to show once the tab has loaded: a "@name is now live" push
+  /// tapped before the tab was first opened.
+  static Livestream? _pending;
 
   Livestream? get currentStream =>
       currentIndex.value < streams.length ? streams[currentIndex.value] : null;
@@ -115,10 +115,28 @@ class LiveFeedScreenController extends BaseController
       (_dashboard?.selectedPageIndex.value ?? liveTabIndex) == liveTabIndex;
 
   bool get _coveredByRoute =>
-      _dashboardRoute != null && Get.currentRoute != _dashboardRoute;
+      dashboardRoute != null && Get.currentRoute != dashboardRoute;
 
   bool get _isVisible =>
       _tabSelected && _appResumed && !_navigating && !_coveredByRoute;
+
+  static bool isMine(Livestream stream) =>
+      stream.hostId == SessionManager.instance.getUserID();
+
+  /// The joined room, if it is [roomId]'s.
+  LivestreamScreenController? roomFor(String? roomId) {
+    final LivestreamScreenController? live = room.value;
+    return live != null && roomId != null && roomId == _roomId ? live : null;
+  }
+
+  /// Shows [stream] on the Live tab, for a tapped "@name is now live" push.
+  static void open(Livestream stream) {
+    if (Get.isRegistered<LiveFeedScreenController>()) {
+      Get.find<LiveFeedScreenController>()._focus(stream);
+    } else {
+      _pending = stream;
+    }
+  }
 
   @override
   void onInit() {
@@ -133,13 +151,14 @@ class LiveFeedScreenController extends BaseController
   @override
   void onReady() {
     super.onReady();
-    _dashboardRoute = Get.currentRoute;
+    dashboardRoute ??= Get.currentRoute;
     fetchStreams();
     _onVisibilityChanged();
-    // Notices any other screen opening over the tab (a notification, a deep
-    // link) and stops the room playing behind it.
+    // Notices any other screen opening over the tab (a profile, the
+    // notifications, a chat) and leaves the room, which would otherwise go
+    // on playing behind it.
     _routeWatchdog = Timer.periodic(
-        const Duration(seconds: 1), (_) => _syncPreview());
+        const Duration(milliseconds: 500), (_) => _syncRoom(now: true));
   }
 
   @override
@@ -149,8 +168,9 @@ class LiveFeedScreenController extends BaseController
     _routeWatchdog?.cancel();
     _advanceTimer?.cancel();
     _dropTimer?.cancel();
+    _settleTimer?.cancel();
     _wantedRoom = null;
-    _ops = _ops.then((_) => _leave());
+    _ops = _ops.then((_) => _leaveRoom());
     pageController.dispose();
     super.onClose();
   }
@@ -158,13 +178,14 @@ class LiveFeedScreenController extends BaseController
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     // `inactive` is the notification shade or a system dialog over the app;
-    // only leaving the app stops the room.
+    // only leaving the app leaves the room.
     _appResumed = state == AppLifecycleState.resumed ||
         state == AppLifecycleState.inactive;
     _onVisibilityChanged();
   }
 
   void _onVisibilityChanged() {
+    if (isClosed) return;
     if (_isVisible) {
       _refreshTimer ??= Timer.periodic(
           const Duration(seconds: 15), (_) => fetchStreams(silent: true));
@@ -172,13 +193,14 @@ class LiveFeedScreenController extends BaseController
       _refreshTimer?.cancel();
       _refreshTimer = null;
     }
-    _syncPreview();
+    _syncRoom(now: true);
   }
 
   Future<void> fetchStreams({bool silent = false}) async {
     if (!silent) isLoading.value = true;
     try {
       final fresh = await LivestreamService.instance.fetchLivestreams();
+      if (isClosed) return;
       _assignHostUsers(fresh);
       _merge(fresh);
     } catch (e) {
@@ -186,6 +208,11 @@ class LiveFeedScreenController extends BaseController
     } finally {
       isLoading.value = false;
       hasLoaded.value = true;
+    }
+    final Livestream? pending = _pending;
+    if (pending != null && !isClosed) {
+      _pending = null;
+      _focus(pending);
     }
   }
 
@@ -208,7 +235,7 @@ class LiveFeedScreenController extends BaseController
       currentIndex.value = index;
       if (pageController.hasClients) pageController.jumpToPage(index);
     }
-    _syncPreview();
+    _syncRoom();
   }
 
   void _assignHostUsers(List<Livestream> list) {
@@ -224,10 +251,33 @@ class LiveFeedScreenController extends BaseController
     }
   }
 
+  /// Puts [stream] on the current page, moving it there if it is already
+  /// listed further along.
+  void _focus(Livestream stream) {
+    final String? roomId = stream.roomID;
+    if (roomId == null || roomId.isEmpty) return;
+    endedRooms.remove(roomId);
+    failedRooms.remove(roomId);
+    _assignHostUsers([stream]);
+    final List<Livestream> next =
+        streams.where((other) => other.roomID != roomId).toList();
+    // Without a pager yet (nothing was live), it starts on the first page.
+    final int at = pageController.hasClients
+        ? currentIndex.value.clamp(0, next.length)
+        : 0;
+    next.insert(at, stream);
+    streams.assignAll(next);
+    currentIndex.value = at;
+    if (pageController.hasClients) pageController.jumpToPage(at);
+    _syncRoom(now: true);
+  }
+
   void onPageChanged(int index) {
     currentIndex.value = index;
     _advanceTimer?.cancel();
-    _syncPreview();
+    // Coming back to a room that could not connect tries it again.
+    failedRooms.clear();
+    _syncRoom();
     // Rooms that ended have nothing more to show. They go once the swipe
     // has settled — removing a page mid-gesture would yank the list.
     if (endedRooms.isNotEmpty) {
@@ -251,7 +301,7 @@ class LiveFeedScreenController extends BaseController
     if (roomId == null || endedRooms.contains(roomId)) return;
     endedRooms.add(roomId);
     if (roomId != currentStream?.roomID) return;
-    _syncPreview();
+    _syncRoom(now: true);
     // Move on by itself, as an ended room is a dead end.
     _advanceTimer?.cancel();
     _advanceTimer = Timer(const Duration(milliseconds: 1800), () {
@@ -268,146 +318,144 @@ class LiveFeedScreenController extends BaseController
     });
   }
 
+  /// The room let go of itself: the live ended, or its video was lost.
+  void _onRoomExit(String roomId, bool ended) {
+    if (ended) {
+      _onRoomEnded(roomId);
+    } else {
+      failedRooms.add(roomId);
+      _syncRoom(now: true);
+    }
+  }
+
+  void retry(String? roomId) {
+    if (roomId == null) return;
+    failedRooms.remove(roomId);
+    _syncRoom(now: true);
+  }
+
+  void reportCurrentHost() {
+    final Livestream? stream = currentStream;
+    if (stream == null || isMine(stream)) return;
+    if (!AuthGate.check()) return;
+    Get.bottomSheet(ReportSheet(reportType: ReportType.user, id: stream.hostId),
+        isScrollControlled: true);
+  }
+
   // ---------------------------------------------------------------------
-  // Preview playback
+  // The room on screen
   // ---------------------------------------------------------------------
 
-  void _syncPreview() {
+  /// Leaving happens straight away; joining waits for a swipe to settle, so
+  /// a page dragged halfway and back keeps its room.
+  void _syncRoom({bool now = false}) {
+    if (isClosed) return;
     final Livestream? stream = currentStream;
-    final String? room = stream?.roomID;
+    final String? roomId = stream?.roomID;
     final bool show = _isVisible &&
-        room != null &&
-        room.isNotEmpty &&
-        !endedRooms.contains(room);
-    final String? wanted = show ? room : null;
+        stream != null &&
+        roomId != null &&
+        roomId.isNotEmpty &&
+        !isMine(stream) &&
+        !endedRooms.contains(roomId) &&
+        !failedRooms.contains(roomId);
+    final String? wanted = show ? roomId : null;
     if (wanted == _wantedRoom) return;
     _wantedRoom = wanted;
+    _settleTimer?.cancel();
+    if (wanted == null || now) {
+      _queueReconcile();
+    } else {
+      _settleTimer =
+          Timer(const Duration(milliseconds: 250), _queueReconcile);
+    }
+  }
+
+  void _queueReconcile() {
     _ops = _ops.then((_) => _reconcile()).catchError((Object e) {
-      Loggers.error('Live preview: $e');
+      Loggers.error('Live tab room: $e');
     });
   }
 
   Future<void> _reconcile() async {
     final String? wanted = _wantedRoom;
-    if (wanted == _playingRoom) return;
-    if (_playingRoom != null) await _leave();
-    if (wanted != null && wanted == _wantedRoom) await _join(wanted);
+    if (wanted == _roomId) return;
+    if (_roomId != null) await _leaveRoom();
+    if (wanted != null && wanted == _wantedRoom && !isClosed) {
+      _enterRoom(wanted);
+    }
   }
 
-  Future<void> _join(String roomId) async {
-    final Room room;
-    try {
-      room = await LiveVideo.connect(roomId, preview: true);
-    } on LiveVideoUnavailable catch (e) {
-      Loggers.error('Live preview unavailable: ${e.reason}');
-      if (e.roomEnded) _onRoomEnded(roomId);
-      return;
-    } catch (e) {
-      Loggers.error('Live preview connect failed: $e');
-      return;
+  void _enterRoom(String roomId) {
+    final Livestream? stream =
+        streams.firstWhereOrNull((stream) => stream.roomID == roomId);
+    if (stream == null) return;
+    // Get.put hands back whatever is registered under the tag rather than
+    // this new room.
+    if (Get.isRegistered<LivestreamScreenController>(tag: roomTag)) {
+      GetInstance()
+          .delete<LivestreamScreenController>(tag: roomTag, force: true);
     }
-    // The viewer may have swiped on while it connected.
-    if (_wantedRoom != roomId) {
-      await LiveVideo.close(room);
-      return;
-    }
-    _previewRoom = room;
-    _playingRoom = roomId;
-    isRendering.value = false;
-
-    final int? hostId =
-        streams.firstWhereOrNull((stream) => stream.roomID == roomId)?.hostId;
-    final String host = '$hostId';
-    final EventsListener<RoomEvent> listener = room.createListener();
-    _previewEvents = listener;
-    listener
-      ..on<TrackSubscribedEvent>((event) {
-        final track = event.track;
-        if (event.participant.identity == host && track is VideoTrack) {
-          _showPreview(roomId, track);
-        }
-      })
-      ..on<ParticipantDisconnectedEvent>((event) {
-        if (event.participant.identity == host) _onRoomEnded(roomId);
-      })
-      ..on<RoomDisconnectedEvent>((event) {
-        if (event.reason == DisconnectReason.roomDeleted) _onRoomEnded(roomId);
-      });
-
-    // The host's camera was usually on before the preview joined.
-    final hostParticipant = room.getParticipantByIdentity(host);
-    final VideoTrack? camera =
-        hostParticipant == null ? null : LiveVideo.cameraOf(hostParticipant);
-    if (camera != null) _showPreview(roomId, camera);
-  }
-
-  void _showPreview(String roomId, VideoTrack track) {
-    if (_playingRoom != roomId) return;
-    previewView.value = VideoTrackRenderer(track,
-        key: ObjectKey(track), fit: VideoViewFit.cover);
-    isRendering.value = true;
+    // Permanent: GetX ties an instance to whatever route is on top when it
+    // is put, and deletes it when that route closes. A room joined while a
+    // sheet is open (the next live, after one ended) would have died with
+    // the sheet. The tab deletes it itself.
+    final LivestreamScreenController live = Get.put(
+        LivestreamScreenController(stream.obs, false,
+            onEmbeddedExit: (ended) => _onRoomExit(roomId, ended)),
+        tag: roomTag,
+        permanent: true);
+    _roomId = roomId;
+    room.value = live;
+    final int myId = SessionManager.instance.getUserID();
+    _coHostWatch = ever<Livestream>(live.liveData, (data) {
+      isCoHosting.value = data.coHostIds?.contains(myId) ?? false;
+    });
     _prefetchNext();
   }
 
+  Future<void> _leaveRoom() async {
+    final LivestreamScreenController? live = room.value;
+    room.value = null;
+    _roomId = null;
+    _coHostWatch?.dispose();
+    _coHostWatch = null;
+    isCoHosting.value = false;
+    if (live == null) return;
+    // Out of the room (on the server, and its video) before the next one
+    // connects.
+    await live.logoutRoom();
+    if (Get.isRegistered<LivestreamScreenController>(tag: roomTag) &&
+        identical(Get.find<LivestreamScreenController>(tag: roomTag), live)) {
+      GetInstance()
+          .delete<LivestreamScreenController>(tag: roomTag, force: true);
+    }
+  }
+
   /// While one live plays, the next one's token is fetched, so swiping to it
-  /// skips that round trip. Only the token: holding a hidden connection to
-  /// the next room as well would double the LiveKit minutes every viewer
-  /// uses.
+  /// skips that round trip. Only the token: holding a connection to the next
+  /// room as well would double the LiveKit minutes every viewer uses.
   void _prefetchNext() {
     final int next = currentIndex.value + 1;
     if (next >= streams.length) return;
-    final String? roomId = streams[next].roomID;
-    if (roomId == null || roomId.isEmpty || endedRooms.contains(roomId)) return;
-    LiveVideo.prefetchToken(roomId, preview: true);
-  }
-
-  /// Gives the playing preview to the room screen, so joining shows the video
-  /// that is already playing instead of connecting all over again.
-  Room? _takePreview(String? roomId) {
-    if (roomId == null || roomId != _playingRoom) return null;
-    final Room? room = _previewRoom;
-    _previewRoom = null;
-    _playingRoom = null;
-    final listener = _previewEvents;
-    _previewEvents = null;
-    listener?.dispose();
-    previewView.value = null;
-    isRendering.value = false;
-    return room;
-  }
-
-  Future<void> _leave() async {
-    final Room? room = _previewRoom;
-    _previewRoom = null;
-    _playingRoom = null;
-    previewView.value = null;
-    isRendering.value = false;
-    final listener = _previewEvents;
-    _previewEvents = null;
-    await listener?.dispose();
-    await LiveVideo.close(room);
+    final Livestream stream = streams[next];
+    final String? roomId = stream.roomID;
+    if (roomId == null ||
+        roomId.isEmpty ||
+        isMine(stream) ||
+        endedRooms.contains(roomId)) {
+      return;
+    }
+    LiveVideo.prefetchToken(roomId);
   }
 
   // ---------------------------------------------------------------------
-  // Leaving the tab for a room or for going live
+  // Leaving the tab for your own live, or for going live
   // ---------------------------------------------------------------------
 
-  Future<void> joinCurrent() async {
-    final Livestream? stream = currentStream;
-    if (stream == null || endedRooms.contains(stream.roomID)) return;
-    if (_navigating) return;
-    final bool mine = stream.hostId == SessionManager.instance.getUserID();
-    // Taken before _openOver stops the preview, which would close it.
-    final Room? playing = mine ? null : _takePreview(stream.roomID);
-    // Watching is open to everyone; the room asks a guest to sign in at the
-    // point they try to comment, gift or co-host.
+  Future<void> openMyLive(Livestream stream) async {
     await _openOver(() async {
-      if (mine) {
-        await Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
-      } else {
-        await Get.to(() => LiveStreamAudienceScreen(
-            isHost: false, livestream: stream, room: playing));
-      }
+      await Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
     });
   }
 
@@ -427,26 +475,28 @@ class LiveFeedScreenController extends BaseController
     });
   }
 
-  /// Stops the preview, opens a screen that has the camera or the room
-  /// itself, and resumes once that screen has fully let go of it.
+  /// Leaves the room, opens a screen that needs the camera or a room of its
+  /// own, and comes back once that screen has fully let go of it.
   Future<void> _openOver(Future<void> Function() open) async {
     if (_navigating) return;
     _navigating = true;
-    _syncPreview();
+    _syncRoom(now: true);
     try {
       await _ops;
       await open();
     } finally {
-      // The room screen leaves its room when it is disposed, which is after
-      // its route has popped; previewing again before then would race it.
+      // A room screen leaves its room when it is disposed, which is after
+      // its route has popped; joining again before then would race it.
       for (int i = 0;
           i < 30 && Get.isRegistered<LivestreamScreenController>();
           i++) {
         await Future.delayed(const Duration(milliseconds: 100));
       }
       _navigating = false;
-      await fetchStreams(silent: true);
-      _syncPreview();
+      if (!isClosed) {
+        await fetchStreams(silent: true);
+        _syncRoom(now: true);
+      }
     }
   }
 }

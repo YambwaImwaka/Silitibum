@@ -27,6 +27,29 @@ class CancelToken {
   }
 }
 
+/// The request never got an answer: no connection, a dropped connection or a
+/// timeout. Callers show their usual failure state. main.dart reports these
+/// to Crashlytics as non-fatal: on mobile data they happen all day, and as
+/// "fatal" they made up most of the crash list without a single crash.
+class NetworkException implements Exception {
+  final String message;
+
+  const NetworkException(this.message);
+
+  /// Same text as the Exception(...) these replaced, which some screens show.
+  @override
+  String toString() => 'Exception: $message';
+
+  /// Whether [error] is the network failing rather than the app.
+  static bool isNetworkError(Object error) =>
+      error is NetworkException ||
+      error is http.ClientException ||
+      error is SocketException ||
+      error is HandshakeException ||
+      error is HttpException ||
+      error is TimeoutException;
+}
+
 class ApiService {
   ApiService._();
 
@@ -152,9 +175,16 @@ class ApiService {
       }
     } on TimeoutException {
       Loggers.error("Request timed out: $url");
-      throw Exception('Request timed out');
+      throw const NetworkException('Request timed out');
+    } on http.ClientException catch (e) {
+      // No connection, or it dropped mid-request (package:http wraps the
+      // socket error in a ClientException). Was rethrown raw.
+      Loggers.error("Connection failed: $url $e");
+      throw const NetworkException('Could not connect to the server');
+    } on SocketException {
+      throw const NetworkException('Could not connect to the server');
     } on HttpException {
-      throw Exception('Could not connect to the server');
+      throw const NetworkException('Could not connect to the server');
     } on FormatException catch (e) {
       // Handle JSON decoding errors
       Loggers.error("Invalid JSON format: ${e.message}");
@@ -272,16 +302,27 @@ class ApiService {
 
     // No timeout here: large uploads legitimately take longer than any fixed
     // request timeout; progress callbacks give the UI liveness instead.
-    final responseStream = await _sharedClient.send(request);
+    final http.StreamedResponse responseStream;
+    final String responseStr;
+    try {
+      responseStream = await _sharedClient.send(request);
 
-    if (cancelToken?.isCancelled ?? false) {
-      if (kDebugMode) {
-        Loggers.error("Request cancelled: $url");
+      if (cancelToken?.isCancelled ?? false) {
+        if (kDebugMode) {
+          Loggers.error("Request cancelled: $url");
+        }
+        throw Exception('Request was cancelled');
       }
-      throw Exception('Request was cancelled');
-    }
 
-    final responseStr = await responseStream.stream.bytesToString();
+      responseStr = await responseStream.stream.bytesToString();
+    } on http.ClientException catch (e) {
+      Loggers.error("Upload connection failed: $url $e");
+      throw const NetworkException(
+          'Upload failed: check your connection and try again');
+    } on SocketException {
+      throw const NetworkException(
+          'Upload failed: check your connection and try again');
+    }
     Loggers.success(responseStream.statusCode);
 
     // This path used to jsonDecode the body blind — no status check, none of

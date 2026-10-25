@@ -26,35 +26,46 @@ class DashboardScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: scaffoldBackgroundColor(context),
       resizeToAvoidBottomInset: true,
+      // The bar floats: Snaps and Live run under it, edge to edge, and get
+      // its height as their bottom inset to keep their controls clear of it.
+      // The other tabs end above it, on the page colour, as before.
+      extendBody: true,
       body: Obx(() {
         final int index = controller.selectedPageIndex.value;
-        return Column(
-          children: [
-            Expanded(
-              child: ProsteIndexedStack(
-                index: index,
-                children: [
-                  // Tabs build on first visit and then stay alive; building
-                  // them all up front kept every heavy screen (video players,
-                  // story lists, profile) resident from launch.
-                  IndexedStackChild(child: const HomeScreen(), preload: false),
-                  IndexedStackChild(
-                      child: FeedScreen(myUser: myUser), preload: false),
-                  IndexedStackChild(
-                      child: const LiveFeedScreen(), preload: false),
-                  IndexedStackChild(
-                      child: ProfileScreen(
-                          isDashBoard: true,
-                          user: myUser,
-                          isTopBarVisible: false),
-                      preload: false),
-                ],
+        return SafeArea(
+          top: false,
+          left: false,
+          right: false,
+          bottom: !DashboardScreenController.isVideoTab(index),
+          child: Column(
+            children: [
+              Expanded(
+                child: ProsteIndexedStack(
+                  index: index,
+                  children: [
+                    // Tabs build on first visit and then stay alive; building
+                    // them all up front kept every heavy screen (video
+                    // players, story lists, profile) resident from launch.
+                    IndexedStackChild(
+                        child: const HomeScreen(), preload: false),
+                    IndexedStackChild(
+                        child: FeedScreen(myUser: myUser), preload: false),
+                    IndexedStackChild(
+                        child: const LiveFeedScreen(), preload: false),
+                    IndexedStackChild(
+                        child: ProfileScreen(
+                            isDashBoard: true,
+                            user: myUser,
+                            isTopBarVisible: false),
+                        preload: false),
+                  ],
+                ),
               ),
-            ),
-            // Not over full-screen video (Snaps, Live).
-            if (!DashboardScreenController.isVideoTab(index))
-              const BannerAdsCustom(),
-          ],
+              // Not over full-screen video (Snaps, Live).
+              if (!DashboardScreenController.isVideoTab(index))
+                const BannerAdsCustom(),
+            ],
+          ),
         );
       }),
       bottomNavigationBar: _BottomBar(controller: controller),
@@ -75,10 +86,10 @@ class _BottomBar extends StatelessWidget {
     return Obx(() {
       final PostUploadingProgress upload = controller.postProgress.value;
       final bool isUploading = upload.uploadType != UploadType.none;
-      final bool onVideo = DashboardScreenController.isVideoTab(
-          controller.selectedPageIndex.value);
-      return Container(
-        color: onVideo ? Colors.black : scaffoldBackgroundColor(context),
+      // No band behind the pill: over Snaps and Live the video shows around
+      // it, elsewhere the page colour does (the Scaffold's, behind the body).
+      return Material(
+        type: MaterialType.transparency,
         child: SafeArea(
           top: false,
           child: Column(

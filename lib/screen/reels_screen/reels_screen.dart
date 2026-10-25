@@ -155,6 +155,13 @@ class _ReelsScreenState extends State<ReelsScreen> {
                                               videoPlayerController:
                                                   controller.slotFor(index).value,
                                               postByIdData: widget.postByIdData,
+                                              // The Snaps tab runs under the
+                                              // floating bottom bar.
+                                              bottomInset: widget.pageType ==
+                                                      ReelPageType.home
+                                                  ? MediaQuery.paddingOf(context)
+                                                      .bottom
+                                                  : 0,
                                             );
                                           },
                                         );

@@ -26,6 +26,10 @@ class ReelPage extends StatefulWidget {
   final GlobalKey likeKey;
   final Function(Post reel) onUpdateReelData;
 
+  /// Space kept under the reel's details: the floating bottom bar's height
+  /// on the Snaps tab, where the video runs underneath it.
+  final double bottomInset;
+
   const ReelPage({
     super.key,
     this.videoPlayerController,
@@ -34,6 +38,7 @@ class ReelPage extends StatefulWidget {
     this.isFromChat = false,
     required this.likeKey,
     required this.onUpdateReelData,
+    this.bottomInset = 0,
   });
 
   @override
@@ -175,6 +180,7 @@ class _ReelPageState extends State<ReelPage> {
               controller: reelController,
               likeKey: widget.likeKey,
               videoPlayerPlusController: widget.videoPlayerController,
+              bottomInset: widget.bottomInset,
             ),
 
             /// 💖 Like Animation
@@ -203,24 +209,29 @@ class ReelInfoSection extends StatelessWidget {
   final ReelController controller;
   final GlobalKey likeKey;
   final VideoPlayerController? videoPlayerPlusController;
+  final double bottomInset;
 
   const ReelInfoSection(
       {super.key,
       required this.controller,
       required this.likeKey,
-      required this.videoPlayerPlusController});
+      required this.videoPlayerPlusController,
+      this.bottomInset = 0});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        ReelInfoRow(controller: controller, likeKey: likeKey),
-        if (videoPlayerPlusController != null)
-          ReelSeekBar(videoController: videoPlayerPlusController, controller: controller)
-        else
-          const SizedBox(height: 15),
-      ],
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          ReelInfoRow(controller: controller, likeKey: likeKey),
+          if (videoPlayerPlusController != null)
+            ReelSeekBar(videoController: videoPlayerPlusController, controller: controller)
+          else
+            const SizedBox(height: 15),
+        ],
+      ),
     );
   }
 }

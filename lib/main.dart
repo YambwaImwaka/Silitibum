@@ -13,6 +13,7 @@ import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:shortzz/common/manager/firebase_notification_manager.dart';
 import 'package:shortzz/common/manager/logger.dart';
 import 'package:shortzz/common/manager/session_manager.dart';
+import 'package:shortzz/common/service/api/api_service.dart';
 import 'package:shortzz/common/service/subscription/subscription_manager.dart';
 import 'package:shortzz/common/widget/restart_widget.dart';
 import 'package:shortzz/languages/dynamic_translations.dart';
@@ -47,12 +48,21 @@ Future<void> main() async {
     // debug builds — a red ErrorWidget on screen and no stack trace in logcat
     // or Crashlytics. presentError() restores the console dump; Crashlytics
     // still receives the error in release exactly as before.
+    //
+    // A request that fails because the network did (an unawaited call on a
+    // weak connection) is reported as non-fatal. Reported as fatal, these
+    // filled Crashlytics' crash list although the app kept running.
     FlutterError.onError = (details) {
       FlutterError.presentError(details);
-      FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+      if (NetworkException.isNetworkError(details.exception)) {
+        FirebaseCrashlytics.instance.recordFlutterError(details);
+      } else {
+        FirebaseCrashlytics.instance.recordFlutterFatalError(details);
+      }
     };
     PlatformDispatcher.instance.onError = (error, stack) {
-      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      FirebaseCrashlytics.instance.recordError(error, stack,
+          fatal: !NetworkException.isNetworkError(error));
       return true;
     };
 

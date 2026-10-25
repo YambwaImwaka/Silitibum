@@ -25,36 +25,45 @@ class LiveStreamAudienceTopView extends StatelessWidget {
   final bool isAudience;
   final LivestreamScreenController controller;
 
+  /// In the Live tab, under the tab's own bar: that bar has the status bar
+  /// inset and the report action, and there is no screen to close.
+  final bool embedded;
+
   const LiveStreamAudienceTopView(
-      {super.key, this.isAudience = false, required this.controller});
+      {super.key,
+      this.isAudience = false,
+      required this.controller,
+      this.embedded = false});
 
   @override
   Widget build(BuildContext context) {
+    final Widget content = Obx(() {
+      bool isVisible = controller.isViewVisible.value;
+      return AnimatedOpacity(
+        duration: const Duration(milliseconds: 100),
+        opacity: isVisible ? 1 : 0,
+        child: IgnorePointer(
+          ignoring: !isVisible,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 13.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              spacing: 5,
+              children: [
+                if (!embedded) _BuildTopView(controller: controller),
+                _BuildCenterView(controller: controller),
+                _BuildBottomView(controller: controller)
+              ],
+            ),
+          ),
+        ),
+      );
+    });
+    if (embedded) return content;
     return SafeArea(
       bottom: false,
       minimum: EdgeInsets.only(top: AppBar().preferredSize.height * 0.7),
-      child: Obx(() {
-        bool isVisible = controller.isViewVisible.value;
-        return AnimatedOpacity(
-          duration: const Duration(milliseconds: 100),
-          opacity: isVisible ? 1 : 0,
-          child: IgnorePointer(
-            ignoring: !isVisible,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 13.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                spacing: 5,
-                children: [
-                  _BuildTopView(controller: controller),
-                  _BuildCenterView(controller: controller),
-                  _BuildBottomView(controller: controller)
-                ],
-              ),
-            ),
-          ),
-        );
-      }),
+      child: content,
     );
   }
 }

@@ -22,8 +22,9 @@ import 'package:shortzz/screen/chat_screen/chat_screen.dart';
 import 'package:shortzz/screen/chat_screen/chat_screen_controller.dart';
 import 'package:shortzz/screen/dashboard_screen/dashboard_screen_controller.dart';
 import 'package:shortzz/screen/earnings_screen/earnings_screen.dart';
-import 'package:shortzz/screen/live_stream/livestream_screen/audience/live_stream_audience_screen.dart';
+import 'package:shortzz/screen/live_stream/live_feed_screen/live_feed_screen_controller.dart';
 import 'package:shortzz/screen/live_stream/livestream_screen/host/livestream_host_screen.dart';
+import 'package:shortzz/screen/live_stream/livestream_screen/livestream_screen_controller.dart';
 import 'package:shortzz/screen/notification_screen/notification_screen.dart';
 import 'package:shortzz/screen/payout_account_screen/payout_account_screen.dart';
 import 'package:shortzz/screen/post_screen/single_post_screen.dart';
@@ -368,12 +369,19 @@ class FirebaseNotificationManager {
       return;
     }
 
+    // Already in a room of their own (hosting): leaving it would end it.
+    if (Get.isRegistered<LivestreamScreenController>()) return;
+
     final myUser = SessionManager.instance.getUser();
 
     if (stream.hostId == myUser?.id) {
       Get.to(() => LivestreamHostScreen(isHost: true, livestream: stream));
     } else {
-      Get.to(() => LiveStreamAudienceScreen(isHost: false, livestream: stream));
+      // Lives are watched in the Live tab (selected above): back to it, at
+      // this room. A room screen opened over the tab would have joined the
+      // same room a second time.
+      Get.until((route) => route.isFirst);
+      LiveFeedScreenController.open(stream);
     }
   }
 }

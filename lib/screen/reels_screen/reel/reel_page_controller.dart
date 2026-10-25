@@ -197,11 +197,15 @@ class ReelController extends BaseController {
 
   void onUserTap(User? user) {
     if (reelData.value.id == -1) return;
-    late ReelsScreenController reelsScreenController;
-    if (Get.isRegistered<ReelsScreenController>(tag: ReelsScreenController.tag)) {
-      reelsScreenController = Get.find<ReelsScreenController>(tag: ReelsScreenController.tag);
-      reelsScreenController.isCurrentPageVisible = false;
-    }
+    // Only the Snaps tab's feed is registered under this tag. This was a
+    // `late` variable assigned only in that case, so tapping a creator on a
+    // reel opened anywhere else (a profile, a notification, a hashtag) threw
+    // LateInitializationError on the way back.
+    final ReelsScreenController? reelsScreenController =
+        Get.isRegistered<ReelsScreenController>(tag: ReelsScreenController.tag)
+            ? Get.find<ReelsScreenController>(tag: ReelsScreenController.tag)
+            : null;
+    reelsScreenController?.isCurrentPageVisible = false;
     NavigationService.shared.openProfileScreen(user, onUserUpdate: (user) async {
       final HomeScreenController homeScreenController;
       if (Get.isRegistered<HomeScreenController>()) {
@@ -211,7 +215,7 @@ class ReelController extends BaseController {
         }
       }
     }).then((value) {
-      reelsScreenController.isCurrentPageVisible = true;
+      reelsScreenController?.isCurrentPageVisible = true;
     });
   }
 

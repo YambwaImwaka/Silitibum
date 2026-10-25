@@ -30,7 +30,7 @@ class MembersSheet extends StatefulWidget {
 }
 
 class _MembersSheetState extends State<MembersSheet> {
-  final controller = Get.find<LivestreamScreenController>();
+  final controller = LivestreamScreenController.current;
   final PageController pageController = PageController(initialPage: 0);
   final RxInt selectedTab = 0.obs;
 

@@ -78,6 +78,11 @@ class LivestreamScreenController extends BaseController {
   bool _loggedOut = false;
   bool _hostGone = false;
 
+  /// The viewer's join, once sent. Leaving waits for it: in the Live tab a
+  /// swipe can leave a room while its join is still on the way, and a leave
+  /// that reached the server first would leave the viewer listed.
+  Future<void>? _joinRequest;
+
   final cacheController = Get.find<AppUserCacheController>();
   final adsController = Get.find<AdsController>();
 
@@ -107,10 +112,27 @@ class LivestreamScreenController extends BaseController {
   TextEditingController textCommentController = TextEditingController();
 
   LivestreamScreenController(this.liveData, this.isHost,
-      {LocalVideoTrack? camera, Room? room})
+      {LocalVideoTrack? camera, Room? room, this.onEmbeddedExit})
       : _camera = camera,
         _cameraIsLent = camera != null,
         _handedRoom = room;
+
+  /// Set when the room runs inside the Live tab rather than as its own
+  /// screen: there is no screen to close, so leaving is handed to the tab,
+  /// which moves on. [ended] is false when the video was lost rather than
+  /// the live ending, so the tab can offer to try again.
+  final void Function(bool ended)? onEmbeddedExit;
+
+  bool get isEmbedded => onEmbeddedExit != null;
+
+  /// The room on screen. The Live tab registers its room under a tag (so a
+  /// room screen opened over it never picks it up from Get.put), which
+  /// untagged Get.find cannot see; the room's sheets use this instead.
+  static LivestreamScreenController? active;
+
+  /// The room the gift sheet, members sheet and battle countdown belong to.
+  static LivestreamScreenController get current =>
+      active ?? Get.find<LivestreamScreenController>();
 
   /// The Live tab's preview of this room, already connected and playing.
   Room? _handedRoom;
@@ -178,6 +200,7 @@ class LivestreamScreenController extends BaseController {
   @override
   void onInit() {
     super.onInit();
+    active = this;
 
     totalBattleSecond =
         Duration(minutes: liveData.value.battleDuration).inSeconds;
@@ -201,7 +224,11 @@ class LivestreamScreenController extends BaseController {
   @override
   void onClose() {
     super.onClose();
-    WakelockPlus.disable();
+    if (identical(active, this)) active = null;
+    // The Live tab sits beside Snaps, which keeps the screen awake for as
+    // long as the app is open; a tab room switching that off on every swipe
+    // let the screen sleep under the reels.
+    if (!isEmbedded) WakelockPlus.disable();
     timer?.cancel();
     minViewerTimeoutTimer?.cancel();
     _realtimeSub?.cancel();
@@ -482,10 +509,15 @@ class LivestreamScreenController extends BaseController {
       // starts runs on past this screen.
       await LiveRecordingManager.instance
           .stopAndSave(description: liveData.value.description);
-    } else if (roomId.isNotEmpty) {
+    } else if (roomId.isNotEmpty && _joinRequest != null) {
+      // Never joined (swiped past before the video connected): nothing to
+      // leave, and a leave would take one off the room's watching count.
+      final String room = roomId;
+      final Future<void> joined = _joinRequest!;
       () async {
         try {
-          await LivestreamService.instance.leaveLivestream(roomId: roomId);
+          await joined;
+          await LivestreamService.instance.leaveLivestream(roomId: room);
         } catch (e) {
           Loggers.error('leaveLivestream failed: $e');
         }
@@ -545,8 +577,10 @@ class LivestreamScreenController extends BaseController {
     // Audience: register with the backend and pull the full room snapshot
     // (participants + last comments) in one round trip.
     try {
-      final res =
-          await LivestreamService.instance.joinLivestream(roomId: roomId);
+      final join = LivestreamService.instance.joinLivestream(roomId: roomId);
+      _joinRequest = join.then((_) {}, onError: (_) {});
+      final res = await join;
+      if (_loggedOut) return;
       if (res.status == true) {
         _applyStateResult(res, replaceComments: true);
       } else if (res.message == 'livestream_ended') {
@@ -562,7 +596,8 @@ class LivestreamScreenController extends BaseController {
   void _onCannotConnect({required bool ended}) {
     if (isClosed) return;
     if (isHost) _endStreamOnServer();
-    _leaveScreen();
+    _leaveScreen(ended: ended);
+    if (isEmbedded) return; // the Live tab says so on the room itself
     showSnackBar(ended
         ? LKey.livestreamHasEnded.tr
         : LKey.liveVideoUnavailable.tr);
@@ -570,8 +605,18 @@ class LivestreamScreenController extends BaseController {
 
   /// Closes this screen along with any sheet or snackbar over it. A plain
   /// Get.back() only closes an open snackbar and leaves the screen up, so
-  /// "Livestream has ended" used to show over a dead room.
-  void _leaveScreen() => Get.back(closeOverlays: true);
+  /// "Livestream has ended" used to show over a dead room. In the Live tab
+  /// there is no screen to close: a sheet over the room is closed and the
+  /// tab moves on.
+  void _leaveScreen({bool ended = true}) {
+    final exit = onEmbeddedExit;
+    if (exit == null) {
+      Get.back(closeOverlays: true);
+      return;
+    }
+    if (Get.isBottomSheetOpen == true) Get.back();
+    exit(ended);
+  }
 
   void startListenEvent() {
     final Room? room = _room;
@@ -671,11 +716,12 @@ class LivestreamScreenController extends BaseController {
     if (wasCoHost) {
       streamEnded();
     } else {
-      _leaveScreen();
+      _leaveScreen(ended: !connectionLost);
     }
     logoutRoom();
     liveData.value = Livestream();
-    if (!wasCoHost) {
+    // The Live tab says so on the room itself.
+    if (!wasCoHost && !isEmbedded) {
       showSnackBar(connectionLost
           ? LKey.liveConnectionLost.tr
           : LKey.livestreamHasEnded.tr);

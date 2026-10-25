@@ -39,7 +39,7 @@ class SendGiftSheetController extends BaseController {
 
     if (liveUsers.isNotEmpty &&
         (giftType == GiftType.livestream || giftType == GiftType.battle)) {
-      livestreamController = Get.find<LivestreamScreenController>();
+      livestreamController = LivestreamScreenController.current;
       if (livestreamController.selectedGiftUser.value == null) {
         livestreamController.selectedGiftUser = liveUsers.first.obs;
       } else {
