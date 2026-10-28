@@ -12,8 +12,6 @@ import 'package:livekit_client/livekit_client.dart'
         DisconnectReason,
         EventsListener,
         LocalVideoTrack,
-        CameraPosition,
-        LocalVideoTrackExt,
         ParticipantDisconnectedEvent,
         ParticipantPermissionsUpdatedEvent,
         RemoteParticipant,
@@ -115,7 +113,12 @@ class LivestreamScreenController extends BaseController {
       {LocalVideoTrack? camera, Room? room, this.onEmbeddedExit})
       : _camera = camera,
         _cameraIsLent = camera != null,
-        _handedRoom = room;
+        _handedRoom = room {
+    // The go-live screen's camera may already be the back one. Starting
+    // from "front" regardless made the first flip here pick the camera
+    // that was already on, so nothing happened.
+    if (camera != null) isFrontCamera = LiveVideo.isFront(camera);
+  }
 
   /// Set when the room runs inside the Live tab rather than as its own
   /// screen: there is no screen to close, so leaving is handed to the tab,
@@ -658,8 +661,11 @@ class LivestreamScreenController extends BaseController {
   void _putCamera(String identity, VideoTrack track) {
     final view = StreamView(
         identity,
-        VideoTrackRenderer(track,
-            key: ObjectKey(track), fit: VideoViewFit.cover),
+        track is LocalVideoTrack
+            // This phone's own camera, mirrored only while it is the front.
+            ? LiveVideo.selfView(track, key: ObjectKey(track))
+            : VideoTrackRenderer(track,
+                key: ObjectKey(track), fit: VideoViewFit.cover),
         false);
     final int index = streamViews.indexWhere((v) => v.streamId == identity);
     if (index != -1) {
@@ -872,14 +878,27 @@ class LivestreamScreenController extends BaseController {
 
   void toggleCamera() => toggleFlipCamera();
 
-  void toggleFlipCamera() {
+  bool _flipping = false;
+
+  /// Flips the camera in place (see [LiveVideo.flipCamera]): the stream to
+  /// viewers and any recording carry on through the switch, where restarting
+  /// the track stopped the picture for a moment and left a recording on the
+  /// old, stopped camera.
+  Future<void> toggleFlipCamera() async {
     final LocalVideoTrack? camera = _camera;
-    if (camera == null) return;
-    isFrontCamera = !isFrontCamera;
-    camera
-        .setCameraPosition(
-            isFrontCamera ? CameraPosition.front : CameraPosition.back)
-        .catchError((e) => Loggers.error('Camera switch failed: $e'));
+    if (camera == null || _flipping) return;
+    _flipping = true;
+    try {
+      isFrontCamera = await LiveVideo.flipCamera(camera);
+      // Same track, so the view updates in place; only its mirroring changes.
+      if (streamViews.any((view) => view.streamId == '$myUserId')) {
+        _putCamera('$myUserId', camera);
+      }
+    } catch (e) {
+      Loggers.error('Camera switch failed: $e');
+    } finally {
+      _flipping = false;
+    }
   }
 
   void toggleMic(LivestreamUserState? state) async {

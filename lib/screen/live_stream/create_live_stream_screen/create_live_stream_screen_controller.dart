@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:livekit_client/livekit_client.dart'
-    show CameraPosition, LocalVideoTrack, LocalVideoTrackExt, VideoTrackRenderer, VideoViewFit;
+import 'package:livekit_client/livekit_client.dart' show LocalVideoTrack;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shortzz/common/controller/base_controller.dart';
 import 'package:shortzz/common/functions/auth_gate.dart';
@@ -104,7 +103,7 @@ class CreateLiveStreamScreenController extends BaseController {
         return;
       }
       _camera = camera;
-      localView.value = VideoTrackRenderer(camera, fit: VideoViewFit.cover);
+      localView.value = LiveVideo.selfView(camera);
     } catch (e, stackTrace) {
       Loggers.error('Failed to initialize camera preview: $e\n$stackTrace');
     } finally {
@@ -112,14 +111,24 @@ class CreateLiveStreamScreenController extends BaseController {
     }
   }
 
-  void toggleCamera() {
+  bool _flipping = false;
+
+  /// Flips the preview's camera. This used to restart the track, which
+  /// LiveKit refuses before it is published, so here it never flipped; the
+  /// flag below still did, and then disagreed with the camera.
+  Future<void> toggleCamera() async {
     final LocalVideoTrack? camera = _camera;
-    if (camera == null) return;
-    isFrontCamera = !isFrontCamera;
-    camera
-        .setCameraPosition(
-            isFrontCamera ? CameraPosition.front : CameraPosition.back)
-        .catchError((e) => Loggers.error('Camera switch failed: $e'));
+    if (camera == null || _flipping) return;
+    _flipping = true;
+    try {
+      isFrontCamera = await LiveVideo.flipCamera(camera);
+      // Same track: the view updates in place, mirrored for the front.
+      localView.value = LiveVideo.selfView(camera);
+    } catch (e) {
+      Loggers.error('Camera switch failed: $e');
+    } finally {
+      _flipping = false;
+    }
   }
 
   void onCloseTap() {
